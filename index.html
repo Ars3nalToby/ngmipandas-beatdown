@@ -396,7 +396,7 @@ let GFX_CINEMATIC = true;
 function styleRenderer(r) {
   r.outputEncoding = THREE.sRGBEncoding;
   r.toneMapping = THREE.ACESFilmicToneMapping;
-  r.toneMappingExposure = 1.15;
+  r.toneMappingExposure = 1.0;
   return r;
 }
 function srgbTex(t) {
@@ -468,7 +468,7 @@ function createPost(renderer, scene, camera) {
     'c += texture2D(tex, vUv + dir * 3.231).rgb * 0.070; c += texture2D(tex, vUv - dir * 3.231).rgb * 0.070;' +
     'gl_FragColor = vec4(c, 1.0); }');
   const comp = mat(
-    { tScene: { value: null }, tBloom: { value: null }, time: { value: 0 }, res: { value: new THREE.Vector2() }, bloomStrength: { value: 0.85 }, exposure: { value: 1.2 }, flash: { value: 0 } },
+    { tScene: { value: null }, tBloom: { value: null }, time: { value: 0 }, res: { value: new THREE.Vector2() }, bloomStrength: { value: 0.7 }, exposure: { value: 1.0 }, flash: { value: 0 } },
     `uniform sampler2D tScene; uniform sampler2D tBloom; uniform float time; uniform vec2 res; uniform float bloomStrength; uniform float exposure; uniform float flash; varying vec2 vUv;
     vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0); }
     float rnd(vec2 co){ return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -481,8 +481,8 @@ function createPost(renderer, scene, camera) {
       col = aces(col);
       float l = dot(col, vec3(0.2126, 0.7152, 0.0722));
       col = mix(col, col * vec3(0.82, 0.95, 1.15), (1.0 - smoothstep(0.0, 0.42, l)) * 0.55);
-      col = mix(col, col * vec3(1.12, 1.0, 0.84), smoothstep(0.45, 1.0, l) * 0.45);
-      col = mix(vec3(l), col, 0.88);
+      col = mix(col, col * vec3(1.08, 1.0, 0.9), smoothstep(0.5, 1.0, l) * 0.22);
+      col = mix(vec3(l), col, 1.04);
       col = pow(max(col, 0.0), vec3(1.0 / 2.2));
       col *= 1.0 - r2 * 0.95;
       col += (rnd(vUv * res + fract(time) * 100.0) - 0.5) * 0.05;
@@ -545,13 +545,13 @@ function upgradePandaMaterials(root) {
     });
     if (m.metalness >= 0.5) {
       pm.clearcoat = 1;
-      pm.clearcoatRoughness = 0.08;
+      pm.clearcoatRoughness = 0.22;
       pm.roughness = Math.max(0.18, m.roughness);
     } else if (m.roughness >= 0.4) {
-      pm.sheen = 1;
-      pm.sheenRoughness = 0.55;
-      pm.sheenColor = m.color.clone().multiplyScalar(0.7);
-      pm.roughness = Math.min(1, m.roughness + 0.2);
+      pm.sheen = 0.35;
+      pm.sheenRoughness = 0.85;
+      pm.sheenColor = m.color.clone().multiplyScalar(0.5);
+      pm.roughness = Math.min(1, m.roughness + 0.05);
     } else {
       pm.clearcoat = 0.5;
       pm.clearcoatRoughness = 0.3;
@@ -594,7 +594,11 @@ const POWERUPS = [
   { id: 'burger', icon: '🍔', label: 'FAST FOOD! +45% SPEED', color: '#f97316' },
   { id: 'diamond', icon: '💎', label: 'DIAMOND HANDS! -60% KNOCKBACK', color: '#22d3ee' },
   { id: 'rocket', icon: '🚀', label: 'PUMP IT! HITS x1.7', color: '#a3e635' },
-  { id: 'gift', icon: '🎁', label: 'AIRDROP! +3 PANDAS', color: '#facc15' }
+  { id: 'gift', icon: '🎁', label: 'AIRDROP! +3 PANDAS', color: '#facc15' },
+  { id: 'hammer', icon: '🔨', label: 'BAN HAMMER! 5 SWINGS (E)', color: '#eab308' },
+  { id: 'launcher', icon: '🧨', label: 'RUG ROCKET! 3 SHOTS (E)', color: '#ef4444' },
+  { id: 'hammer', icon: '🔨', label: 'BAN HAMMER! 5 SWINGS (E)', color: '#eab308' },
+  { id: 'launcher', icon: '🧨', label: 'RUG ROCKET! 3 SHOTS (E)', color: '#ef4444' }
 ];
 
 function makeEmojiTexture(emoji) {
@@ -828,16 +832,22 @@ function LobbyBackdrop() {
 // Rotating 3D preview of a panda class for the character select cards
 function makePreviewScene(config, w, h) {
   const scene = new THREE.Scene();
-  const cam = new THREE.PerspectiveCamera(34, w / h, 0.1, 100);
-  cam.position.set(0, 3.3, 8.6);
-  cam.lookAt(0, 1.85, 0);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.95));
-  const key = new THREE.DirectionalLight(0xffffff, 1.5);
-  key.position.set(3, 6, 5);
+  const cam = new THREE.PerspectiveCamera(30, w / h, 0.1, 100);
+  cam.position.set(0.4, 3.0, 8.4);
+  cam.lookAt(0.2, 2.0, 0);
+  scene.add(new THREE.HemisphereLight(0x8fa4d8, 0x2a1d14, 0.55));
+  const key = new THREE.DirectionalLight(0xffd2a1, 2.3);
+  key.position.set(4, 6, 6);
   scene.add(key);
-  const rim = new THREE.PointLight(config.accent, 3, 22);
-  rim.position.set(-3, 3.5, -2.5);
+  const fill = new THREE.DirectionalLight(0x7d9cff, 0.6);
+  fill.position.set(-5, 2, 3);
+  scene.add(fill);
+  const rim = new THREE.PointLight(config.accent, 4, 18, 1.4);
+  rim.position.set(-2.5, 4, -3);
   scene.add(rim);
+  const rim2 = new THREE.PointLight(0xffffff, 1.5, 18, 1.4);
+  rim2.position.set(3, 4.5, -3);
+  scene.add(rim2);
   const hero = buildNgmiPandaMesh(config, false, config.accent);
   hero.position.x = -0.5;
   hero.rotation.y = 0.45;
@@ -847,8 +857,8 @@ function makePreviewScene(config, w, h) {
   minion.rotation.y = -0.5;
   scene.add(minion);
   const ped = new THREE.Mesh(
-    new THREE.CylinderGeometry(2.6, 2.8, 0.3, 48),
-    new THREE.MeshStandardMaterial({ color: 0x111827, metalness: 0.7, roughness: 0.35, emissive: config.accent, emissiveIntensity: 0.12 })
+    new THREE.CylinderGeometry(2.6, 2.8, 0.3, 64),
+    new THREE.MeshStandardMaterial({ color: 0x1a1816, metalness: 0.2, roughness: 0.35, emissive: config.accent, emissiveIntensity: 0.06 })
   );
   ped.position.y = -0.16;
   scene.add(ped);
@@ -1015,239 +1025,196 @@ function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
   const scale = isMinion ? 0.62 : 1.5;
   const teamColor = gangColor || config.accent || '#22c55e';
   root.scale.set(scale, scale, scale);
-
   const isAstro = config.id === 'astro_gmi' || config.id === 'dark_gmi';
 
-  const whiteFurMat = new THREE.MeshStandardMaterial({
-    color: 0xf1f5f9,
-    roughness: 0.45,
-    metalness: 0.08
-  });
-  const blackFurMat = new THREE.MeshStandardMaterial({
-    color: 0x0f172a,
-    roughness: 0.5,
-    metalness: 0.1
-  });
+  const whiteFur = new THREE.MeshStandardMaterial({ color: 0xe8e2d6, roughness: 0.92, metalness: 0 });
+  const blackFur = new THREE.MeshStandardMaterial({ color: 0x1c1a1f, roughness: 0.9, metalness: 0 });
+  const muzzleMat = new THREE.MeshStandardMaterial({ color: 0xf2ebdd, roughness: 0.85 });
+  const noseMat = new THREE.MeshStandardMaterial({ color: 0x141216, roughness: 0.35 });
+  const eyeWhite = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const pupilMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.1, metalness: 0.2 });
+  const blushMat = new THREE.MeshBasicMaterial({ color: 0xff8fa3, transparent: true, opacity: 0.45, depthWrite: false });
 
+  // ---- body: pear-shaped, wearing a shirt (minions wear their gang's colour) ----
+  const shirtBg = isMinion ? teamColor : config.shirtColor || '#7c3aed';
   const shirtTex = createLabelTexture(
-    isMinion ? (Math.random() > 0.5 ? 'GM' : '19\nETH') : config.shirtText.replace(' ', '\n'),
-    config.shirtColor || '#7c3aed',
-    isAstro && config.id === 'astro_gmi' ? '#16a34a' : '#f8fafc',
-    256,
-    256,
-    46
+    isMinion ? (Math.random() > 0.5 ? 'GM' : 'WAGMI') : config.shirtText.replace(' ', '\n'),
+    shirtBg,
+    config.id === 'astro_gmi' && !isMinion ? '#14532d' : '#f8fafc',
+    512, 256, isMinion ? 64 : 54
   );
+  const body = new THREE.Mesh(
+    new THREE.LatheGeometry(
+      [[0.001, 0.26], [0.5, 0.3], [0.78, 0.55], [0.86, 0.85], [0.8, 1.15], [0.64, 1.45], [0.42, 1.62], [0.001, 1.68]].map(([x, y]) => new THREE.Vector2(x, y)),
+      32, -Math.PI, Math.PI * 2
+    ),
+    new THREE.MeshStandardMaterial({ map: shirtTex, roughness: isAstro ? 0.45 : 0.8, metalness: isAstro ? 0.35 : 0 })
+  );
+  root.add(body);
 
-  const torsoMat = new THREE.MeshStandardMaterial({
-    map: shirtTex,
-    roughness: isAstro ? 0.22 : 0.6,
-    metalness: isAstro ? 0.78 : 0.12
+  // gang scarf around the neck
+  const scarf = new THREE.Mesh(
+    new THREE.TorusGeometry(0.5, 0.15, 12, 28),
+    new THREE.MeshStandardMaterial({ color: teamColor, roughness: 0.7, emissive: teamColor, emissiveIntensity: 0.25 })
+  );
+  scarf.rotation.x = Math.PI / 2;
+  scarf.position.y = 1.62;
+  root.add(scarf);
+
+  // ---- legs + feet (black) ----
+  [-0.36, 0.36].forEach(x => {
+    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.2, 6, 12), blackFur);
+    leg.position.set(x, 0.22, 0.05);
+    root.add(leg);
+    const pad = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), new THREE.MeshStandardMaterial({ color: 0x3a2f30, roughness: 0.8 }));
+    pad.scale.set(1, 0.5, 1);
+    pad.position.set(x, 0.06, 0.22);
+    root.add(pad);
   });
 
-  const torsoGeo = new THREE.CylinderGeometry(0.68, 0.82, 1.38, 20);
-  const torso = new THREE.Mesh(torsoGeo, torsoMat);
-  torso.position.y = 0.95;
-  torso.castShadow = true;
-  root.add(torso);
-
-  if (isAstro) {
-    const collarGeo = new THREE.TorusGeometry(0.66, 0.18, 12, 24);
-    const collarMat = new THREE.MeshStandardMaterial({
-      color: config.helmetColor,
-      roughness: 0.2,
-      metalness: 0.85
-    });
-    const collar = new THREE.Mesh(collarGeo, collarMat);
-    collar.rotation.x = Math.PI / 2;
-    collar.position.y = 1.62;
-    root.add(collar);
-  }
-
+  // ---- head ----
   const headGroup = new THREE.Group();
   headGroup.position.y = 2.08;
   root.add(headGroup);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.78, 32, 24), whiteFur);
+  head.scale.set(1.08, 0.94, 0.98);
+  headGroup.add(head);
+  [-1, 1].forEach(side => {
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 12), blackFur);
+    ear.scale.set(1, 1, 0.7);
+    ear.position.set(side * 0.58, 0.58, -0.08);
+    headGroup.add(ear);
+    // teardrop eye patch, tilted outward like a real panda
+    const patch = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 12), blackFur);
+    patch.scale.set(0.95, 1.3, 0.45);
+    patch.rotation.z = side * 0.55;
+    patch.position.set(side * 0.27, 0.08, 0.66);
+    headGroup.add(patch);
+    // shiny eyes
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 10), pupilMat);
+    eye.position.set(side * 0.25, 0.11, 0.75);
+    headGroup.add(eye);
+    const glint = new THREE.Mesh(new THREE.SphereGeometry(0.026, 8, 6), eyeWhite);
+    glint.position.set(side * 0.25 + 0.025, 0.145, 0.815);
+    headGroup.add(glint);
+    const blush = new THREE.Mesh(new THREE.CircleGeometry(0.1, 16), blushMat);
+    blush.position.set(side * 0.46, -0.16, 0.66);
+    blush.rotation.y = side * 0.55;
+    headGroup.add(blush);
+  });
+  const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.26, 16, 12), muzzleMat);
+  muzzle.scale.set(1.25, 0.85, 0.75);
+  muzzle.position.set(0, -0.18, 0.66);
+  headGroup.add(muzzle);
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 10), noseMat);
+  nose.scale.set(1.3, 0.85, 0.9);
+  nose.position.set(0, -0.1, 0.86);
+  headGroup.add(nose);
+  const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.016, 6, 12, Math.PI), noseMat);
+  mouth.rotation.z = Math.PI;
+  mouth.position.set(0, -0.25, 0.84);
+  headGroup.add(mouth);
 
+  // ---- class accessories ----
   if (isAstro) {
-    const helmetMat = new THREE.MeshStandardMaterial({
-      color: config.helmetColor,
-      roughness: 0.15,
-      metalness: 0.9
+    const domeMat = new THREE.MeshStandardMaterial({
+      color: config.id === 'dark_gmi' ? 0x0b1220 : 0xcfe8ff,
+      transparent: true, opacity: config.id === 'dark_gmi' ? 0.55 : 0.22,
+      roughness: 0.05, metalness: 0.1, depthWrite: false
     });
-    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.78, 28, 24), helmetMat);
-    headGroup.add(helmet);
-
-    const visorTex = createLabelTexture(
-      config.id === 'dark_gmi' ? 'GMI' : '',
-      '#050814',
-      '#22d3ee',
-      256,
-      128,
-      58,
-      '#22d3ee'
-    );
-    const visorMat = new THREE.MeshStandardMaterial({
-      map: visorTex,
-      color: 0x090d16,
-      roughness: 0.08,
-      metalness: 0.95,
-      emissive: config.id === 'dark_gmi' ? new THREE.Color(0x0891b2) : new THREE.Color(0x000000),
-      emissiveIntensity: 0.45
-    });
-    const visor = new THREE.Mesh(
-      new THREE.SphereGeometry(0.73, 24, 20, -Math.PI * 0.35, Math.PI * 0.7, Math.PI * 0.22, Math.PI * 0.45),
-      visorMat
-    );
-    visor.rotation.y = Math.PI * 0.5;
-    visor.position.z = 0.08;
-    headGroup.add(visor);
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(1.0, 32, 24), domeMat);
+    dome.position.y = 0.05;
+    headGroup.add(dome);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.82, 0.12, 12, 32), new THREE.MeshStandardMaterial({ color: config.helmetColor, metalness: 1, roughness: 0.3 }));
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = -0.62;
+    headGroup.add(rim);
+    if (config.id === 'dark_gmi') {
+      const visorTex = createLabelTexture('GMI', 'transparent', '#22d3ee', 256, 128, 64, '#22d3ee');
+      const visor = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.45), new THREE.MeshBasicMaterial({ map: visorTex, transparent: true, depthWrite: false }));
+      visor.position.set(0, 0.42, 0.93);
+      headGroup.add(visor);
+    }
+  } else if (config.id === 'vr_up_only') {
+    const vrTex = createLabelTexture('UP ONLY', '#03140a', '#4ade80', 256, 128, 40, '#22c55e');
+    const vrBody = new THREE.MeshStandardMaterial({ color: 0x15171c, roughness: 0.35, metalness: 0.6 });
+    const vr = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.4, 0.34), [vrBody, vrBody, vrBody, vrBody, new THREE.MeshBasicMaterial({ map: vrTex }), vrBody]);
+    vr.position.set(0, 0.12, 0.72);
+    headGroup.add(vr);
+    const strap = new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.05, 6, 32), vrBody);
+    strap.rotation.x = Math.PI / 2;
+    strap.position.y = 0.12;
+    headGroup.add(strap);
+    const bandana = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.1, 8, 28), new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.8 }));
+    bandana.rotation.x = Math.PI / 2 - 0.15;
+    bandana.position.y = 0.42;
+    headGroup.add(bandana);
   } else {
-    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.7, 24, 20), whiteFurMat);
-    headMesh.scale.set(1.06, 0.96, 0.98);
-    headGroup.add(headMesh);
-
-    const earGeo = new THREE.SphereGeometry(0.24, 14, 14);
-    const leftEar = new THREE.Mesh(earGeo, blackFurMat);
-    leftEar.position.set(-0.52, 0.55, -0.05);
-    const rightEar = new THREE.Mesh(earGeo, blackFurMat);
-    rightEar.position.set(0.52, 0.55, -0.05);
-    headGroup.add(leftEar, rightEar);
-
-    const patchGeo = new THREE.SphereGeometry(0.18, 12, 12);
-    patchGeo.scale(1.1, 0.85, 0.4);
-    const leftPatch = new THREE.Mesh(patchGeo, blackFurMat);
-    leftPatch.position.set(-0.24, 0.08, 0.6);
-    const rightPatch = new THREE.Mesh(patchGeo, blackFurMat);
-    rightPatch.position.set(0.24, 0.08, 0.6);
-    headGroup.add(leftPatch, rightPatch);
-
-    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 10), blackFurMat);
-    nose.position.set(0, -0.06, 0.68);
-    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.08), blackFurMat);
-    mouth.position.set(0, -0.24, 0.64);
-    headGroup.add(nose, mouth);
-
-    if (config.id === 'vr_up_only') {
-      const vrTex = createLabelTexture('Up Only', '#031c0d', '#22c55e', 256, 128, 48, '#22c55e');
-      const vrScreenMat = new THREE.MeshBasicMaterial({ map: vrTex });
-      const vrBodyMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.3, metalness: 0.7 });
-      const vrBox = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.42, 0.36), [
-        vrBodyMat, vrBodyMat, vrBodyMat, vrBodyMat, vrScreenMat, vrBodyMat
-      ]);
-      vrBox.position.set(0, 0.12, 0.56);
-      headGroup.add(vrBox);
-
-      const bandanaMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.55 });
-      const bandana = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.74, 0.42, 18), bandanaMat);
-      bandana.position.set(0, -0.34, 0.04);
-      headGroup.add(bandana);
-    } else {
-      const lensMat = new THREE.MeshStandardMaterial({
-        color: config.glassesColor || 0x9333ea,
-        roughness: 0.15,
-        metalness: 0.8,
-        emissive: new THREE.Color(config.glassesColor || 0x9333ea),
-        emissiveIntensity: 0.25
-      });
-      const leftLens = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.08, 18), lensMat);
-      leftLens.rotation.x = Math.PI / 2;
-      leftLens.position.set(-0.25, 0.1, 0.68);
-      const rightLens = leftLens.clone();
-      rightLens.position.x = 0.25;
-      headGroup.add(leftLens, rightLens);
-
-      if (!isMinion) {
-        const hatMat = new THREE.MeshStandardMaterial({ color: config.hatColor || 0x7e22ce, roughness: 0.4 });
-        const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 0.08, 22), hatMat);
-        brim.position.y = 0.52;
-        const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.58, 0.45, 20), hatMat);
-        crown.position.y = 0.75;
-        headGroup.add(brim, crown);
-      }
+    const lensMat = new THREE.MeshStandardMaterial({ color: 0x1a0b2e, roughness: 0.08, metalness: 0.6, emissive: 0x6b21a8, emissiveIntensity: 0.35 });
+    [-1, 1].forEach(side => {
+      const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.21, 0.21, 0.06, 20), lensMat);
+      lens.rotation.x = Math.PI / 2;
+      lens.position.set(side * 0.26, 0.1, 0.8);
+      headGroup.add(lens);
+    });
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.03, 0.03), lensMat);
+    bridge.position.set(0, 0.12, 0.82);
+    headGroup.add(bridge);
+    if (!isMinion) {
+      const hatMat = new THREE.MeshStandardMaterial({ color: 0x5b1f8a, roughness: 0.75 });
+      const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.88, 0.88, 0.07, 28), hatMat);
+      brim.position.y = 0.6;
+      brim.rotation.x = -0.12;
+      const top = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.56, 0.48, 24), hatMat);
+      top.position.y = 0.86;
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(0.565, 0.565, 0.1, 24), new THREE.MeshStandardMaterial({ color: 0xd4a640, metalness: 1, roughness: 0.3 }));
+      band.position.y = 0.68;
+      headGroup.add(brim, top, band);
     }
   }
 
+  // ---- arms (black, like a real panda) ----
   const leftArmGroup = new THREE.Group();
   leftArmGroup.position.set(-0.78, 1.35, 0.2);
   root.add(leftArmGroup);
-
-  const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.19, 0.55, 8, 12), whiteFurMat);
+  const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.5, 8, 12), blackFur);
   leftArm.rotation.x = -Math.PI * 0.35;
-  leftArm.position.set(-0.08, -0.1, 0.28);
+  leftArm.position.set(-0.04, -0.12, 0.26);
   leftArmGroup.add(leftArm);
-
-  const phoneMat = new THREE.MeshStandardMaterial({
-    color: config.phoneColor || 0xef4444,
-    roughness: 0.2,
-    metalness: 0.8,
-    emissive: new THREE.Color(config.phoneColor || 0xef4444),
-    emissiveIntensity: 0.35
-  });
-  const phone = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.52, 0.06), phoneMat);
-  phone.position.set(-0.12, 0.12, 0.62);
+  const phone = new THREE.Mesh(
+    new THREE.BoxGeometry(0.26, 0.5, 0.05),
+    new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.25, metalness: 0.6, emissive: new THREE.Color(config.phoneColor || 0xef4444), emissiveIntensity: 0.25 })
+  );
+  phone.position.set(-0.1, 0.1, 0.6);
   phone.rotation.set(-0.25, 0.35, -0.1);
   leftArmGroup.add(phone);
 
   const rightArmGroup = new THREE.Group();
   rightArmGroup.position.set(0.78, 1.35, 0.2);
   root.add(rightArmGroup);
-
-  const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.21, 0.58, 8, 12), whiteFurMat);
+  const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.21, 0.54, 8, 12), blackFur);
   rightArm.rotation.x = -Math.PI * 0.42;
   rightArm.rotation.z = -0.2;
-  rightArm.position.set(0.08, -0.05, 0.34);
+  rightArm.position.set(0.06, -0.06, 0.32);
   rightArmGroup.add(rightArm);
-
-  const ringGemMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
-  const ringBandMat = new THREE.MeshStandardMaterial({
-    color: 0xfacc15,
-    metalness: 1.0,
-    roughness: 0.1,
-    emissive: new THREE.Color(0xfacc15),
-    emissiveIntensity: 0.8
-  });
-  const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.035, 10, 18), ringBandMat);
+  const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.035, 10, 18), new THREE.MeshStandardMaterial({ color: 0xd4a640, metalness: 1, roughness: 0.2 }));
   ringMesh.position.set(0.14, 0.12, 0.68);
-  const ringSpark = new THREE.Mesh(new THREE.OctahedronGeometry(0.09, 0), ringGemMat);
+  const ringSpark = new THREE.Mesh(new THREE.OctahedronGeometry(0.09, 0), new THREE.MeshBasicMaterial({ color: 0xfff1b0 }));
   ringSpark.position.set(0.14, 0.18, 0.72);
   rightArmGroup.add(ringMesh, ringSpark);
 
-  // Team identity: bright ring + filled disc on the floor + glowing belt
-  const auraGeo = new THREE.RingGeometry(0.95, 1.3, 32);
-  const auraMat = new THREE.MeshBasicMaterial({
-    color: teamColor,
-    side: THREE.DoubleSide,
-    transparent: true,
-    opacity: 1
-  });
-  const aura = new THREE.Mesh(auraGeo, auraMat);
+  // ---- team identity on the floor: unaffected by fog so colours stay pure ----
+  const auraMat = new THREE.MeshBasicMaterial({ color: teamColor, side: THREE.DoubleSide, transparent: true, opacity: 1, fog: false });
+  const aura = new THREE.Mesh(new THREE.RingGeometry(0.98, 1.42, 40), auraMat);
   aura.rotation.x = -Math.PI / 2;
   aura.position.y = 0.05;
   root.add(aura);
-
-  const disc = new THREE.Mesh(
-    new THREE.CircleGeometry(0.95, 28),
-    new THREE.MeshBasicMaterial({ color: teamColor, transparent: true, opacity: 0.4, side: THREE.DoubleSide })
-  );
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(0.98, 32), new THREE.MeshBasicMaterial({ color: teamColor, transparent: true, opacity: 0.32, side: THREE.DoubleSide, fog: false, depthWrite: false }));
   disc.rotation.x = -Math.PI / 2;
   disc.position.y = 0.04;
   root.add(disc);
 
-  const belt = new THREE.Mesh(
-    new THREE.TorusGeometry(0.8, 0.13, 10, 28),
-    new THREE.MeshStandardMaterial({ color: teamColor, emissive: teamColor, emissiveIntensity: 0.9, roughness: 0.3 })
-  );
-  belt.rotation.x = Math.PI / 2;
-  belt.position.y = 0.55;
-  root.add(belt);
-
-  root.userData = {
-    headGroup,
-    leftArmGroup,
-    rightArmGroup,
-    ringSpark,
-    auraMat
-  };
-
+  root.userData = { headGroup, leftArmGroup, rightArmGroup, ringSpark, auraMat };
   upgradePandaMaterials(root);
   return root;
 }
@@ -1316,6 +1283,13 @@ function App() {
     if (screen !== 'playing' || !mountRef.current) return;
     GFX_CINEMATIC = gfx === 'cinematic';
     setMyDeaths(0);
+    setMyKos(0);
+    setMyGangSize(5);
+    setMyDmg(0);
+    setKillFeed([]);
+    setLeaderboard([]);
+    setBuffHud([]);
+    setActiveBeatdownAlert(null);
 
     const container = mountRef.current;
     const width = container.clientWidth || window.innerWidth;
@@ -1369,7 +1343,7 @@ function App() {
     scene.add(new THREE.AmbientLight(0x8090b0, 0.16));
     scene.add(new THREE.HemisphereLight(0x5b78c8, 0x1a120e, 0.42));
 
-    const moonLight = new THREE.DirectionalLight(0xffb36b, 3.1); // warm key, low angle
+    const moonLight = new THREE.DirectionalLight(0xffc285, 2.5); // warm key, low angle
     moonLight.position.set(-34, 26, 22);
     moonLight.castShadow = GFX_CINEMATIC;
     moonLight.shadow.mapSize.width = 2048;
@@ -1993,6 +1967,95 @@ function App() {
       rug.vortex = vortex;
     };
 
+    // ---------- WEAPONS ----------
+    const projectiles = [];
+    const makeWeaponMesh = kind => {
+      const g = new THREE.Group();
+      if (kind === 'hammer') {
+        const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 1.5, 8), new THREE.MeshStandardMaterial({ color: 0x4a2c17, roughness: 0.7 }));
+        handle.position.y = 0.55;
+        const headM = new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.42, 0.42), new THREE.MeshStandardMaterial({ color: 0x8c6a3c, metalness: 1, roughness: 0.35 }));
+        headM.position.y = 1.3;
+        const plate = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.32, 0.32), new THREE.MeshStandardMaterial({ color: 0xd4a640, emissive: 0xff8a20, emissiveIntensity: 0.8 }));
+        plate.position.set(0.4, 1.3, 0);
+        g.add(handle, headM, plate);
+        g.rotation.x = 0.9;
+        g.position.set(0.1, -0.1, 0.55);
+      } else {
+        const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 1.5, 14), new THREE.MeshStandardMaterial({ color: 0x2f3a2a, roughness: 0.55, metalness: 0.4 }));
+        tube.rotation.x = Math.PI / 2;
+        const mouthM = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.05, 8, 16), new THREE.MeshStandardMaterial({ color: 0xb91c1c, emissive: 0xff3b1a, emissiveIntensity: 0.9 }));
+        mouthM.position.z = 0.75;
+        g.add(tube, mouthM);
+        g.position.set(0.05, 0.35, 0.3);
+      }
+      return g;
+    };
+    const giveWeapon = (f, kind) => {
+      if (f.weapon) f.mesh.userData.rightArmGroup.remove(f.weapon.mesh);
+      const mesh = makeWeaponMesh(kind);
+      f.mesh.userData.rightArmGroup.add(mesh);
+      f.weapon = { kind, uses: kind === 'hammer' ? 5 : 3, cd: 0, mesh, swing: 0 };
+    };
+    const dropWeapon = f => {
+      if (!f.weapon) return;
+      f.mesh.userData.rightArmGroup.remove(f.weapon.mesh);
+      f.weapon = null;
+      f.mesh.userData.rightArmGroup.rotation.x = 0;
+    };
+    const forwardOf = f => {
+      const r = f.mesh.rotation.y;
+      return [Math.sin(r), Math.cos(r)];
+    };
+    const useWeapon = f => {
+      const w = f.weapon;
+      if (!w || w.cd > 0) return false;
+      const [fx0, fz0] = forwardOf(f);
+      const p = f.mesh.position;
+      if (w.kind === 'hammer') {
+        w.cd = 0.45;
+        w.swing = 0.3;
+        sfx.play('smash', f.isLocal ? 0.9 : volAt(p) * 0.5);
+        burst(p.x + fx0 * 3, 0.8, p.z + fz0 * 3, '#ffb347', 10, 8);
+        fighters.forEach(o => {
+          if (o.id === f.id) return;
+          const dx = o.mesh.position.x - p.x, dz = o.mesh.position.z - p.z;
+          const d = Math.hypot(dx, dz);
+          if (d < 5.8 && d > 0.01 && (dx * fx0 + dz * fz0) / d > 0.35) {
+            launch(o, f, dx / d, dz / d, 15, 11, 18);
+          }
+        });
+      } else {
+        w.cd = 0.7;
+        const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 10), new THREE.MeshBasicMaterial({ color: 0xffb070 }));
+        mesh.position.set(p.x + fx0 * 2.2, p.y + 1.6, p.z + fz0 * 2.2);
+        scene.add(mesh);
+        projectiles.push({ mesh, owner: f, vx: fx0 * 38, vz: fz0 * 38, life: 1.3 });
+        sfx.play('swarm', f.isLocal ? 0.7 : volAt(p) * 0.4);
+        if (f.isLocal) fx.shake = Math.min(1.6, fx.shake + 0.25);
+      }
+      w.uses -= 1;
+      if (w.uses <= 0) setTimeout(() => dropWeapon(f), 350);
+      return true;
+    };
+    const explode = (x, z, owner) => {
+      triggerShockwave(x, z, 0xff6a2a, 7);
+      burst(x, 1, z, '#ff6a2a', 26, 16);
+      burst(x, 1, z, '#ffd27a', 12, 10);
+      sfx.play('crit', owner.isLocal ? 1 : volAt(new THREE.Vector3(x, 0, z)) * 0.7);
+      fighters.forEach(o => {
+        if (o.id === owner.id) return;
+        const dx = o.mesh.position.x - x, dz = o.mesh.position.z - z;
+        const d = Math.hypot(dx, dz);
+        if (d < 6.5) {
+          const nx = d > 0.01 ? dx / d : 1, nz = d > 0.01 ? dz / d : 0;
+          launch(o, owner, nx, nz, 9 + 9 * (1 - d / 6.5), 10, 16);
+        }
+      });
+      const lp = localFighter.mesh.position;
+      if (Math.hypot(lp.x - x, lp.z - z) < 14) fx.shake = Math.min(1.6, fx.shake + 0.6);
+    };
+
     const powerups = [];
     const spawnPowerup = () => {
       if (powerups.length >= 3) return;
@@ -2026,6 +2089,7 @@ function App() {
       if (type.id === 'burger') f.buffs.speed = 7;
       if (type.id === 'diamond') f.buffs.armor = 8;
       if (type.id === 'rocket') f.buffs.pump = 6;
+      if (type.id === 'hammer' || type.id === 'launcher') giveWeapon(f, type.id);
       if (type.id === 'gift') {
         addMinionToFighter(f);
         addMinionToFighter(f);
@@ -2516,6 +2580,10 @@ function App() {
       }
       actionTriggerRef.current.call = false;
 
+      if (actionTriggerRef.current.smash && localFighter.weapon && !frozen) {
+        useWeapon(localFighter);
+        actionTriggerRef.current.smash = false;
+      }
       if (actionTriggerRef.current.smash && cdState.smash <= 0) {
         cdState.smash = 4.0;
         netEvent = 'smash';
@@ -2557,6 +2625,27 @@ function App() {
         if (f.punchCd > 0) f.punchCd -= dt;
         if (f.squash > 0) f.squash = Math.max(0, f.squash - dt * 4);
         if (f.respawnLock > 0) f.respawnLock -= dt;
+        if (f.weapon) {
+          if (f.weapon.cd > 0) f.weapon.cd -= dt;
+          if (f.weapon.swing > 0) {
+            f.weapon.swing -= dt;
+            f.mesh.userData.rightArmGroup.rotation.x = -Math.sin((f.weapon.swing / 0.3) * Math.PI) * 1.6;
+          } else {
+            f.mesh.userData.rightArmGroup.rotation.x = 0;
+          }
+          if (f.isBot && !frozen && f.stun <= 0) {
+            let near = null, nd = 999;
+            fighters.forEach(o => {
+              if (o.id === f.id) return;
+              const d = o.mesh.position.distanceTo(f.mesh.position);
+              if (d < nd) { nd = d; near = o; }
+            });
+            if (near && ((f.weapon.kind === 'hammer' && nd < 5) || (f.weapon.kind === 'launcher' && nd < 26 && nd > 5))) {
+              f.mesh.rotation.y = Math.atan2(near.mesh.position.x - f.mesh.position.x, near.mesh.position.z - f.mesh.position.z);
+              if (Math.random() < 0.08) useWeapon(f);
+            }
+          }
+        }
         if (f.buffs.speed > 0) f.buffs.speed -= dt;
         if (f.buffs.armor > 0) f.buffs.armor -= dt;
         if (f.buffs.pump > 0) f.buffs.pump -= dt;
@@ -2838,6 +2927,7 @@ function App() {
           f.fallSnd = false;
           f.pounding = false;
           f.jumps = 2;
+          dropWeapon(f);
           if (f.isLocal) stats.falls += 1;
           if (f.isLocal) announceNow('YOU GOT LIQUIDATED 💀', '#ef4444');
 
@@ -2863,6 +2953,20 @@ function App() {
       });
 
       fighters.filter(f => f.removeMe).forEach(removeFighter);
+
+      for (let i = projectiles.length - 1; i >= 0; i--) {
+        const pr = projectiles[i];
+        pr.mesh.position.x += pr.vx * dt;
+        pr.mesh.position.z += pr.vz * dt;
+        pr.life -= dt;
+        if (Math.random() < 0.8) burst(pr.mesh.position.x, pr.mesh.position.y, pr.mesh.position.z, '#ffb070', 1, 0.8);
+        const hit = fighters.find(o => o.id !== pr.owner.id && Math.hypot(o.mesh.position.x - pr.mesh.position.x, o.mesh.position.z - pr.mesh.position.z) < 1.9);
+        if (hit || pr.life <= 0) {
+          explode(pr.mesh.position.x, pr.mesh.position.z, pr.owner);
+          scene.remove(pr.mesh);
+          projectiles.splice(i, 1);
+        }
+      }
 
       for (let i = particles.length - 1; i >= 0; i--) {
         const pt = particles[i];
@@ -2974,6 +3078,7 @@ function App() {
         if (b.speed > 0) hud.push(`🍔 ${b.speed.toFixed(0)}s`);
         if (b.armor > 0) hud.push(`💎 ${b.armor.toFixed(0)}s`);
         if (b.pump > 0) hud.push(`🚀 ${b.pump.toFixed(0)}s`);
+        if (localFighter.weapon) hud.push(`${localFighter.weapon.kind === 'hammer' ? '🔨' : '🧨'} x${localFighter.weapon.uses} · E`);
         setBuffHud(hud);
         let nearest = 999;
         fighters.forEach(o => {
