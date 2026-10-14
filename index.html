@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#050816" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>NGMI Pandas: 3D Gang Beatdown</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- React & ReactDOM -->
@@ -16,7 +18,14 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet" />
   <style>
-    body { font-family: 'Rubik', system-ui, sans-serif; }
+    html, body { height: 100%; overscroll-behavior: none; background: #050816; }
+    body { font-family: 'Rubik', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+    .game-layer { touch-action: none; -webkit-user-select: none; user-select: none; }
+    .safe-top { padding-top: max(10px, env(safe-area-inset-top)); }
+    .safe-bottom { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+    .safe-x { padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
+    .touch-btn { transition: transform 0.06s; }
+    .touch-btn:active { transform: scale(0.9); }
     .font-game { font-family: 'Bungee', 'Arial Black', sans-serif; }
     .game-title {
       font-family: 'Bungee', 'Arial Black', sans-serif;
@@ -68,7 +77,7 @@
   </style>
 </head>
 <body class="bg-[#04060e] text-white overflow-hidden m-0 p-0">
-  <div id="root" class="w-screen h-screen"></div>
+  <div id="root" class="w-screen" style="height:100dvh"></div>
 
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
@@ -340,6 +349,8 @@ const sfx = (() => {
 })();
 
 const MATCH_SECONDS = 180;
+const IS_TOUCH = typeof window !== 'undefined' && ((window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window);
+const IS_SMALL = () => window.innerWidth < 768 || window.innerHeight < 500;
 const CD_MAX = { call: 5.5, smash: 4, swarm: 7 };
 
 const POWERUPS = [
@@ -453,7 +464,7 @@ function LobbyBackdrop() {
     }
     const size = () => [el.clientWidth || window.innerWidth, el.clientHeight || window.innerHeight];
     let [w, h] = size();
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_TOUCH ? 1 : 1.5));
     renderer.setSize(w, h);
     el.appendChild(renderer.domElement);
 
@@ -561,7 +572,7 @@ function PandaPreview({ config }) {
     } catch (e) {
       return undefined;
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_TOUCH ? 1.25 : 2));
     renderer.setSize(w, h);
     el.appendChild(renderer.domElement);
 
@@ -612,7 +623,7 @@ function PandaPreview({ config }) {
   return (
     <div
       ref={ref}
-      className="w-full h-44 rounded-xl overflow-hidden mb-3"
+      className="w-full h-36 sm:h-44 rounded-xl overflow-hidden mb-3"
       style={{ background: `radial-gradient(circle at 50% 75%, ${config.accent}55, rgba(2,6,23,0.6) 70%)` }}
     />
   );
@@ -963,6 +974,9 @@ function App() {
   const [announce, setAnnounce] = useState(null);
   const [buffHud, setBuffHud] = useState([]);
   const flashRef = useRef(null);
+  const joyBaseRef = useRef(null);
+  const joyKnobRef = useRef(null);
+  const joyPtrRef = useRef(null);
   const mountRef = useRef(null);
   const mqttClientRef = useRef(null);
   const remotePlayersRef = useRef({});
@@ -1007,12 +1021,23 @@ function App() {
     scene.fog = new THREE.FogExp2(0x04060e, 0.0085);
 
     const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 400);
+    const camCfg = { zoom: 1, follow: 0.65, look: 0.45 };
+    const fitCamera = (w, h) => {
+      const portrait = w / h < 1;
+      camera.fov = portrait ? 62 : w < 900 ? 56 : 50;
+      camCfg.zoom = portrait ? 1.3 : 1;
+      camCfg.follow = portrait ? 1 : 0.65;
+      camCfg.look = portrait ? 1 : 0.45;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    };
+    fitCamera(width, height);
     camera.position.set(0, 28, 34);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_TOUCH ? 1.5 : 2));
+    renderer.shadowMap.enabled = !IS_TOUCH;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
@@ -1673,6 +1698,12 @@ function App() {
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     sfx.startMusic();
+    const blockGesture = ev => {
+      if (ev.target && ev.target.closest && ev.target.closest('[data-scroll]')) return;
+      ev.preventDefault();
+    };
+    document.addEventListener('gesturestart', blockGesture);
+    document.addEventListener('touchmove', blockGesture, { passive: false });
 
     const animate = (now) => {
       animationFrameId = requestAnimationFrame(animate);
@@ -2268,16 +2299,16 @@ function App() {
         }
       }
 
-      const camTargetX = localFighter.mesh.position.x * 0.65;
-      const camTargetZ = localFighter.mesh.position.z * 0.65 + 29;
-      const camTargetY = localFighter.swarmTimer > 0 ? 22 : 27;
+      const camTargetX = localFighter.mesh.position.x * camCfg.follow;
+      const camTargetZ = localFighter.mesh.position.z * camCfg.follow + 29 * camCfg.zoom;
+      const camTargetY = (localFighter.swarmTimer > 0 ? 22 : 27) * camCfg.zoom;
       camera.position.x += (camTargetX - camera.position.x) * 5 * dt;
       camera.position.z += (camTargetZ - camera.position.z) * 5 * dt;
       camera.position.y += (camTargetY - camera.position.y) * 4 * dt;
       camera.lookAt(
-        localFighter.mesh.position.x * 0.45,
+        localFighter.mesh.position.x * camCfg.look,
         1.0,
-        localFighter.mesh.position.z * 0.45 - 3
+        localFighter.mesh.position.z * camCfg.look - 3
       );
 
       if (now - lastNetBroadcast > 100 || netEvent) {
@@ -2361,18 +2392,21 @@ function App() {
       if (!mountRef.current) return;
       const w = mountRef.current.clientWidth || window.innerWidth;
       const h = mountRef.current.clientHeight || window.innerHeight;
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
+      fitCamera(w, h);
       renderer.setSize(w, h);
     };
     window.addEventListener('resize', handleResize);
+    window.addEventListener('orientationchange', handleResize);
 
     return () => {
       cancelAnimationFrame(animationFrameId);
       sfx.stopMusic();
+      document.removeEventListener('gesturestart', blockGesture);
+      document.removeEventListener('touchmove', blockGesture);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('orientationchange', handleResize);
       if (mqttClientRef.current) {
         try {
           mqttClientRef.current.end();
@@ -2383,7 +2417,7 @@ function App() {
   }, [screen, roomCode, selectedClass, playerName, fillWithBots, matchId]);
 
   return (
-    <div className="relative w-full h-screen bg-[#04060e] text-white font-sans overflow-hidden select-none">
+    <div className="relative w-full h-full bg-[#04060e] text-white overflow-hidden select-none">
       <div ref={mountRef} className="absolute inset-0 w-full h-full" />
 
       {screen === 'lobby' && (
@@ -2391,11 +2425,11 @@ function App() {
           <LobbyBackdrop />
           <div className="absolute inset-0 bg-gradient-to-b from-[#050816]/70 via-[#050816]/35 to-[#050816]/90 pointer-events-none" />
 
-          <div className="relative h-full overflow-y-auto">
-            <div className="min-h-full flex flex-col items-center px-4 py-6 md:py-10">
+          <div className="relative h-full overflow-y-auto safe-top safe-bottom">
+            <div className="min-h-full flex flex-col items-center px-4 pt-6 pb-32 md:py-10">
               <header className="text-center select-none">
                 <div className="kicker text-[11px] md:text-xs font-black text-emerald-300">NGMI PANDAS</div>
-                <h1 className="game-title text-6xl md:text-8xl mt-2">BEATDOWN</h1>
+                <h1 className="game-title text-[15vw] sm:text-7xl md:text-8xl mt-2">BEATDOWN</h1>
                 <p className="tagline text-slate-200 text-sm md:text-lg mt-4 font-semibold">
                   Gang up. Pump their <span className="text-amber-300 font-black">%</span>. Ring them out.
                 </p>
@@ -2407,7 +2441,7 @@ function App() {
                     <span className="font-game text-sm text-white">CHOOSE YOUR PANDA</span>
                     <span className="flex-1 h-px bg-gradient-to-r from-slate-500/60 to-transparent" />
                   </div>
-                  <div className="stagger grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
+                  <div className="stagger flex overflow-x-auto snap-x snap-mandatory gap-3 pt-3 pb-3 -mx-4 px-4 sm:grid sm:grid-cols-2 xl:grid-cols-4 sm:overflow-visible sm:mx-0 sm:px-0 sm:gap-3.5">
                     {PANDA_CLASSES.map(c => {
                       const isSelected = selectedClass.id === c.id;
                       const stats = [
@@ -2419,7 +2453,7 @@ function App() {
                         <div
                           key={c.id}
                           onClick={() => setSelectedClass(c)}
-                          className={`card glass p-3 rounded-2xl border-2 cursor-pointer ${isSelected ? 'selected' : 'border-slate-800 hover:border-slate-600'}`}
+                          className={`card glass p-3 rounded-2xl border-2 cursor-pointer shrink-0 w-[74vw] max-w-[300px] snap-center sm:w-auto sm:max-w-none ${isSelected ? 'selected' : 'border-slate-800 hover:border-slate-600'}`}
                           style={isSelected ? { borderColor: c.accent, boxShadow: `0 0 0 1px ${c.accent}, 0 18px 40px -10px ${c.accent}99` } : undefined}
                         >
                           <PandaPreview config={c} />
@@ -2466,7 +2500,7 @@ function App() {
                       setResults(null);
                       setScreen('playing');
                     }}
-                    className="play-btn w-full py-4 rounded-2xl font-game text-2xl text-slate-950 cursor-pointer"
+                    className="play-btn hidden md:block w-full py-4 rounded-2xl font-game text-2xl text-slate-950 cursor-pointer"
                   >
                     ▶ PLAY
                   </button>
@@ -2500,7 +2534,12 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="border-t border-slate-700/70 pt-3">
+                  <div className="md:hidden border-t border-slate-700/70 pt-3 text-[12px] text-slate-200">
+                    <div className="text-[10px] font-black tracking-widest text-slate-400 mb-1.5">TOUCH CONTROLS</div>
+                    👈 Left thumb anywhere: drag to move<br />👉 Right buttons: Jump · Smash · Gang · Swarm
+                  </div>
+
+                  <div className="hidden md:block border-t border-slate-700/70 pt-3">
                     <div className="text-[10px] font-black tracking-widest text-slate-400 mb-2">CONTROLS</div>
                     <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 items-center text-[12px] text-slate-200">
                       <span className="flex gap-1"><span className="keycap">W</span><span className="keycap">A</span><span className="keycap">S</span><span className="keycap">D</span></span><span>Move</span>
@@ -2521,6 +2560,19 @@ function App() {
               </div>
             </div>
           </div>
+
+          <div className="md:hidden absolute inset-x-0 bottom-0 z-10 px-4 pt-6 safe-bottom bg-gradient-to-t from-[#050816] via-[#050816]/90 to-transparent">
+            <button
+              onClick={() => {
+                sfx.unlock();
+                setResults(null);
+                setScreen('playing');
+              }}
+              className="play-btn w-full py-4 rounded-2xl font-game text-2xl text-slate-950 cursor-pointer"
+            >
+              ▶ PLAY AS {selectedClass.badge}
+            </button>
+          </div>
         </div>
       )}
 
@@ -2530,7 +2582,7 @@ function App() {
 
       {screen === 'playing' && results && (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4">
-          <div className="w-full max-w-lg glass border border-slate-700 rounded-3xl p-6 text-center" style={{ animation: 'fadeUp 0.5s ease-out both' }}>
+          <div data-scroll="1" className="w-full max-w-lg max-h-[92%] overflow-y-auto glass border border-slate-700 rounded-3xl p-4 md:p-6 text-center" style={{ animation: 'fadeUp 0.5s ease-out both' }}>
             <div className="font-game text-4xl md:text-5xl" style={{ color: results.myRank === 1 ? '#facc15' : '#ffffff' }}>
               {results.myRank === 1 ? '🏆 VICTORY' : `#${results.myRank} PLACE`}
             </div>
@@ -2576,9 +2628,9 @@ function App() {
       )}
 
       {screen === 'playing' && announce && (
-        <div key={announce.id} className="absolute inset-x-0 top-[28%] z-30 pointer-events-none flex justify-center">
+        <div key={announce.id} className="absolute inset-x-0 top-[24%] z-30 pointer-events-none flex justify-center px-4 text-center">
           <div
-            className="text-5xl md:text-7xl font-black tracking-tight animate-bounce"
+            className="font-game text-4xl sm:text-5xl md:text-7xl tracking-tight animate-bounce"
             style={{ color: announce.color, textShadow: `0 0 30px ${announce.color}, 0 6px 0 #000` }}
           >
             {announce.text}
@@ -2587,26 +2639,25 @@ function App() {
       )}
 
       {screen === 'playing' && (
-        <div className="relative z-10 pointer-events-none flex flex-col justify-between w-full h-full p-3 md:p-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="pointer-events-auto bg-slate-950/85 backdrop-blur-md border border-slate-800 rounded-2xl p-3.5 shadow-xl min-w-[230px]">
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <span className="text-xs font-black px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
-                  ROOM: {roomCode}
-                </span>
-                <span className="text-[11px] font-bold text-cyan-300">
-                  ● {netStatus} ({onlinePeersCount} LIVE)
-                </span>
+        <div className="game-layer absolute inset-0 z-10 pointer-events-none safe-top safe-bottom safe-x">
+          {/* ---------- top-left: you ---------- */}
+          <div className="absolute left-0 top-0 safe-top safe-x pointer-events-auto">
+            <div className="glass border border-slate-800 rounded-2xl px-2.5 py-2 md:p-3.5 shadow-xl">
+              <div className="hidden md:flex items-center justify-between gap-3 mb-2">
+                <span className="text-xs font-black px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">ROOM: {roomCode}</span>
+                <span className="text-[11px] font-bold text-cyan-300">● {netStatus} ({onlinePeersCount} LIVE)</span>
               </div>
-              <div className="text-sm font-black text-white truncate">{playerName}</div>
-              <div className="flex items-center gap-4 mt-2 pt-2 border-t border-slate-800/80 text-xs">
-                <div>
-                  <span className="text-slate-400 block text-[10px]">PANDA GANG</span>
-                  <span className="text-lg font-black text-emerald-400">{myGangSize}x 🐼</span>
+              <div className={`md:hidden font-game text-lg leading-none mb-1 ${matchTime <= 30 ? 'text-orange-300 animate-pulse' : 'text-white'}`}>
+                ⏱ {Math.floor(matchTime / 60)}:{String(matchTime % 60).padStart(2, '0')}
+              </div>
+              <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5 md:gap-4 max-w-[104px] md:max-w-none">
+                <div className="leading-none">
+                  <span className="text-slate-400 block text-[9px] md:text-[10px] font-bold">GANG</span>
+                  <span className="text-base md:text-lg font-black text-emerald-400">{myGangSize}🐼</span>
                 </div>
-                <div>
-                  <span className="text-slate-400 block text-[10px]">RING-OUT KOs</span>
-                  <span className="text-lg font-black text-amber-400">{myKos} 💀</span>
+                <div className="leading-none">
+                  <span className="text-slate-400 block text-[9px] md:text-[10px] font-bold">K.O.</span>
+                  <span className="text-base md:text-lg font-black text-amber-400">{myKos}💀</span>
                 </div>
                 <button
                   onClick={() => {
@@ -2614,7 +2665,7 @@ function App() {
                     sfx.setMuted(m);
                     setMuted(m);
                   }}
-                  className="ml-auto px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[13px] cursor-pointer"
+                  className="touch-btn w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-[15px] cursor-pointer"
                   title="Mute (M)"
                 >
                   {muted ? '🔇' : '🔊'}
@@ -2624,120 +2675,179 @@ function App() {
                     setResults(null);
                     setScreen('lobby');
                   }}
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-300 cursor-pointer"
+                  className="touch-btn h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-[11px] font-black text-slate-300 cursor-pointer"
                 >
-                  LOBBY
+                  ✕<span className="hidden md:inline"> LOBBY</span>
                 </button>
-              </div>
-            </div>
-
-            <div className="flex flex-col items-center gap-2 mx-auto">
-              <div className={`font-game text-2xl md:text-3xl px-4 py-0.5 rounded-xl bg-slate-950/85 border ${matchTime <= 30 ? 'border-orange-400 text-orange-300 animate-pulse' : 'border-slate-700 text-white'}`}>
-                {Math.floor(matchTime / 60)}:{String(matchTime % 60).padStart(2, '0')}
-              </div>
-              <div className="px-4 py-1.5 rounded-full bg-slate-950/85 border border-cyan-500/40 text-cyan-300 text-xs font-extrabold tracking-wide shadow-lg">
-                {arenaEventText}
-              </div>
-              {activeBeatdownAlert && (
-                <div className="px-5 py-2 rounded-xl bg-rose-600/90 border-2 border-amber-300 text-white text-sm font-black uppercase tracking-wider animate-bounce shadow-[0_0_25px_rgba(225,29,72,0.8)]">
-                  🔥 {activeBeatdownAlert}
-                </div>
-              )}
-            </div>
-
-            <div className="flex flex-col gap-2 min-w-[240px]">
-              <div className="bg-slate-950/85 backdrop-blur-md border border-slate-800 rounded-2xl p-3 shadow-xl">
-                <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-1.5 flex justify-between">
-                  <span>🏆 TOP PANDA GANGS</span>
-                  <span>GANG / KO</span>
-                </div>
-                <div className="space-y-1">
-                  {leaderboard.slice(0, 6).map((item, idx) => (
-                    <div
-                      key={item.id}
-                      className={`flex items-center justify-between text-xs px-2 py-1 rounded-lg ${
-                        item.isLocal
-                          ? 'bg-emerald-500/25 border border-emerald-400/50 font-black text-white'
-                          : 'text-slate-300'
-                      }`}
-                    >
-                      <span className="truncate max-w-[130px]">
-                        {idx + 1}. {item.name} {item.isBot ? '' : '⚡'}
-                      </span>
-                      <span className="font-mono font-bold text-emerald-300">
-                        {item.gangSize}🐼 / <span className="text-amber-400">{item.kos}💀</span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                {killFeed.map(kf => (
-                  <div
-                    key={kf.id}
-                    className="bg-slate-950/80 border border-slate-800 px-3 py-1 rounded-lg text-[11px] font-bold shadow"
-                    style={{ color: kf.color }}
-                  >
-                    {kf.msg}
-                  </div>
-                ))}
               </div>
             </div>
           </div>
 
-          <div className="flex items-end justify-between gap-4 w-full">
-            <div
-              onPointerDown={e => {
-                const rect = e.currentTarget.getBoundingClientRect();
-                const cx = rect.left + rect.width / 2;
-                const cy = rect.top + rect.height / 2;
-                joystickRef.current = {
-                  active: true,
-                  dx: Math.max(-1, Math.min(1, (e.clientX - cx) / 40)),
-                  dy: Math.max(-1, Math.min(1, (e.clientY - cy) / 40))
-                };
-              }}
-              onPointerMove={e => {
-                if (!joystickRef.current.active) return;
-                const rect = e.currentTarget.getBoundingClientRect();
-                const cx = rect.left + rect.width / 2;
-                const cy = rect.top + rect.height / 2;
-                joystickRef.current.dx = Math.max(-1, Math.min(1, (e.clientX - cx) / 40));
-                joystickRef.current.dy = Math.max(-1, Math.min(1, (e.clientY - cy) / 40));
-              }}
-              onPointerUp={() => {
-                joystickRef.current = { active: false, dx: 0, dy: 0 };
-              }}
-              onPointerLeave={() => {
-                joystickRef.current = { active: false, dx: 0, dy: 0 };
-              }}
-              className="pointer-events-auto w-28 h-28 rounded-full bg-slate-900/75 border-2 border-slate-700 flex items-center justify-center shadow-inner cursor-grab active:cursor-grabbing"
-            >
-              <div className="w-12 h-12 rounded-full bg-emerald-400/80 shadow-lg flex items-center justify-center text-slate-950 font-black text-xs">
-                MOVE
-              </div>
+          {/* ---------- top-centre: timer + event ---------- */}
+          <div className="absolute left-1/2 -translate-x-1/2 top-0 safe-top flex flex-col items-center gap-1.5 w-[38vw] max-w-[170px] md:max-w-none md:w-auto">
+            <div className={`hidden md:block font-game text-xl md:text-3xl px-3 md:px-4 py-0.5 rounded-xl glass border ${matchTime <= 30 ? 'border-orange-400 text-orange-300 animate-pulse' : 'border-slate-700 text-white'}`}>
+              {Math.floor(matchTime / 60)}:{String(matchTime % 60).padStart(2, '0')}
             </div>
+            <div className="max-w-full px-2.5 md:px-4 py-1 rounded-full glass border border-cyan-500/40 text-cyan-300 text-[9px] md:text-xs font-extrabold tracking-wide text-center leading-tight">
+              {arenaEventText}
+            </div>
+            {activeBeatdownAlert && !IS_TOUCH && (
+              <div className="hidden md:block px-5 py-2 rounded-xl bg-rose-600/90 border-2 border-amber-300 text-white text-sm font-black uppercase tracking-wider animate-bounce shadow-[0_0_25px_rgba(225,29,72,0.8)]">
+                🔥 {activeBeatdownAlert}
+              </div>
+            )}
+          </div>
 
-            <div className="flex flex-col items-center mb-1">
-              <div className="flex gap-1 mb-1">
-                {buffHud.map(t => (
-                  <span key={t} className="px-2 py-0.5 rounded-full bg-slate-950/85 border border-cyan-400/50 text-[11px] font-black text-cyan-200">{t}</span>
+          {/* ---------- top-right: leaderboard ---------- */}
+          <div className="absolute right-0 top-0 safe-top safe-x flex flex-col items-end gap-2">
+            <div className="glass border border-slate-800 rounded-2xl p-2 md:p-3 shadow-xl w-[132px] md:w-[240px]">
+              <div className="text-[9px] md:text-[11px] font-black uppercase tracking-wider text-slate-400 mb-1 flex justify-between">
+                <span>🏆 TOP</span>
+                <span className="hidden md:inline">GANG / KO</span>
+              </div>
+              <div className="space-y-0.5 md:space-y-1">
+                {leaderboard.slice(0, IS_SMALL() ? 3 : 6).map((item, idx) => (
+                  <div
+                    key={item.id}
+                    className={`flex items-center justify-between gap-1 text-[10px] md:text-xs px-1.5 md:px-2 py-0.5 md:py-1 rounded-lg ${item.isLocal ? 'bg-emerald-500/25 border border-emerald-400/50 font-black text-white' : 'text-slate-300'}`}
+                  >
+                    <span className="truncate">{idx + 1}. {item.name}</span>
+                    <span className="font-mono font-bold shrink-0">
+                      <span className="hidden md:inline text-emerald-300">{item.gangSize}🐼 / </span>
+                      <span className="text-amber-400">{item.kos}💀</span>
+                    </span>
+                  </div>
                 ))}
               </div>
+            </div>
+            <div className={`${IS_TOUCH ? "hidden" : "hidden md:block"} space-y-1 w-[240px]`}>
+              {killFeed.map(kf => (
+                <div key={kf.id} className="glass border border-slate-800 px-3 py-1 rounded-lg text-[11px] font-bold shadow" style={{ color: kf.color }}>
+                  {kf.msg}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ---------- damage % + buffs ---------- */}
+          <div className={`absolute left-1/2 -translate-x-1/2 flex flex-col items-center ${IS_TOUCH ? 'top-[82px] md:top-[92px]' : 'bottom-6'} safe-top`}>
+            <div className="flex gap-1 mb-1">
+              {buffHud.map(t => (
+                <span key={t} className="px-2 py-0.5 rounded-full glass border border-cyan-400/50 text-[10px] md:text-[11px] font-black text-cyan-200">{t}</span>
+              ))}
+            </div>
+            <div
+              className={`font-game leading-none ${IS_TOUCH ? 'text-3xl md:text-5xl' : 'text-5xl md:text-6xl'}`}
+              style={{
+                color: `rgb(255,${Math.round(255 - Math.min(1, myDmg / 150) * 215)},${Math.round(255 - Math.min(1, myDmg / 75) * 255)})`,
+                textShadow: '0 4px 0 #000, 0 0 18px rgba(0,0,0,0.8)'
+              }}
+            >
+              {myDmg}%
+            </div>
+            <div className="text-[9px] md:text-[10px] font-black tracking-widest text-slate-300">YOUR DAMAGE</div>
+          </div>
+
+          {IS_TOUCH ? (
+            <>
+              {/* ---------- floating joystick: touch anywhere on the left side ---------- */}
               <div
-                className="text-5xl md:text-6xl font-black leading-none"
-                style={{
-                  color: `rgb(255,${Math.round(255 - Math.min(1, myDmg / 150) * 215)},${Math.round(255 - Math.min(1, myDmg / 75) * 255)})`,
-                  textShadow: '0 4px 0 #000, 0 0 18px rgba(0,0,0,0.8)'
+                className="absolute left-0 bottom-0 w-[55%] h-[62%] pointer-events-auto"
+                onPointerDown={e => {
+                  if (joyPtrRef.current !== null) return;
+                  joyPtrRef.current = e.pointerId;
+                  try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const ox = e.clientX - rect.left;
+                  const oy = e.clientY - rect.top;
+                  joystickRef.current = { active: true, dx: 0, dy: 0, ox: e.clientX, oy: e.clientY };
+                  const base = joyBaseRef.current;
+                  if (base) {
+                    base.style.left = `${ox}px`;
+                    base.style.top = `${oy}px`;
+                    base.style.opacity = '1';
+                  }
+                  if (joyKnobRef.current) joyKnobRef.current.style.transform = 'translate(-50%, -50%)';
+                }}
+                onPointerMove={e => {
+                  if (joyPtrRef.current !== e.pointerId) return;
+                  const j = joystickRef.current;
+                  const R = 52;
+                  let dx = e.clientX - j.ox;
+                  let dy = e.clientY - j.oy;
+                  const len = Math.hypot(dx, dy);
+                  if (len > R) {
+                    dx = (dx / len) * R;
+                    dy = (dy / len) * R;
+                  }
+                  j.dx = dx / R;
+                  j.dy = dy / R;
+                  if (joyKnobRef.current) joyKnobRef.current.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+                }}
+                onPointerUp={e => {
+                  if (joyPtrRef.current !== e.pointerId) return;
+                  joyPtrRef.current = null;
+                  joystickRef.current = { active: false, dx: 0, dy: 0 };
+                  if (joyBaseRef.current) {
+                    joyBaseRef.current.style.left = '';
+                    joyBaseRef.current.style.top = '';
+                    joyBaseRef.current.style.opacity = '';
+                  }
+                  if (joyKnobRef.current) joyKnobRef.current.style.transform = 'translate(-50%, -50%)';
+                }}
+                onPointerCancel={e => {
+                  joyPtrRef.current = null;
+                  joystickRef.current = { active: false, dx: 0, dy: 0 };
+                  if (joyBaseRef.current) {
+                    joyBaseRef.current.style.left = '';
+                    joyBaseRef.current.style.top = '';
+                    joyBaseRef.current.style.opacity = '';
+                  }
+                  if (joyKnobRef.current) joyKnobRef.current.style.transform = 'translate(-50%, -50%)';
                 }}
               >
-                {myDmg}%
+                <div
+                  ref={joyBaseRef}
+                  className="absolute w-[120px] h-[120px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/25 bg-slate-900/40 opacity-60"
+                  style={{ left: '90px', top: 'calc(100% - 100px)' }}
+                >
+                  <div
+                    ref={joyKnobRef}
+                    className="absolute left-1/2 top-1/2 w-14 h-14 rounded-full bg-emerald-400/85 border-2 border-white/60 shadow-lg"
+                    style={{ transform: 'translate(-50%, -50%)' }}
+                  />
+                </div>
               </div>
-              <div className="text-[10px] font-black tracking-widest text-slate-300">YOUR DAMAGE</div>
-            </div>
 
-            <div className="pointer-events-auto flex items-end gap-2 md:gap-3">
+              {/* ---------- action cluster (right thumb) ---------- */}
+              <div className="absolute right-0 bottom-0 safe-bottom safe-x pointer-events-auto">
+                <div className="relative w-[196px] h-[196px]">
+                  {[
+                    { key: 'jump', icon: '🦘', label: 'JUMP', cls: 'w-[84px] h-[84px] right-0 bottom-0 bg-sky-500 border-sky-200', cd: 0, max: 1 },
+                    { key: 'smash', icon: '💍', label: 'SMASH', cls: 'w-[66px] h-[66px] right-[92px] bottom-[4px] bg-amber-400 border-yellow-100', cd: cooldowns.smash, max: CD_MAX.smash },
+                    { key: 'swarm', icon: '🔥', label: 'SWARM', cls: 'w-[66px] h-[66px] right-[78px] bottom-[78px] bg-rose-500 border-rose-200', cd: cooldowns.swarm, max: CD_MAX.swarm },
+                    { key: 'call', icon: '📱', label: 'GANG', cls: 'w-[66px] h-[66px] right-[6px] bottom-[96px] bg-emerald-500 border-emerald-200', cd: cooldowns.call, max: CD_MAX.call }
+                  ].map(b => (
+                    <button
+                      key={b.key}
+                      onPointerDown={e => {
+                        e.preventDefault();
+                        actionTriggerRef.current[b.key] = true;
+                      }}
+                      className={`touch-btn absolute rounded-full border-2 shadow-xl flex flex-col items-center justify-center overflow-hidden ${b.cls} ${b.cd > 0 ? 'grayscale brightness-50' : ''}`}
+                    >
+                      <span className="text-2xl leading-none">{b.icon}</span>
+                      <span className="text-[9px] font-black text-slate-950 mt-0.5">{b.label}</span>
+                      {b.cd > 0 && (
+                        <span className="absolute inset-0 flex items-center justify-center font-game text-xl text-white bg-black/40">{Math.ceil(b.cd)}</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="absolute right-0 bottom-0 safe-bottom safe-x pointer-events-auto flex items-end gap-2 md:gap-3">
               {[
                 { key: 'jump', keyLabel: 'SPACE', title: '🦘 JUMP', desc: 'Double jump · dodge smashes · save yourself at the edge', bg: 'bg-sky-500', border: 'border-sky-300', text: 'text-slate-950', cd: 0, max: 1 },
                 { key: 'call', keyLabel: 'R', title: '📱 CALL GANG', desc: 'Recruit nearby grey pandas into your gang', bg: 'bg-emerald-500', border: 'border-emerald-300', text: 'text-slate-950', cd: cooldowns.call, max: CD_MAX.call },
@@ -2747,24 +2857,22 @@ function App() {
                 <button
                   key={b.key}
                   onClick={() => (actionTriggerRef.current[b.key] = true)}
-                  className={`relative overflow-hidden w-[118px] md:w-[150px] text-left px-3 py-2.5 rounded-2xl border-2 transition cursor-pointer ${
+                  className={`relative overflow-hidden w-[118px] lg:w-[150px] text-left px-3 py-2.5 rounded-2xl border-2 transition cursor-pointer ${
                     b.cd > 0 ? 'bg-slate-900/85 border-slate-700 text-slate-400' : `${b.bg} ${b.border} ${b.text} shadow-lg hover:brightness-110`
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-game text-[12px] md:text-[13px] leading-none">{b.title}</span>
+                    <span className="font-game text-[12px] lg:text-[13px] leading-none">{b.title}</span>
                     <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-black/25">{b.keyLabel}</span>
                   </div>
-                  <div className="text-[9.5px] md:text-[10.5px] font-semibold leading-tight mt-1 opacity-90">
+                  <div className="text-[9.5px] lg:text-[10.5px] font-semibold leading-tight mt-1 opacity-90">
                     {b.cd > 0 ? `Ready in ${b.cd}s` : b.desc}
                   </div>
-                  {b.cd > 0 && (
-                    <div className="absolute left-0 bottom-0 h-1 bg-white/60" style={{ width: `${(1 - b.cd / b.max) * 100}%` }} />
-                  )}
+                  {b.cd > 0 && <div className="absolute left-0 bottom-0 h-1 bg-white/60" style={{ width: `${(1 - b.cd / b.max) * 100}%` }} />}
                 </button>
               ))}
             </div>
-          </div>
+          )}
         </div>
       )}
     </div>
