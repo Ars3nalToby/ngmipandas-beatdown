@@ -26,6 +26,8 @@
     .safe-x { padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
     .touch-btn { transition: transform 0.06s; }
     .touch-btn:active { transform: scale(0.9); }
+    .preview-bob { animation: bob 2.4s ease-in-out infinite; }
+    @keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
     .font-game { font-family: 'Bungee', 'Arial Black', sans-serif; }
     .game-title {
       font-family: 'Bungee', 'Arial Black', sans-serif;
@@ -287,33 +289,61 @@ const sfx = (() => {
     }
   };
 
-  // ---------- music: 124 BPM synthwave loop, Am - F - C - G ----------
-  const BPM = 124;
-  const STEP = 60 / BPM / 4;
-  const ROOTS = [55, 43.65, 65.41, 49];
-  const CHORDS = [[0, 3, 7, 10], [0, 4, 7, 11], [0, 4, 7, 9], [0, 4, 7, 10]];
+  // ---------- music: rotating playlist, each song builds in sections ----------
+  const TRACKS = [
+    { name: 'MOON SYNTHWAVE', bpm: 124, roots: [55, 43.65, 65.41, 49], chords: [[0, 3, 7, 10], [0, 4, 7, 11], [0, 4, 7, 9], [0, 4, 7, 10]], kick: [0, 4, 8, 12], snare: [4, 12], bass: [0, 3, 6, 8, 11, 14], bassWave: 'sawtooth', arpWave: 'square', arpEvery: 2, scale: [0, 3, 5, 7, 10] },
+    { name: 'DEGEN BREAKBEAT', bpm: 140, roots: [49, 49, 58.27, 43.65], chords: [[0, 3, 7], [0, 3, 7], [0, 4, 7], [0, 4, 7]], kick: [0, 6, 10], snare: [4, 12, 15], bass: [0, 2, 6, 7, 10, 14], bassWave: 'square', arpWave: 'sawtooth', arpEvery: 1, scale: [0, 2, 3, 5, 7, 8, 10] },
+    { name: 'LO-FI HODL', bpm: 92, roots: [65.41, 55, 43.65, 49], chords: [[0, 4, 7, 11], [0, 3, 7, 10], [0, 4, 7, 11], [0, 4, 7, 10]], kick: [0, 7, 10], snare: [4, 12], bass: [0, 7, 10], bassWave: 'triangle', arpWave: 'triangle', arpEvery: 4, scale: [0, 2, 4, 7, 9], swing: 0.14 },
+    { name: 'BULL RUN DISCO', bpm: 118, roots: [41.2, 46.25, 55, 49], chords: [[0, 4, 7, 10], [0, 3, 7, 10], [0, 3, 7], [0, 4, 7]], kick: [0, 4, 8, 12], snare: [4, 12], openHat: true, bass: [0, 2, 4, 6, 8, 10, 12, 14], octaveJump: true, bassWave: 'sawtooth', arpWave: 'square', arpEvery: 2, scale: [0, 2, 4, 7, 9] }
+  ];
+  const RUSH = { name: 'FINAL RUSH', bpm: 160, roots: [55, 55, 43.65, 49], chords: [[0, 3, 7], [0, 3, 7], [0, 4, 7], [0, 4, 7]], kick: [0, 4, 8, 12], snare: [4, 12], openHat: true, bass: [0, 2, 4, 6, 8, 10, 12, 14], bassWave: 'sawtooth', arpWave: 'sawtooth', arpEvery: 1, scale: [0, 2, 3, 5, 7, 8, 10] };
+  const BARS_PER_SONG = 32;
+  let trackIdx = 0, rush = false, songBar = 0, melody = [], onTrackChange = null;
+  const cur = () => (rush ? RUSH : TRACKS[trackIdx]);
   const semis = (f, n) => f * Math.pow(2, n / 12);
+  const newMelody = tr => {
+    // 8-step phrase from the song's scale; repeats so it becomes a hook
+    melody = Array.from({ length: 8 }, () => (Math.random() < 0.22 ? null : tr.scale[Math.floor(Math.random() * tr.scale.length)] + (Math.random() < 0.3 ? 12 : 0)));
+  };
+  newMelody(TRACKS[0]);
 
   const scheduleStep = (st, t) => {
-    const bar = Math.floor(st / 16) % 4;
+    const tr = cur();
+    const STEP = 60 / tr.bpm / 4;
     const s16 = st % 16;
-    const root = ROOTS[bar];
-    if (s16 % 4 === 0) {
-      tone('sine', 150, 42, 0.26, 0.9, musicBus, t);
+    if (s16 === 0) {
+      songBar++;
+      if (!rush && songBar >= BARS_PER_SONG) {
+        songBar = 0;
+        trackIdx = (trackIdx + 1) % TRACKS.length;
+        newMelody(TRACKS[trackIdx]);
+        if (onTrackChange) onTrackChange(TRACKS[trackIdx].name);
+      } else if (songBar % 8 === 0) {
+        newMelody(tr);
+      }
     }
-    if (s16 === 4 || s16 === 12) {
-      hiss(0.16, 0.35, 'bandpass', 1700, 900, musicBus, t);
+    const bar = Math.floor(st / 16) % 4;
+    const root = tr.roots[bar];
+    const section = songBar < 4 ? 0 : songBar < 12 ? 1 : 2; // intro, build, full
+    const tt = t + (tr.swing && s16 % 2 === 1 ? tr.swing * STEP : 0);
+    const fill = songBar % 8 === 7 && s16 >= 12;
+
+    if (tr.kick.includes(s16) || (rush && s16 % 2 === 0 && songBar % 4 === 3)) tone('sine', 150, 42, 0.26, 0.9, musicBus, tt);
+    if (section > 0 && (tr.snare.includes(s16) || fill)) hiss(fill ? 0.08 : 0.16, fill ? 0.25 : 0.35, 'bandpass', 1700, 900, musicBus, tt);
+    if (s16 % 4 === 2) hiss(tr.openHat ? 0.12 : 0.04, 0.12 + intensity * 0.12, 'highpass', tr.openHat ? 6500 : 8000, null, musicBus, tt);
+    if ((intensity > 0.4 || rush) && s16 % 2 === 1) hiss(0.025, 0.06 + intensity * 0.04, 'highpass', 9000, null, musicBus, tt);
+    if (tr.bass.includes(s16)) {
+      const oct = tr.octaveJump ? (s16 % 4 === 2 ? 2 : 1) : s16 === 6 || s16 === 14 ? 2 : 1;
+      tone(tr.bassWave, root * oct, 0, STEP * 1.6, 0.3, musicBus, tt, 700 + intensity * 900);
     }
-    if (s16 % 4 === 2) hiss(0.04, 0.14 + intensity * 0.12, 'highpass', 8000, null, musicBus, t);
-    if (intensity > 0.4 && s16 % 2 === 1) hiss(0.025, 0.06 * intensity, 'highpass', 9000, null, musicBus, t);
-    if ([0, 3, 6, 8, 11, 14].includes(s16)) {
-      const oct = s16 === 6 || s16 === 14 ? 2 : 1;
-      tone('sawtooth', root * oct, 0, STEP * 1.6, 0.32, musicBus, t, 700 + intensity * 900);
+    if (section > 0 && s16 % tr.arpEvery === 0) {
+      const ch = tr.chords[bar];
+      const note = semis(root * 8, ch[(s16 / tr.arpEvery) % ch.length]);
+      tone(tr.arpWave, note, 0, STEP * 1.2, 0.03 + intensity * 0.03, musicBus, tt, 2600);
     }
-    if (s16 % 2 === 0) {
-      const ch = CHORDS[bar];
-      const note = semis(root * 8, ch[(s16 / 2) % ch.length]);
-      tone('square', note, 0, STEP * 1.2, 0.035 + intensity * 0.035, musicBus, t, 2600);
+    if (section === 2 && s16 % 2 === 0) {
+      const m = melody[(s16 / 2) % 8];
+      if (m !== null) tone('triangle', semis(root * 8, m), 0, STEP * 2.2, 0.07, musicBus, tt, 4200);
     }
   };
 
@@ -321,7 +351,7 @@ const sfx = (() => {
     if (!ctx) return;
     while (nextStepTime < ctx.currentTime + 0.15) {
       scheduleStep(step, nextStepTime);
-      nextStepTime += STEP;
+      nextStepTime += 60 / cur().bpm / 4;
       step++;
     }
   };
@@ -335,10 +365,23 @@ const sfx = (() => {
     },
     isMuted() { return muted; },
     setIntensity(x) { intensity = Math.max(0, Math.min(1, x)); },
+    setRush(on) {
+      if (rush === on) return;
+      rush = on;
+      songBar = 4;
+      newMelody(cur());
+      if (onTrackChange) onTrackChange(cur().name);
+    },
+    onTrack(fn) { onTrackChange = fn; },
+    trackName() { return cur().name; },
     startMusic() {
       if (!ensure() || musicTimer) return;
       nextStepTime = ctx.currentTime + 0.1;
       step = 0;
+      rush = false;
+      songBar = 0;
+      trackIdx = Math.floor(Math.random() * TRACKS.length);
+      newMelody(TRACKS[trackIdx]);
       musicTimer = setInterval(tick, 25);
     },
     stopMusic() {
@@ -514,7 +557,7 @@ function LobbyBackdrop() {
 
     // pandas wandering + hopping on the arena
     const walkers = [];
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < (IS_TOUCH ? 5 : 7); i++) {
       const cls = PANDA_CLASSES[i % PANDA_CLASSES.length];
       const color = i === 0 ? LOCAL_GANG_COLOR : GANG_COLORS[i % GANG_COLORS.length];
       const m = buildNgmiPandaMesh(cls, i > 3, color);
@@ -559,9 +602,64 @@ function LobbyBackdrop() {
 }
 
 // Rotating 3D preview of a panda class for the character select cards
+function makePreviewScene(config, w, h) {
+  const scene = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(34, w / h, 0.1, 100);
+  cam.position.set(0, 3.3, 8.6);
+  cam.lookAt(0, 1.85, 0);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.95));
+  const key = new THREE.DirectionalLight(0xffffff, 1.5);
+  key.position.set(3, 6, 5);
+  scene.add(key);
+  const rim = new THREE.PointLight(config.accent, 3, 22);
+  rim.position.set(-3, 3.5, -2.5);
+  scene.add(rim);
+  const hero = buildNgmiPandaMesh(config, false, config.accent);
+  hero.position.x = -0.5;
+  hero.rotation.y = 0.45;
+  scene.add(hero);
+  const minion = buildNgmiPandaMesh(config, true, config.accent);
+  minion.position.set(1.7, 0, 0.9);
+  minion.rotation.y = -0.5;
+  scene.add(minion);
+  const ped = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.6, 2.8, 0.3, 48),
+    new THREE.MeshStandardMaterial({ color: 0x111827, metalness: 0.7, roughness: 0.35, emissive: config.accent, emissiveIntensity: 0.12 })
+  );
+  ped.position.y = -0.16;
+  scene.add(ped);
+  return { scene, cam, hero, minion };
+}
+
+let previewSnapshots = null;
+function getPreviewSnapshots() {
+  if (previewSnapshots) return previewSnapshots;
+  previewSnapshots = {};
+  let r = null;
+  try {
+    r = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
+    r.setPixelRatio(1);
+    r.setSize(480, 340, false);
+    PANDA_CLASSES.forEach(c => {
+      const { scene, cam } = makePreviewScene(c, 480, 340);
+      r.clear();
+      r.render(scene, cam);
+      previewSnapshots[c.id] = r.domElement.toDataURL('image/png');
+    });
+  } catch (e) {}
+  if (r) {
+    r.dispose();
+    if (r.forceContextLoss) r.forceContextLoss();
+  }
+  return previewSnapshots;
+}
+
+// Rotating 3D preview on desktop; a static snapshot on phones (keeps iOS happy)
 function PandaPreview({ config }) {
   const ref = useRef(null);
+  const [img] = useState(() => (IS_TOUCH ? getPreviewSnapshots()[config.id] : null));
   useEffect(() => {
+    if (IS_TOUCH) return undefined;
     const el = ref.current;
     if (!el) return undefined;
     const w = el.clientWidth || 240;
@@ -572,35 +670,10 @@ function PandaPreview({ config }) {
     } catch (e) {
       return undefined;
     }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_TOUCH ? 1.25 : 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(w, h);
     el.appendChild(renderer.domElement);
-
-    const scene = new THREE.Scene();
-    const cam = new THREE.PerspectiveCamera(34, w / h, 0.1, 100);
-    cam.position.set(0, 3.3, 8.6);
-    cam.lookAt(0, 1.85, 0);
-    scene.add(new THREE.AmbientLight(0xffffff, 0.95));
-    const key = new THREE.DirectionalLight(0xffffff, 1.5);
-    key.position.set(3, 6, 5);
-    scene.add(key);
-    const rim = new THREE.PointLight(config.accent, 3, 22);
-    rim.position.set(-3, 3.5, -2.5);
-    scene.add(rim);
-
-    const hero = buildNgmiPandaMesh(config, false, config.accent);
-    hero.position.x = -0.5;
-    scene.add(hero);
-    const minion = buildNgmiPandaMesh(config, true, config.accent);
-    minion.position.set(1.7, 0, 0.9);
-    scene.add(minion);
-    const ped = new THREE.Mesh(
-      new THREE.CylinderGeometry(2.6, 2.8, 0.3, 48),
-      new THREE.MeshStandardMaterial({ color: 0x111827, metalness: 0.7, roughness: 0.35, emissive: config.accent, emissiveIntensity: 0.12 })
-    );
-    ped.position.y = -0.16;
-    scene.add(ped);
-
+    const { scene, cam, hero, minion } = makePreviewScene(config, w, h);
     let id;
     const loop = t => {
       id = requestAnimationFrame(loop);
@@ -623,9 +696,12 @@ function PandaPreview({ config }) {
   return (
     <div
       ref={ref}
-      className="w-full h-36 sm:h-44 rounded-xl overflow-hidden mb-3"
+      className="w-full h-36 sm:h-44 rounded-xl overflow-hidden mb-3 flex items-center justify-center"
       style={{ background: `radial-gradient(circle at 50% 75%, ${config.accent}55, rgba(2,6,23,0.6) 70%)` }}
-    />
+    >
+      {IS_TOUCH && img && <img src={img} alt={config.name} className="preview-bob h-full w-auto object-contain pointer-events-none" draggable={false} />}
+      {IS_TOUCH && !img && <span className="text-6xl">🐼</span>}
+    </div>
   );
 }
 
@@ -1217,7 +1293,9 @@ function App() {
       const dist = isLocal ? 0 : 16 + (index % 2) * 6;
       const x = Math.cos(startAngle) * dist;
       const z = Math.sin(startAngle) * dist;
-      const gangColor = isLocal ? LOCAL_GANG_COLOR : GANG_COLORS[gangColorIdx++ % GANG_COLORS.length];
+      let hash = 0;
+      for (let k = 0; k < id.length; k++) hash = (hash * 31 + id.charCodeAt(k)) >>> 0;
+      const gangColor = isLocal ? LOCAL_GANG_COLOR : isBot ? GANG_COLORS[gangColorIdx++ % GANG_COLORS.length] : GANG_COLORS[hash % GANG_COLORS.length];
 
       const mesh = buildNgmiPandaMesh(pandaClass, false, gangColor);
       mesh.position.set(x, 0, z);
@@ -1307,22 +1385,22 @@ function App() {
     );
     fighters.push(localFighter);
 
-    if (fillWithBots) {
-      for (let i = 0; i < 7; i++) {
-        const angle = ((i + 1) / 7) * Math.PI * 2;
+    const removeFighter = f => {
+      scene.remove(f.mesh);
+      scene.remove(f.tag.sprite);
+      f.minions.forEach(m => scene.remove(m.mesh));
+      const i = fighters.indexOf(f);
+      if (i !== -1) fighters.splice(i, 1);
+    };
+    const spawnBots = count => {
+      for (let i = 0; i < count; i++) {
+        const angle = ((i + 1) / count) * Math.PI * 2;
         const botClass = PANDA_CLASSES[(i + 1) % PANDA_CLASSES.length];
-        const botFighter = createFighterEntity(
-          `bot_${i}`,
-          RIVAL_NAMES[i % RIVAL_NAMES.length],
-          botClass,
-          false,
-          true,
-          angle,
-          i + 1
-        );
-        fighters.push(botFighter);
+        fighters.push(createFighterEntity(`${myIdRef.current}_b${i}`, RIVAL_NAMES[i % RIVAL_NAMES.length], botClass, false, true, angle, i + 1));
       }
-    }
+    };
+    const net = { isHost: true, remoteSeen: {}, hostId: myIdRef.current };
+    if (fillWithBots) spawnBots(7);
 
     const spawnWildPanda = () => {
       if (wildMinions.length >= 18) return;
@@ -1423,7 +1501,7 @@ function App() {
     // Smash-Bros style knockback: more damage % => flies further and higher
     const launch = (target, attacker, dirX, dirZ, base, upward, dmgAdd) => {
       if (target.respawnLock > 0) return 0;
-      target.dmg = Math.min(999, target.dmg + dmgAdd);
+      if (target.isLocal || target.isBot) target.dmg = Math.min(999, target.dmg + dmgAdd);
       const ratio = attacker.pandaClass.power / target.pandaClass.mass;
       const armor = target.buffs.armor > 0 ? 0.4 : 1;
       const pump = attacker.buffs.pump > 0 ? 1.7 : 1;
@@ -1442,7 +1520,11 @@ function App() {
       } else {
         sfx.play('hit', vol, 0.85 + Math.random() * 0.4);
       }
-      if (!target.isLocal && !target.isBot) return kb; // remote players simulate themselves
+      if (!target.isLocal && !target.isBot) {
+        // remote fighter: its owner applies the knockback with its own %
+        send({ t: 'h', id: myIdRef.current, to: target.id, from: attacker.id, dx: dirX, dz: dirZ, b: base, u: upward, dm: dmgAdd, pw: attacker.pandaClass.power * (attacker.buffs.pump > 0 ? 1.7 : 1), fl: base > 8 ? 1 : 0 });
+        return kb;
+      }
       target.vx += dirX * kb;
       target.vz += dirZ * kb;
       target.vy = Math.max(target.vy, upward + kb * 0.16);
@@ -1548,7 +1630,34 @@ function App() {
     };
 
     let mqttScript = null;
-    const topic = `ngmipandas/beatdown3d/v2/${roomCode.trim().toUpperCase()}`;
+    const topic = `ngmipandas/beatdown3d/v3/${roomCode.trim().toUpperCase()}`;
+    const send = obj => {
+      const c = mqttClientRef.current;
+      if (c && c.connected) {
+        try { c.publish(topic, JSON.stringify(obj)); } catch (e) {}
+      }
+    };
+    const upsertRemote = (id, name, classId) => {
+      let f = fighters.find(x => x.id === id);
+      if (!f) {
+        const pClass = PANDA_CLASSES.find(c => c.id === classId) || PANDA_CLASSES[0];
+        f = createFighterEntity(id, name, pClass, false, false, 0, fighters.length);
+        f.remote = true;
+        fighters.push(f);
+      }
+      net.remoteSeen[id] = performance.now();
+      return f;
+    };
+    const applyRemoteState = (f, d) => {
+      f.targetX = d.x;
+      f.targetY = d.y || 0;
+      f.targetZ = d.z;
+      f.dmg = d.d || 0;
+      f.kos = d.k || 0;
+      const want = Math.min(16, d.m || 0);
+      while (f.minions.length < want) addMinionToFighter(f);
+      while (f.minions.length > want) scene.remove(f.minions.pop().mesh);
+    };
 
     const initMultiplayer = () => {
       if (!window.mqtt) return;
@@ -1567,49 +1676,53 @@ function App() {
       });
 
       client.on('message', (t, payload) => {
+        let data;
         try {
-          const data = JSON.parse(payload.toString());
-          if (!data || data.id === myIdRef.current) return;
+          data = JSON.parse(payload.toString());
+        } catch (err) {
+          return;
+        }
+        if (!data || data.id === myIdRef.current) return;
 
-          remotePlayersRef.current[data.id] = {
-            ...data,
-            lastSeen: performance.now()
+        if (data.t === 's') {
+          // full state from another human (and their bots if they are the host)
+          const isNew = !remotePlayersRef.current[data.id];
+          remotePlayersRef.current[data.id] = { name: data.name, lastSeen: performance.now() };
+          const f = upsertRemote(data.id, data.name, data.c);
+          applyRemoteState(f, data);
+          if (isNew) pushKillFeed(`🟢 ${data.name} joined Room ${roomCode}!`, '#38bdf8');
+          if (data.ev === 'smash') {
+            triggerShockwave(data.x, data.z, f.gangColor, 9);
+            sfx.play('smash', volAt(f.mesh.position) * 0.6);
+          }
+          if (Array.isArray(data.b) && data.id === net.hostId) {
+            data.b.forEach(b => applyRemoteState(upsertRemote(b.i, b.n, b.c), b));
+          }
+          if (data.id === net.hostId && typeof data.left === 'number' && Math.abs(match.left - data.left) > 1.5) {
+            match.left = data.left;
+          }
+        } else if (data.t === 'h') {
+          // someone hit one of MY fighters: I own their physics, so I apply it
+          const target = fighters.find(x => x.id === data.to && (x.isLocal || x.isBot));
+          if (!target) return;
+          const src = fighters.find(x => x.id === data.from);
+          const attacker = {
+            id: data.from,
+            name: src ? src.name : 'Someone',
+            gangColor: src ? src.gangColor : '#ffffff',
+            pandaClass: { power: data.pw || 1 },
+            buffs: { pump: 0 },
+            isLocal: false
           };
-
-          let existing = fighters.find(f => f.id === data.id);
-          if (!existing) {
-            const botIndex = fighters.findIndex(f => f.isBot);
-            if (botIndex !== -1) {
-              const removedBot = fighters[botIndex];
-              scene.remove(removedBot.mesh);
-              removedBot.minions.forEach(m => scene.remove(m.mesh));
-              scene.remove(removedBot.tag.sprite);
-              fighters.splice(botIndex, 1);
-            }
-
-            const pClass = PANDA_CLASSES.find(c => c.id === data.classId) || PANDA_CLASSES[0];
-            existing = createFighterEntity(data.id, data.name, pClass, false, false, 0, fighters.length);
-            fighters.push(existing);
-            pushKillFeed(`🟢 ${data.name} joined Room ${roomCode}!`, '#38bdf8');
-          }
-
-          existing.targetX = data.x;
-          existing.targetZ = data.z;
-          existing.kos = data.kos || 0;
-
-          while (existing.minions.length < (data.minions || 3) && existing.minions.length < 16) {
-            addMinionToFighter(existing);
-          }
-          while (existing.minions.length > (data.minions || 3) && existing.minions.length > 0) {
-            const popped = existing.minions.pop();
-            scene.remove(popped.mesh);
-          }
-
-          if (data.event === 'smash') {
-            triggerShockwave(data.x, data.z, existing.pandaClass.accent, 9);
-            spawnMemeSprite(data.x, 1, data.z, 'GMI SMASH! 🥊', '#facc15');
-          }
-        } catch (err) {}
+          launch(target, attacker, data.dx, data.dz, data.b, data.u, data.dm);
+          if (src) target.lastHitBy = src;
+          if (data.fl && Math.random() < 0.5) flingMinion(target, data.dx, data.dz);
+        } else if (data.t === 'k') {
+          // a fighter owned by someone else got ringed out by one of MINE
+          const killer = fighters.find(x => x.id === data.killer && (x.isLocal || x.isBot));
+          if (killer) creditKO(killer, data.vn, data.vx || 0, data.vz || 0);
+          else pushKillFeed(`💥 ${data.kn}'s gang RINGED OUT ${data.vn}!`, '#facc15');
+        }
       });
     };
 
@@ -1630,6 +1743,26 @@ function App() {
     let powerTimer = 5;
     let animationFrameId;
     let prevTime = performance.now();
+
+    const creditKO = (killer, victimName, vx, vz) => {
+      killer.kos += 1;
+      addMinionToFighter(killer);
+      killer.streak = (killer.streak || 0) + 1;
+      if (killer.isLocal) {
+        setMyKos(killer.kos);
+        fx.shake = 1.6;
+        spawnMemeSprite(vx * 0.7, 3, vz * 0.7, 'K.O.!! 💥', '#facc15');
+        flash(0.35);
+        sfx.play('ko');
+        const STREAKS = { 2: ['DOUBLE K.O.!', '#38bdf8'], 3: ['TRIPLE K.O.!!', '#a855f7'], 4: ['RAMPAGE!!!', '#f97316'], 5: ['UNSTOPPABLE GMI!!!', '#facc15'] };
+        const st = STREAKS[Math.min(killer.streak, 5)];
+        if (st) {
+          announceNow(st[0], st[1]);
+          sfx.play('streak');
+        }
+      }
+      pushKillFeed(`💥 ${killer.name}'s gang RINGED OUT ${victimName}!`, '#facc15');
+    };
 
     // Ring smash shockwave. Airborne targets dodge it (jump to dodge!)
     const doSmash = (attacker, radius, powerMul, label) => {
@@ -1698,6 +1831,7 @@ function App() {
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     sfx.startMusic();
+    sfx.onTrack(name => pushKillFeed(`🎵 Now playing: ${name}`, '#c084fc'));
     const blockGesture = ev => {
       if (ev.target && ev.target.closest && ev.target.closest('[data-scroll]')) return;
       ev.preventDefault();
@@ -1729,6 +1863,7 @@ function App() {
         if (!matchRef.finalRush && match.left <= 30) {
           matchRef.finalRush = true;
           announceNow('FINAL 30s! KNOCKBACK x1.5', '#f97316');
+          sfx.setRush(true);
           setArenaEventText('🔥 FINAL RUSH: EVERY HIT KNOCKS 1.5x FURTHER!');
           sfx.play('streak');
         }
@@ -1996,8 +2131,12 @@ function App() {
             f.vz += ((f.aiDirZ || 0) * botSpeed - f.vz) * 4 * dt;
           }
         } else if (!f.isLocal && f.targetX !== undefined) {
-          f.mesh.position.x += (f.targetX - f.mesh.position.x) * 10 * dt;
-          f.mesh.position.z += (f.targetZ - f.mesh.position.z) * 10 * dt;
+          const ox = f.mesh.position.x, oz = f.mesh.position.z;
+          f.mesh.position.x += (f.targetX - f.mesh.position.x) * 12 * dt;
+          f.mesh.position.z += (f.targetZ - f.mesh.position.z) * 12 * dt;
+          f.mesh.position.y += ((f.targetY || 0) - f.mesh.position.y) * 12 * dt;
+          f.vx = (f.mesh.position.x - ox) / Math.max(dt, 0.001);
+          f.vz = (f.mesh.position.z - oz) / Math.max(dt, 0.001);
         }
 
         if (f.isLocal || f.isBot) {
@@ -2131,6 +2270,7 @@ function App() {
 
         fighters.forEach(enemy => {
           if (enemy.id === f.id) return;
+          if (!enemy.isLocal && !enemy.isBot) return;
           const dx = enemy.mesh.position.x - f.mesh.position.x;
           const dz = enemy.mesh.position.z - f.mesh.position.z;
           const dist = Math.hypot(dx, dz);
@@ -2185,28 +2325,16 @@ function App() {
           m.mesh.rotation.y = f.mesh.rotation.y;
         });
 
-        const fellOut = (f.isLocal || f.isBot)
-          ? f.mesh.position.y < -14
-          : Math.hypot(f.mesh.position.x, f.mesh.position.z) > ARENA_RADIUS + 1.2;
+        const fellOut = (f.isLocal || f.isBot) && f.mesh.position.y < -14;
         if (fellOut) {
           const killer = f.lastHitBy;
           if (killer && killer.id !== f.id) {
-            killer.kos += 1;
-            addMinionToFighter(killer);
-            killer.streak = (killer.streak || 0) + 1;
-            if (killer.isLocal) {
-              setMyKos(killer.kos);
-              fx.shake = 1.6;
-              spawnMemeSprite(f.mesh.position.x * 0.7, 3, f.mesh.position.z * 0.7, 'K.O.!! 💥', '#facc15');
-              flash(0.35);
-              const STREAKS = { 2: ['DOUBLE K.O.!', '#38bdf8'], 3: ['TRIPLE K.O.!!', '#a855f7'], 4: ['RAMPAGE!!!', '#f97316'], 5: ['UNSTOPPABLE GMI!!!', '#facc15'] };
-              const st = STREAKS[Math.min(killer.streak, 5)];
-              if (st) {
-                announceNow(st[0], st[1]);
-                sfx.play('streak');
-              }
+            if (killer.isLocal || killer.isBot) {
+              creditKO(killer, f.name, f.mesh.position.x, f.mesh.position.z);
+            } else {
+              send({ t: 'k', id: myIdRef.current, killer: killer.id, kn: killer.name, vn: f.name, vx: f.mesh.position.x, vz: f.mesh.position.z });
+              pushKillFeed(`💥 ${killer.name}'s gang RINGED OUT ${f.name}!`, '#facc15');
             }
-            pushKillFeed(`💥 ${killer.name}'s gang RINGED OUT ${f.name}!`, '#facc15');
           } else {
             pushKillFeed(`🌌 ${f.name} fell into Deep Space!`, '#f87171');
           }
@@ -2311,23 +2439,16 @@ function App() {
         localFighter.mesh.position.z * camCfg.look - 3
       );
 
-      if (now - lastNetBroadcast > 100 || netEvent) {
+      if (now - lastNetBroadcast > 66 || netEvent) {
         lastNetBroadcast = now;
-        if (mqttClientRef.current && mqttClientRef.current.connected) {
-          mqttClientRef.current.publish(
-            topic,
-            JSON.stringify({
-              id: myIdRef.current,
-              name: playerName,
-              classId: selectedClass.id,
-              x: Number(localFighter.mesh.position.x.toFixed(2)),
-              z: Number(localFighter.mesh.position.z.toFixed(2)),
-              minions: localFighter.minions.length,
-              kos: localFighter.kos,
-              event: netEvent
-            })
-          );
+        const r2 = v => Math.round(v * 100) / 100;
+        const lp = localFighter.mesh.position;
+        const pkt = { t: 's', id: myIdRef.current, name: playerName, c: selectedClass.id, x: r2(lp.x), y: r2(lp.y), z: r2(lp.z), d: Math.round(localFighter.dmg), m: localFighter.minions.length, k: localFighter.kos, ev: netEvent };
+        if (net.isHost) {
+          pkt.left = Math.round(match.left * 10) / 10;
+          pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.pandaClass.id, x: r2(b.mesh.position.x), y: r2(b.mesh.position.y), z: r2(b.mesh.position.z), d: Math.round(b.dmg), m: b.minions.length, k: b.kos }));
         }
+        send(pkt);
       }
 
       if (now - lastHudSync > 200) {
@@ -2353,10 +2474,29 @@ function App() {
         sfx.setIntensity(nearest < 8 || localFighter.swarmTimer > 0 ? 1 : nearest < 16 ? 0.5 : 0.1);
 
         Object.keys(remotePlayersRef.current).forEach(pid => {
-          if (now - remotePlayersRef.current[pid].lastSeen > 8000) {
+          if (now - remotePlayersRef.current[pid].lastSeen > 5000) {
             delete remotePlayersRef.current[pid];
+            pushKillFeed(`🔴 Player left the room`, '#94a3b8');
           }
         });
+        [...fighters].forEach(f => {
+          if (f.remote && now - (net.remoteSeen[f.id] || 0) > 5000) removeFighter(f);
+        });
+        // host = smallest id in the room; only the host runs the AI pandas
+        const peers = Object.keys(remotePlayersRef.current);
+        const hostId = [myIdRef.current, ...peers].sort()[0];
+        net.hostId = hostId;
+        const amHost = hostId === myIdRef.current;
+        if (amHost !== net.isHost) {
+          net.isHost = amHost;
+          if (!amHost) {
+            fighters.filter(f => f.isBot).forEach(removeFighter);
+            pushKillFeed('🔗 Synced with room host', '#38bdf8');
+          }
+        }
+        if (net.isHost && fillWithBots && !fighters.some(f => f.isBot)) {
+          spawnBots(Math.max(0, 7 - peers.length));
+        }
         setOnlinePeersCount(1 + Object.keys(remotePlayersRef.current).length);
 
         const sortedBoard = [...fighters]
@@ -2413,6 +2553,7 @@ function App() {
         } catch (e) {}
       }
       renderer.dispose();
+      if (renderer.forceContextLoss) renderer.forceContextLoss();
     };
   }, [screen, roomCode, selectedClass, playerName, fillWithBots, matchId]);
 
