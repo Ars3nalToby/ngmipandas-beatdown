@@ -1,0 +1,1370 @@
+import React, { useState, useEffect, useRef } from 'react';
+import * as THREE from 'three';
+
+// ============================================================================
+// NGMI PANDAS: 3D MULTIPLAYER GANG BEATDOWN (8-12 PLAYERS REALTIME + AI FILL)
+// ============================================================================
+
+const PANDA_CLASSES = [
+  {
+    id: 'vr_up_only',
+    name: 'UP ONLY VR PANDA #4483',
+    badge: 'BERSERKER LEAD',
+    shirtText: 'BTC / UP ONLY',
+    shirtColor: '#6b3e16',
+    bandanaColor: '#d92626',
+    phoneColor: '#ef4444',
+    accent: '#22c55e',
+    speed: 1.08,
+    mass: 1.15,
+    power: 1.45,
+    desc: 'Green "Up Only" VR Visor + Red Bandana. Exponential crit damage when swarming with 4+ pandas!'
+  },
+  {
+    id: 'street_gm',
+    name: 'FAST FOOD OG PANDA #3663',
+    badge: 'SWARM CALLER',
+    shirtText: 'Fast Food',
+    shirtColor: '#16a34a',
+    hatColor: '#9333ea',
+    glassesColor: '#a855f7',
+    phoneColor: '#b91c1c',
+    accent: '#c084fc',
+    speed: 1.25,
+    mass: 1.0,
+    power: 1.15,
+    desc: 'Purple Shades + Fedora + Fast Food Tee. +40% Phone Recruitment radius & ultra-fast gang sprint!'
+  },
+  {
+    id: 'astro_gmi',
+    name: 'GMI MOON ASTRONAUT #2394',
+    badge: 'HEAVY TITAN',
+    shirtText: 'GMI',
+    shirtColor: '#eab308',
+    helmetColor: '#ca8a04',
+    phoneColor: '#facc15',
+    accent: '#38bdf8',
+    speed: 0.96,
+    mass: 1.85,
+    power: 1.65,
+    desc: 'Golden Metallic GMI Space Suit. Massive knockback resistance & devastating 360° Ring Shockwave!'
+  },
+  {
+    id: 'dark_gmi',
+    name: 'OBSIDIAN GMI ASTRO #4894',
+    badge: 'VOID BREAKER',
+    shirtText: 'Wife Changing',
+    shirtColor: '#ffffff',
+    helmetColor: '#18181b',
+    phoneColor: '#22d3ee',
+    accent: '#22d3ee',
+    speed: 1.05,
+    mass: 1.6,
+    power: 1.55,
+    desc: 'Black Obsidian Helmet with glowing cyan "GMI" visor + Wife Changing Money Tee. Lethal ring-out force!'
+  }
+];
+
+const RIVAL_NAMES = [
+  'PaperHands_99', 'SolanaWhale.sol', 'SweepTheFloor', 'DiamondPaws',
+  '19ETH_Maxi', 'FastFoodKing', 'GMI_Overlord', 'DegensOnly',
+  'MagicEdenSniper', 'ValidatorNode'
+];
+
+const MEME_CALLOUTS = [
+  'UP ONLY! 📈', 'WAGMI! 🚀', 'NGMI REKT! 💀', 'WIFE CHANGING MONEY! 💸',
+  '-1,020 SOL! 💥', 'FLOOR SWEPT! 🧹', 'GMI PUNCH! 🥊', 'FAST FOOD DELIVERY! 🍔',
+  'GANG BEATDOWN! 🔥', 'RING OUT! 🌌'
+];
+
+function createLabelTexture(text, bgColor, textColor, width = 256, height = 128, fontSize = 44, glowColor = null) {
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+
+  if (bgColor !== 'transparent') {
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  ctx.font = `900 ${fontSize}px "Inter", "Arial Black", sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+
+  if (glowColor) {
+    ctx.shadowColor = glowColor;
+    ctx.shadowBlur = 16;
+  }
+
+  ctx.fillStyle = textColor;
+  const lines = text.split('\n');
+  lines.forEach((line, idx) => {
+    const yOffset = (idx - (lines.length - 1) / 2) * (fontSize * 1.05);
+    ctx.fillText(line, width / 2, height / 2 + yOffset);
+  });
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+function buildNgmiPandaMesh(config, isMinion = false) {
+  const root = new THREE.Group();
+  const scale = isMinion ? 0.68 : 1.18;
+  root.scale.set(scale, scale, scale);
+
+  const isAstro = config.id === 'astro_gmi' || config.id === 'dark_gmi';
+
+  const whiteFurMat = new THREE.MeshStandardMaterial({
+    color: 0xf1f5f9,
+    roughness: 0.45,
+    metalness: 0.08
+  });
+  const blackFurMat = new THREE.MeshStandardMaterial({
+    color: 0x0f172a,
+    roughness: 0.5,
+    metalness: 0.1
+  });
+
+  const shirtTex = createLabelTexture(
+    isMinion ? (Math.random() > 0.5 ? 'GM' : '19\nETH') : config.shirtText.replace(' ', '\n'),
+    config.shirtColor || '#7c3aed',
+    isAstro && config.id === 'astro_gmi' ? '#16a34a' : '#f8fafc',
+    256,
+    256,
+    46
+  );
+
+  const torsoMat = new THREE.MeshStandardMaterial({
+    map: shirtTex,
+    roughness: isAstro ? 0.22 : 0.6,
+    metalness: isAstro ? 0.78 : 0.12
+  });
+
+  const torsoGeo = new THREE.CylinderGeometry(0.68, 0.82, 1.38, 20);
+  const torso = new THREE.Mesh(torsoGeo, torsoMat);
+  torso.position.y = 0.95;
+  torso.castShadow = true;
+  root.add(torso);
+
+  if (isAstro) {
+    const collarGeo = new THREE.TorusGeometry(0.66, 0.18, 12, 24);
+    const collarMat = new THREE.MeshStandardMaterial({
+      color: config.helmetColor,
+      roughness: 0.2,
+      metalness: 0.85
+    });
+    const collar = new THREE.Mesh(collarGeo, collarMat);
+    collar.rotation.x = Math.PI / 2;
+    collar.position.y = 1.62;
+    root.add(collar);
+  }
+
+  const headGroup = new THREE.Group();
+  headGroup.position.y = 2.08;
+  root.add(headGroup);
+
+  if (isAstro) {
+    const helmetMat = new THREE.MeshStandardMaterial({
+      color: config.helmetColor,
+      roughness: 0.15,
+      metalness: 0.9
+    });
+    const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.78, 28, 24), helmetMat);
+    headGroup.add(helmet);
+
+    const visorTex = createLabelTexture(
+      config.id === 'dark_gmi' ? 'GMI' : '',
+      '#050814',
+      '#22d3ee',
+      256,
+      128,
+      58,
+      '#22d3ee'
+    );
+    const visorMat = new THREE.MeshStandardMaterial({
+      map: visorTex,
+      color: 0x090d16,
+      roughness: 0.08,
+      metalness: 0.95,
+      emissive: config.id === 'dark_gmi' ? new THREE.Color(0x0891b2) : new THREE.Color(0x000000),
+      emissiveIntensity: 0.45
+    });
+    const visor = new THREE.Mesh(
+      new THREE.SphereGeometry(0.73, 24, 20, -Math.PI * 0.35, Math.PI * 0.7, Math.PI * 0.22, Math.PI * 0.45),
+      visorMat
+    );
+    visor.rotation.y = Math.PI * 0.5;
+    visor.position.z = 0.08;
+    headGroup.add(visor);
+  } else {
+    const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.7, 24, 20), whiteFurMat);
+    headMesh.scale.set(1.06, 0.96, 0.98);
+    headGroup.add(headMesh);
+
+    const earGeo = new THREE.SphereGeometry(0.24, 14, 14);
+    const leftEar = new THREE.Mesh(earGeo, blackFurMat);
+    leftEar.position.set(-0.52, 0.55, -0.05);
+    const rightEar = new THREE.Mesh(earGeo, blackFurMat);
+    rightEar.position.set(0.52, 0.55, -0.05);
+    headGroup.add(leftEar, rightEar);
+
+    const patchGeo = new THREE.SphereGeometry(0.18, 12, 12);
+    patchGeo.scale(1.1, 0.85, 0.4);
+    const leftPatch = new THREE.Mesh(patchGeo, blackFurMat);
+    leftPatch.position.set(-0.24, 0.08, 0.6);
+    const rightPatch = new THREE.Mesh(patchGeo, blackFurMat);
+    rightPatch.position.set(0.24, 0.08, 0.6);
+    headGroup.add(leftPatch, rightPatch);
+
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 10), blackFurMat);
+    nose.position.set(0, -0.06, 0.68);
+    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.09, 0.08), blackFurMat);
+    mouth.position.set(0, -0.24, 0.64);
+    headGroup.add(nose, mouth);
+
+    if (config.id === 'vr_up_only') {
+      const vrTex = createLabelTexture('Up Only', '#031c0d', '#22c55e', 256, 128, 48, '#22c55e');
+      const vrScreenMat = new THREE.MeshBasicMaterial({ map: vrTex });
+      const vrBodyMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.3, metalness: 0.7 });
+      const vrBox = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.42, 0.36), [
+        vrBodyMat, vrBodyMat, vrBodyMat, vrBodyMat, vrScreenMat, vrBodyMat
+      ]);
+      vrBox.position.set(0, 0.12, 0.56);
+      headGroup.add(vrBox);
+
+      const bandanaMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.55 });
+      const bandana = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.74, 0.42, 18), bandanaMat);
+      bandana.position.set(0, -0.34, 0.04);
+      headGroup.add(bandana);
+    } else {
+      const lensMat = new THREE.MeshStandardMaterial({
+        color: config.glassesColor || 0x9333ea,
+        roughness: 0.15,
+        metalness: 0.8,
+        emissive: new THREE.Color(config.glassesColor || 0x9333ea),
+        emissiveIntensity: 0.25
+      });
+      const leftLens = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.08, 18), lensMat);
+      leftLens.rotation.x = Math.PI / 2;
+      leftLens.position.set(-0.25, 0.1, 0.68);
+      const rightLens = leftLens.clone();
+      rightLens.position.x = 0.25;
+      headGroup.add(leftLens, rightLens);
+
+      if (!isMinion) {
+        const hatMat = new THREE.MeshStandardMaterial({ color: config.hatColor || 0x7e22ce, roughness: 0.4 });
+        const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.85, 0.08, 22), hatMat);
+        brim.position.y = 0.52;
+        const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.58, 0.45, 20), hatMat);
+        crown.position.y = 0.75;
+        headGroup.add(brim, crown);
+      }
+    }
+  }
+
+  const leftArmGroup = new THREE.Group();
+  leftArmGroup.position.set(-0.78, 1.35, 0.2);
+  root.add(leftArmGroup);
+
+  const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.19, 0.55, 8, 12), whiteFurMat);
+  leftArm.rotation.x = -Math.PI * 0.35;
+  leftArm.position.set(-0.08, -0.1, 0.28);
+  leftArmGroup.add(leftArm);
+
+  const phoneMat = new THREE.MeshStandardMaterial({
+    color: config.phoneColor || 0xef4444,
+    roughness: 0.2,
+    metalness: 0.8,
+    emissive: new THREE.Color(config.phoneColor || 0xef4444),
+    emissiveIntensity: 0.35
+  });
+  const phone = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.52, 0.06), phoneMat);
+  phone.position.set(-0.12, 0.12, 0.62);
+  phone.rotation.set(-0.25, 0.35, -0.1);
+  leftArmGroup.add(phone);
+
+  const rightArmGroup = new THREE.Group();
+  rightArmGroup.position.set(0.78, 1.35, 0.2);
+  root.add(rightArmGroup);
+
+  const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.21, 0.58, 8, 12), whiteFurMat);
+  rightArm.rotation.x = -Math.PI * 0.42;
+  rightArm.rotation.z = -0.2;
+  rightArm.position.set(0.08, -0.05, 0.34);
+  rightArmGroup.add(rightArm);
+
+  const ringGemMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+  const ringBandMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    metalness: 1.0,
+    roughness: 0.1,
+    emissive: new THREE.Color(0xfacc15),
+    emissiveIntensity: 0.8
+  });
+  const ringMesh = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.035, 10, 18), ringBandMat);
+  ringMesh.position.set(0.14, 0.12, 0.68);
+  const ringSpark = new THREE.Mesh(new THREE.OctahedronGeometry(0.09, 0), ringGemMat);
+  ringSpark.position.set(0.14, 0.18, 0.72);
+  rightArmGroup.add(ringMesh, ringSpark);
+
+  const auraGeo = new THREE.RingGeometry(0.85, 1.05, 32);
+  const auraMat = new THREE.MeshBasicMaterial({
+    color: config.accent || 0x22c55e,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: isMinion ? 0.38 : 0.75
+  });
+  const aura = new THREE.Mesh(auraGeo, auraMat);
+  aura.rotation.x = -Math.PI / 2;
+  aura.position.y = 0.04;
+  root.add(aura);
+
+  root.userData = {
+    headGroup,
+    leftArmGroup,
+    rightArmGroup,
+    ringSpark,
+    auraMat
+  };
+
+  return root;
+}
+
+export default function App() {
+  const [screen, setScreen] = useState('lobby');
+  const [playerName, setPlayerName] = useState(() => `Panda_${Math.floor(100 + Math.random() * 899)}`);
+  const [roomCode, setRoomCode] = useState('NGMI-888');
+  const [selectedClass, setSelectedClass] = useState(PANDA_CLASSES[0]);
+  const [fillWithBots, setFillWithBots] = useState(true);
+  const [netStatus, setNetStatus] = useState('READY');
+  const [copiedNotice, setCopiedNotice] = useState(false);
+
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [myGangSize, setMyGangSize] = useState(4);
+  const [myKos, setMyKos] = useState(0);
+  const [killFeed, setKillFeed] = useState([]);
+  const [activeBeatdownAlert, setActiveBeatdownAlert] = useState(null);
+  const [cooldowns, setCooldowns] = useState({ call: 0, smash: 0, swarm: 0 });
+  const [arenaEventText, setArenaEventText] = useState('MOON ARENA STABLE • RECRUIT & SWARM!');
+  const [onlinePeersCount, setOnlinePeersCount] = useState(1);
+
+  const mountRef = useRef(null);
+  const mqttClientRef = useRef(null);
+  const remotePlayersRef = useRef({});
+  const myIdRef = useRef(`peer_${Math.random().toString(36).slice(2, 9)}`);
+  const keysRef = useRef({});
+  const joystickRef = useRef({ active: false, dx: 0, dy: 0 });
+  const actionTriggerRef = useRef({ call: false, smash: false, swarm: false });
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const roomParam = params.get('room');
+      if (roomParam) setRoomCode(roomParam.toUpperCase());
+    } catch (e) {}
+  }, []);
+
+  const pushKillFeed = (msg, color = '#22c55e') => {
+    const id = Date.now() + Math.random();
+    setKillFeed(prev => [{ id, msg, color }, ...prev.slice(0, 4)]);
+  };
+
+  const handleCopyInvite = () => {
+    const baseUrl = window.location.origin + window.location.pathname;
+    const shareText = `🐼 Join our NGMI PANDAS 3D Gang Beatdown!\nRoom Code: ${roomCode}\nPlay Live: ${baseUrl}?room=${roomCode}`;
+    navigator.clipboard?.writeText(shareText);
+    setCopiedNotice(true);
+    setTimeout(() => setCopiedNotice(false), 2500);
+  };
+
+  useEffect(() => {
+    if (screen !== 'playing' || !mountRef.current) return;
+
+    const container = mountRef.current;
+    const width = container.clientWidth || window.innerWidth;
+    const height = container.clientHeight || window.innerHeight;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x04060e);
+    scene.fog = new THREE.FogExp2(0x04060e, 0.0085);
+
+    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 400);
+    camera.position.set(0, 28, 34);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    container.innerHTML = '';
+    container.appendChild(renderer.domElement);
+
+    const ambientLight = new THREE.AmbientLight(0xcbd5e1, 0.85);
+    scene.add(ambientLight);
+
+    const moonLight = new THREE.DirectionalLight(0x60a5fa, 1.9);
+    moonLight.position.set(-25, 45, -35);
+    moonLight.castShadow = true;
+    moonLight.shadow.mapSize.width = 2048;
+    moonLight.shadow.mapSize.height = 2048;
+    scene.add(moonLight);
+
+    const neonRimLight = new THREE.PointLight(0xa855f7, 2.5, 90);
+    neonRimLight.position.set(25, 18, 20);
+    scene.add(neonRimLight);
+
+    const moonGroup = new THREE.Group();
+    const moonGeo = new THREE.SphereGeometry(26, 48, 48);
+    const moonMat = new THREE.MeshStandardMaterial({
+      color: 0x1d4ed8,
+      emissive: 0x1e3a8a,
+      emissiveIntensity: 0.55,
+      roughness: 0.8
+    });
+    const moonMesh = new THREE.Mesh(moonGeo, moonMat);
+    moonMesh.position.set(0, 18, -78);
+    moonGroup.add(moonMesh);
+
+    const haloGeo = new THREE.RingGeometry(26.5, 31, 64);
+    const haloMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.28
+    });
+    const haloMesh = new THREE.Mesh(haloGeo, haloMat);
+    haloMesh.position.copy(moonMesh.position);
+    moonGroup.add(haloMesh);
+    scene.add(moonGroup);
+
+    const starsGeo = new THREE.BufferGeometry();
+    const starPositions = new Float32Array(900 * 3);
+    for (let i = 0; i < 900 * 3; i += 3) {
+      starPositions[i] = (Math.random() - 0.5) * 260;
+      starPositions[i + 1] = Math.random() * 120 - 20;
+      starPositions[i + 2] = (Math.random() - 0.5) * 260 - 40;
+    }
+    starsGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
+    const stars = new THREE.Points(
+      starsGeo,
+      new THREE.PointsMaterial({ color: 0xe2e8f0, size: 0.55, transparent: true, opacity: 0.8 })
+    );
+    scene.add(stars);
+
+    const ARENA_RADIUS = 34;
+    const arenaGroup = new THREE.Group();
+    scene.add(arenaGroup);
+
+    const floorGeo = new THREE.CylinderGeometry(ARENA_RADIUS, ARENA_RADIUS * 0.92, 2.2, 48);
+    const floorMat = new THREE.MeshStandardMaterial({
+      color: 0x0f172a,
+      roughness: 0.35,
+      metalness: 0.65
+    });
+    const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+    floorMesh.position.y = -1.1;
+    floorMesh.receiveShadow = true;
+    arenaGroup.add(floorMesh);
+
+    const gridHelper = new THREE.PolarGridHelper(ARENA_RADIUS - 0.5, 16, 8, 64, 0x334155, 0x1e293b);
+    gridHelper.position.y = 0.02;
+    arenaGroup.add(gridHelper);
+
+    const edgeRingGeo = new THREE.RingGeometry(ARENA_RADIUS - 0.9, ARENA_RADIUS, 64);
+    const edgeRingMat = new THREE.MeshBasicMaterial({
+      color: 0x22c55e,
+      side: THREE.DoubleSide
+    });
+    const edgeRing = new THREE.Mesh(edgeRingGeo, edgeRingMat);
+    edgeRing.rotation.x = -Math.PI / 2;
+    edgeRing.position.y = 0.04;
+    arenaGroup.add(edgeRing);
+
+    const fighters = [];
+    const wildMinions = [];
+    const shockwaves = [];
+    const floatingMemes = [];
+
+    const createFighterEntity = (id, name, pandaClass, isLocal, isBot, startAngle, index) => {
+      const dist = isLocal ? 0 : 16 + (index % 2) * 6;
+      const x = Math.cos(startAngle) * dist;
+      const z = Math.sin(startAngle) * dist;
+
+      const mesh = buildNgmiPandaMesh(pandaClass, false);
+      mesh.position.set(x, 0, z);
+      scene.add(mesh);
+
+      const minions = [];
+      const initialCount = isLocal ? 4 : 3 + (index % 3);
+      for (let m = 0; m < initialCount; m++) {
+        const mMesh = buildNgmiPandaMesh(pandaClass, true);
+        mMesh.position.set(x + (Math.random() - 0.5) * 3, 0, z + (Math.random() - 0.5) * 3);
+        scene.add(mMesh);
+        minions.push({ mesh: mMesh, angleOffset: (m * Math.PI * 2) / 6, punchTimer: 0 });
+      }
+
+      return {
+        id,
+        name,
+        pandaClass,
+        isLocal,
+        isBot,
+        mesh,
+        minions,
+        vx: 0,
+        vz: 0,
+        kos: 0,
+        swarmTimer: 0,
+        punchAnim: 0,
+        aiTargetId: null,
+        aiTimer: 0,
+        lastHitBy: null
+      };
+    };
+
+    const localFighter = createFighterEntity(
+      myIdRef.current,
+      playerName || 'NGMI_Leader',
+      selectedClass,
+      true,
+      false,
+      0,
+      0
+    );
+    fighters.push(localFighter);
+
+    if (fillWithBots) {
+      for (let i = 0; i < 7; i++) {
+        const angle = ((i + 1) / 7) * Math.PI * 2;
+        const botClass = PANDA_CLASSES[(i + 1) % PANDA_CLASSES.length];
+        const botFighter = createFighterEntity(
+          `bot_${i}`,
+          RIVAL_NAMES[i % RIVAL_NAMES.length],
+          botClass,
+          false,
+          true,
+          angle,
+          i + 1
+        );
+        fighters.push(botFighter);
+      }
+    }
+
+    const spawnWildPanda = () => {
+      if (wildMinions.length >= 18) return;
+      const angle = Math.random() * Math.PI * 2;
+      const r = 5 + Math.random() * (ARENA_RADIUS - 9);
+      const randomClass = PANDA_CLASSES[Math.floor(Math.random() * 2)];
+      const mesh = buildNgmiPandaMesh(randomClass, true);
+      mesh.position.set(Math.cos(angle) * r, 0, Math.sin(angle) * r);
+      scene.add(mesh);
+      wildMinions.push({ mesh, bobOffset: Math.random() * Math.PI * 2 });
+    };
+
+    for (let i = 0; i < 14; i++) spawnWildPanda();
+
+    const triggerShockwave = (x, z, colorHex, maxRadius = 8) => {
+      const geo = new THREE.RingGeometry(0.6, 1.25, 36);
+      const mat = new THREE.MeshBasicMaterial({
+        color: colorHex,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.95
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.set(x, 0.18, z);
+      scene.add(mesh);
+      shockwaves.push({ mesh, mat, scale: 1, maxScale: maxRadius });
+    };
+
+    const spawnMemeSprite = (x, y, z, text, color = '#22c55e') => {
+      const tex = createLabelTexture(text, 'transparent', color, 512, 128, 52, '#000000');
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+      const sprite = new THREE.Sprite(mat);
+      sprite.position.set(x + (Math.random() - 0.5) * 1.5, y + 2.8, z);
+      sprite.scale.set(5.5, 1.4, 1);
+      scene.add(sprite);
+      floatingMemes.push({ sprite, mat, life: 1.0 });
+    };
+
+    const addMinionToFighter = (fighter) => {
+      if (fighter.minions.length >= 16) return;
+      const mMesh = buildNgmiPandaMesh(fighter.pandaClass, true);
+      mMesh.position.copy(fighter.mesh.position);
+      scene.add(mMesh);
+      fighter.minions.push({
+        mesh: mMesh,
+        angleOffset: Math.random() * Math.PI * 2,
+        punchTimer: 0
+      });
+      if (fighter.isLocal) setMyGangSize(fighter.minions.length + 1);
+    };
+
+    let mqttScript = null;
+    const topic = `ngmipandas/beatdown3d/v2/${roomCode.trim().toUpperCase()}`;
+
+    const initMultiplayer = () => {
+      if (!window.mqtt) return;
+      setNetStatus('CONNECTING...');
+      const client = window.mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+        clientId: `ngmi_${myIdRef.current}`,
+        clean: true,
+        connectTimeout: 4000
+      });
+
+      mqttClientRef.current = client;
+
+      client.on('connect', () => {
+        setNetStatus('LIVE ONLINE');
+        client.subscribe(topic);
+      });
+
+      client.on('message', (t, payload) => {
+        try {
+          const data = JSON.parse(payload.toString());
+          if (!data || data.id === myIdRef.current) return;
+
+          remotePlayersRef.current[data.id] = {
+            ...data,
+            lastSeen: performance.now()
+          };
+
+          let existing = fighters.find(f => f.id === data.id);
+          if (!existing) {
+            const botIndex = fighters.findIndex(f => f.isBot);
+            if (botIndex !== -1) {
+              const removedBot = fighters[botIndex];
+              scene.remove(removedBot.mesh);
+              removedBot.minions.forEach(m => scene.remove(m.mesh));
+              fighters.splice(botIndex, 1);
+            }
+
+            const pClass = PANDA_CLASSES.find(c => c.id === data.classId) || PANDA_CLASSES[0];
+            existing = createFighterEntity(data.id, data.name, pClass, false, false, 0, fighters.length);
+            fighters.push(existing);
+            pushKillFeed(`🟢 ${data.name} joined Room ${roomCode}!`, '#38bdf8');
+          }
+
+          existing.targetX = data.x;
+          existing.targetZ = data.z;
+          existing.kos = data.kos || 0;
+
+          while (existing.minions.length < (data.minions || 3) && existing.minions.length < 16) {
+            addMinionToFighter(existing);
+          }
+          while (existing.minions.length > (data.minions || 3) && existing.minions.length > 0) {
+            const popped = existing.minions.pop();
+            scene.remove(popped.mesh);
+          }
+
+          if (data.event === 'smash') {
+            triggerShockwave(data.x, data.z, existing.pandaClass.accent, 9);
+            spawnMemeSprite(data.x, 1, data.z, 'GMI SMASH! 🥊', '#facc15');
+          }
+        } catch (err) {}
+      });
+    };
+
+    if (window.mqtt) {
+      initMultiplayer();
+    } else {
+      mqttScript = document.createElement('script');
+      mqttScript.src = 'https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js';
+      mqttScript.async = true;
+      mqttScript.onload = initMultiplayer;
+      document.body.appendChild(mqttScript);
+    }
+
+    const cdState = { call: 0, smash: 0, swarm: 0 };
+    let lastNetBroadcast = 0;
+    let lastHudSync = 0;
+    let hazardTimer = 0;
+    let animationFrameId;
+    let prevTime = performance.now();
+
+    const onKeyDown = (e) => {
+      const code = e.code;
+      keysRef.current[code] = true;
+      if (code === 'Space') {
+        e.preventDefault();
+        actionTriggerRef.current.call = true;
+      } else if (code === 'KeyE') {
+        actionTriggerRef.current.smash = true;
+      } else if (code === 'KeyQ') {
+        actionTriggerRef.current.swarm = true;
+      }
+    };
+    const onKeyUp = (e) => {
+      keysRef.current[e.code] = false;
+    };
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+
+    const animate = (now) => {
+      animationFrameId = requestAnimationFrame(animate);
+      const dt = Math.min((now - prevTime) / 1000, 0.1);
+      prevTime = now;
+
+      cdState.call = Math.max(0, cdState.call - dt);
+      cdState.smash = Math.max(0, cdState.smash - dt);
+      cdState.swarm = Math.max(0, cdState.swarm - dt);
+
+      hazardTimer += dt;
+      if (hazardTimer > 16) {
+        hazardTimer = 0;
+        spawnWildPanda();
+        spawnWildPanda();
+        const isGravityDrop = Math.random() > 0.5;
+        setArenaEventText(
+          isGravityDrop
+            ? '🌕 FULL MOON AIRDROP: +2 WILD NGMI PANDAS SPAWNED!'
+            : '⚡ LIQUIDATION CANDLE: KNOCKBACK POWER +35%!'
+        );
+      }
+
+      let moveX = 0;
+      let moveZ = 0;
+      if (keysRef.current['KeyW'] || keysRef.current['ArrowUp']) moveZ -= 1;
+      if (keysRef.current['KeyS'] || keysRef.current['ArrowDown']) moveZ += 1;
+      if (keysRef.current['KeyA'] || keysRef.current['ArrowLeft']) moveX -= 1;
+      if (keysRef.current['KeyD'] || keysRef.current['ArrowRight']) moveX += 1;
+
+      if (joystickRef.current.active) {
+        moveX += joystickRef.current.dx;
+        moveZ += joystickRef.current.dy;
+      }
+
+      const moveLen = Math.hypot(moveX, moveZ);
+      if (moveLen > 0.01) {
+        const speedBoost = localFighter.swarmTimer > 0 ? 1.48 : 1.0;
+        const speed = 13.5 * localFighter.pandaClass.speed * speedBoost;
+        localFighter.vx += ((moveX / moveLen) * speed - localFighter.vx) * 10 * dt;
+        localFighter.vz += ((moveZ / moveLen) * speed - localFighter.vz) * 10 * dt;
+      } else {
+        localFighter.vx *= Math.pow(0.08, dt);
+        localFighter.vz *= Math.pow(0.08, dt);
+      }
+
+      let netEvent = null;
+      if (actionTriggerRef.current.call && cdState.call <= 0) {
+        cdState.call = 5.5;
+        const recruitRadius = localFighter.pandaClass.id === 'street_gm' ? 14 : 10;
+        triggerShockwave(localFighter.mesh.position.x, localFighter.mesh.position.z, 0x22c55e, recruitRadius);
+        spawnMemeSprite(localFighter.mesh.position.x, 1.5, localFighter.mesh.position.z, '📱 CALLING THE GANG!', '#4ade80');
+        addMinionToFighter(localFighter);
+
+        for (let i = wildMinions.length - 1; i >= 0; i--) {
+          const wm = wildMinions[i];
+          if (wm.mesh.position.distanceTo(localFighter.mesh.position) <= recruitRadius) {
+            scene.remove(wm.mesh);
+            wildMinions.splice(i, 1);
+            addMinionToFighter(localFighter);
+          }
+        }
+      }
+      actionTriggerRef.current.call = false;
+
+      if (actionTriggerRef.current.smash && cdState.smash <= 0) {
+        cdState.smash = 4.0;
+        localFighter.punchAnim = 0.45;
+        netEvent = 'smash';
+        const px = localFighter.mesh.position.x;
+        const pz = localFighter.mesh.position.z;
+        triggerShockwave(px, pz, 0xfacc15, 11);
+        spawnMemeSprite(px, 1.8, pz, '💍 GMI RING SMASH!', '#facc15');
+
+        fighters.forEach(other => {
+          if (other.id === localFighter.id) return;
+          const dx = other.mesh.position.x - px;
+          const dz = other.mesh.position.z - pz;
+          const dist = Math.hypot(dx, dz);
+          if (dist < 11.5 && dist > 0.01) {
+            const force = ((11.5 - dist) / 11.5) * 36 * (localFighter.pandaClass.power / other.pandaClass.mass);
+            other.vx += (dx / dist) * force;
+            other.vz += (dz / dist) * force;
+            other.lastHitBy = localFighter;
+          }
+        });
+      }
+      actionTriggerRef.current.smash = false;
+
+      if (actionTriggerRef.current.swarm && cdState.swarm <= 0) {
+        cdState.swarm = 7.0;
+        localFighter.swarmTimer = 3.6;
+        triggerShockwave(localFighter.mesh.position.x, localFighter.mesh.position.z, 0xef4444, 9);
+        spawnMemeSprite(localFighter.mesh.position.x, 1.8, localFighter.mesh.position.z, '🔥 360° GANG SWARM!', '#f87171');
+      }
+      actionTriggerRef.current.swarm = false;
+
+      let currentBeatdownBanner = null;
+
+      fighters.forEach((f, idx) => {
+        if (f.swarmTimer > 0) f.swarmTimer -= dt;
+        if (f.punchAnim > 0) f.punchAnim -= dt;
+
+        if (f.isBot) {
+          f.aiTimer -= dt;
+          if (f.aiTimer <= 0) {
+            f.aiTimer = 0.6 + Math.random() * 0.6;
+            const distFromCenter = Math.hypot(f.mesh.position.x, f.mesh.position.z);
+            if (distFromCenter > ARENA_RADIUS - 7) {
+              f.aiDirX = -f.mesh.position.x / distFromCenter;
+              f.aiDirZ = -f.mesh.position.z / distFromCenter;
+            } else {
+              let bestTarget = localFighter;
+              let minDist = 999;
+              fighters.forEach(cand => {
+                if (cand.id === f.id) return;
+                const d = f.mesh.position.distanceTo(cand.mesh.position);
+                if (d < minDist) {
+                  minDist = d;
+                  bestTarget = cand;
+                }
+              });
+              const dx = bestTarget.mesh.position.x - f.mesh.position.x;
+              const dz = bestTarget.mesh.position.z - f.mesh.position.z;
+              const l = Math.hypot(dx, dz) || 1;
+              f.aiDirX = dx / l;
+              f.aiDirZ = dz / l;
+
+              if (minDist < 6.5 && Math.random() < 0.35) {
+                f.punchAnim = 0.35;
+                triggerShockwave(f.mesh.position.x, f.mesh.position.z, f.pandaClass.accent, 6.5);
+              }
+            }
+          }
+          const botSpeed = 9.8 * f.pandaClass.speed;
+          f.vx += ((f.aiDirX || 0) * botSpeed - f.vx) * 4 * dt;
+          f.vz += ((f.aiDirZ || 0) * botSpeed - f.vz) * 4 * dt;
+        } else if (!f.isLocal && f.targetX !== undefined) {
+          f.mesh.position.x += (f.targetX - f.mesh.position.x) * 10 * dt;
+          f.mesh.position.z += (f.targetZ - f.mesh.position.z) * 10 * dt;
+        }
+
+        if (f.isLocal || f.isBot) {
+          f.mesh.position.x += f.vx * dt;
+          f.mesh.position.z += f.vz * dt;
+        }
+
+        if (Math.hypot(f.vx, f.vz) > 0.5) {
+          const targetRot = Math.atan2(f.vx, f.vz);
+          f.mesh.rotation.y = targetRot;
+        }
+
+        const ud = f.mesh.userData;
+        if (ud) {
+          ud.headGroup.position.y = 2.08 + Math.sin(now * 0.008 + idx) * 0.05;
+          ud.rightArmGroup.position.z = f.punchAnim > 0 ? 0.65 : 0.2;
+          ud.ringSpark.rotation.y += 4 * dt;
+        }
+
+        for (let w = wildMinions.length - 1; w >= 0; w--) {
+          if (wildMinions[w].mesh.position.distanceTo(f.mesh.position) < 2.6) {
+            scene.remove(wildMinions[w].mesh);
+            wildMinions.splice(w, 1);
+            addMinionToFighter(f);
+            if (f.isLocal) {
+              spawnMemeSprite(f.mesh.position.x, 1.4, f.mesh.position.z, '+1 PANDA GANG! 🐼', '#4ade80');
+            }
+          }
+        }
+
+        fighters.forEach(enemy => {
+          if (enemy.id === f.id) return;
+          const dx = enemy.mesh.position.x - f.mesh.position.x;
+          const dz = enemy.mesh.position.z - f.mesh.position.z;
+          const dist = Math.hypot(dx, dz);
+
+          if (dist < 5.6 && dist > 0.01) {
+            const gangCount = f.minions.length + 1;
+            const enemyCount = enemy.minions.length + 1;
+
+            const swarmBonus = f.swarmTimer > 0 ? 1.85 : 1.0;
+            const surroundFactor = Math.max(1.0, (gangCount / Math.max(1, enemyCount)) * 1.35) * swarmBonus;
+
+            if (dist < 3.4) {
+              const pushForce = 18 * surroundFactor * (f.pandaClass.power / enemy.pandaClass.mass) * dt;
+              enemy.vx += (dx / dist) * pushForce;
+              enemy.vz += (dz / dist) * pushForce;
+              enemy.lastHitBy = f;
+
+              if (gangCount >= enemyCount + 2 && Math.random() < 0.035) {
+                const callout = MEME_CALLOUTS[Math.floor(Math.random() * MEME_CALLOUTS.length)];
+                spawnMemeSprite(enemy.mesh.position.x, 1.5, enemy.mesh.position.z, callout, '#facc15');
+                triggerShockwave(enemy.mesh.position.x, enemy.mesh.position.z, f.pandaClass.accent, 4.5);
+                if (enemy.minions.length > 0 && Math.random() < 0.45) {
+                  const lost = enemy.minions.pop();
+                  scene.remove(lost.mesh);
+                  if (enemy.isLocal) setMyGangSize(enemy.minions.length + 1);
+                }
+              }
+
+              if ((f.isLocal || enemy.isLocal) && gangCount >= 4) {
+                currentBeatdownBanner = `${f.name} (${gangCount}x Pandas) is SWARMING ${enemy.name}!`;
+              }
+            }
+          }
+        });
+
+        const totalMinions = f.minions.length;
+        f.minions.forEach((m, mIdx) => {
+          const orbitAngle = (now * 0.0032 * (f.swarmTimer > 0 ? 2.2 : 1)) + (mIdx * Math.PI * 2) / Math.max(1, totalMinions);
+          const orbitRadius = f.swarmTimer > 0 ? 3.2 : 2.15 + (mIdx % 2) * 0.75;
+          const targetMX = f.mesh.position.x + Math.cos(orbitAngle) * orbitRadius;
+          const targetMZ = f.mesh.position.z + Math.sin(orbitAngle) * orbitRadius;
+
+          m.mesh.position.x += (targetMX - m.mesh.position.x) * 9 * dt;
+          m.mesh.position.z += (targetMZ - m.mesh.position.z) * 9 * dt;
+          m.mesh.position.y = Math.abs(Math.sin(now * 0.012 + mIdx)) * 0.28;
+          m.mesh.rotation.y = f.mesh.rotation.y;
+        });
+
+        const radialDist = Math.hypot(f.mesh.position.x, f.mesh.position.z);
+        if (radialDist > ARENA_RADIUS + 1.2) {
+          const killer = f.lastHitBy;
+          if (killer && killer.id !== f.id) {
+            killer.kos += 1;
+            addMinionToFighter(killer);
+            if (killer.isLocal) setMyKos(killer.kos);
+            pushKillFeed(`💥 ${killer.name}'s gang RINGED OUT ${f.name}!`, '#facc15');
+          } else {
+            pushKillFeed(`🌌 ${f.name} fell into Deep Space!`, '#f87171');
+          }
+
+          spawnMemeSprite(f.mesh.position.x * 0.85, 2.2, f.mesh.position.z * 0.85, 'LIQUIDATED! 💀', '#ef4444');
+
+          const respawnAngle = Math.random() * Math.PI * 2;
+          f.mesh.position.set(Math.cos(respawnAngle) * 8, 6, Math.sin(respawnAngle) * 8);
+          f.vx = 0;
+          f.vz = 0;
+          f.lastHitBy = null;
+          setTimeout(() => {
+            if (f.mesh) f.mesh.position.y = 0;
+          }, 250);
+        }
+      });
+
+      fighters.forEach(f => {
+        if (f.mesh.position.y > 0) {
+          f.mesh.position.y = Math.max(0, f.mesh.position.y - 22 * dt);
+        }
+      });
+
+      wildMinions.forEach(wm => {
+        wm.mesh.position.y = Math.abs(Math.sin(now * 0.005 + wm.bobOffset)) * 0.25;
+        wm.mesh.rotation.y += 1.2 * dt;
+      });
+
+      for (let i = shockwaves.length - 1; i >= 0; i--) {
+        const sw = shockwaves[i];
+        sw.scale += 26 * dt;
+        sw.mesh.scale.set(sw.scale, sw.scale, 1);
+        sw.mat.opacity -= 1.9 * dt;
+        if (sw.mat.opacity <= 0) {
+          scene.remove(sw.mesh);
+          shockwaves.splice(i, 1);
+        }
+      }
+
+      for (let i = floatingMemes.length - 1; i >= 0; i--) {
+        const fm = floatingMemes[i];
+        fm.sprite.position.y += 3.2 * dt;
+        fm.life -= 0.85 * dt;
+        fm.mat.opacity = Math.max(0, fm.life);
+        if (fm.life <= 0) {
+          scene.remove(fm.sprite);
+          floatingMemes.splice(i, 1);
+        }
+      }
+
+      const camTargetX = localFighter.mesh.position.x * 0.65;
+      const camTargetZ = localFighter.mesh.position.z * 0.65 + 29;
+      const camTargetY = localFighter.swarmTimer > 0 ? 22 : 27;
+      camera.position.x += (camTargetX - camera.position.x) * 5 * dt;
+      camera.position.z += (camTargetZ - camera.position.z) * 5 * dt;
+      camera.position.y += (camTargetY - camera.position.y) * 4 * dt;
+      camera.lookAt(
+        localFighter.mesh.position.x * 0.45,
+        1.0,
+        localFighter.mesh.position.z * 0.45 - 3
+      );
+
+      if (now - lastNetBroadcast > 100 || netEvent) {
+        lastNetBroadcast = now;
+        if (mqttClientRef.current && mqttClientRef.current.connected) {
+          mqttClientRef.current.publish(
+            topic,
+            JSON.stringify({
+              id: myIdRef.current,
+              name: playerName,
+              classId: selectedClass.id,
+              x: Number(localFighter.mesh.position.x.toFixed(2)),
+              z: Number(localFighter.mesh.position.z.toFixed(2)),
+              minions: localFighter.minions.length,
+              kos: localFighter.kos,
+              event: netEvent
+            })
+          );
+        }
+      }
+
+      if (now - lastHudSync > 200) {
+        lastHudSync = now;
+        setCooldowns({
+          call: Number(cdState.call.toFixed(1)),
+          smash: Number(cdState.smash.toFixed(1)),
+          swarm: Number(cdState.swarm.toFixed(1))
+        });
+        setActiveBeatdownAlert(currentBeatdownBanner);
+
+        Object.keys(remotePlayersRef.current).forEach(pid => {
+          if (now - remotePlayersRef.current[pid].lastSeen > 8000) {
+            delete remotePlayersRef.current[pid];
+          }
+        });
+        setOnlinePeersCount(1 + Object.keys(remotePlayersRef.current).length);
+
+        const sortedBoard = [...fighters]
+          .map(f => ({
+            id: f.id,
+            name: f.name,
+            isLocal: f.isLocal,
+            isBot: f.isBot,
+            kos: f.kos,
+            gangSize: f.minions.length + 1,
+            score: f.kos * 100 + (f.minions.length + 1) * 15
+          }))
+          .sort((a, b) => b.score - a.score);
+        setLeaderboard(sortedBoard);
+      }
+
+      renderer.render(scene, camera);
+    };
+
+    animationFrameId = requestAnimationFrame(animate);
+
+    const handleResize = () => {
+      if (!mountRef.current) return;
+      const w = mountRef.current.clientWidth || window.innerWidth;
+      const h = mountRef.current.clientHeight || window.innerHeight;
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('resize', handleResize);
+      if (mqttClientRef.current) {
+        try {
+          mqttClientRef.current.end();
+        } catch (e) {}
+      }
+      renderer.dispose();
+    };
+  }, [screen, roomCode, selectedClass, playerName, fillWithBots]);
+
+  return (
+    <div className="relative w-full h-screen bg-[#04060e] text-white font-sans overflow-hidden select-none">
+      <div ref={mountRef} className="absolute inset-0 w-full h-full" />
+
+      {screen === 'lobby' && (
+        <div className="relative z-20 flex flex-col items-center justify-between w-full h-full overflow-y-auto bg-gradient-to-b from-[#050814]/95 via-[#090d1f]/90 to-[#04060e]/95 p-4 md:p-8">
+          <div className="max-w-5xl w-full text-center mt-2">
+            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-xs font-bold tracking-widest uppercase mb-3">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              SOLANA NFT 3D ARENA • 8-12 PLAYER LIVE MULTIPLAYER
+            </div>
+            <h1 className="text-4xl md:text-6xl font-black tracking-tight bg-gradient-to-r from-emerald-400 via-cyan-300 to-purple-400 bg-clip-text text-transparent drop-shadow-lg">
+              NGMI PANDAS: BEATDOWN 3D
+            </h1>
+            <p className="text-slate-300 text-sm md:text-base mt-2 max-w-2xl mx-auto">
+              Flash your glowing ring, call your panda gang on your smartphone, and 360° surround-beatdown your Discord frens off the GMI Moon Arena!
+            </p>
+          </div>
+
+          <div className="max-w-5xl w-full grid grid-cols-1 md:grid-cols-3 gap-3 my-4 bg-slate-900/90 border border-slate-700/80 rounded-2xl p-4 shadow-2xl">
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                YOUR DISCORD / PANDA HANDLE
+              </label>
+              <input
+                type="text"
+                maxLength={16}
+                value={playerName}
+                onChange={e => setPlayerName(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-bold focus:outline-none focus:border-emerald-400"
+                placeholder="e.g. PandaKing.sol"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                SHARED MULTIPLAYER ROOM CODE
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  maxLength={12}
+                  value={roomCode}
+                  onChange={e => setRoomCode(e.target.value.toUpperCase())}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-emerald-500/50 text-emerald-300 font-black tracking-wider uppercase focus:outline-none focus:border-emerald-400"
+                />
+                <button
+                  onClick={handleCopyInvite}
+                  className="px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-extrabold whitespace-nowrap transition cursor-pointer"
+                >
+                  {copiedNotice ? '✅ COPIED!' : '🔗 COPY INVITE'}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col justify-between">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                LOBBY SLOT MODE (8+ PLAYERS)
+              </label>
+              <button
+                onClick={() => setFillWithBots(!fillWithBots)}
+                className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs border transition cursor-pointer ${
+                  fillWithBots
+                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
+                    : 'bg-slate-800 border-slate-700 text-slate-300'
+                }`}
+              >
+                {fillWithBots
+                  ? '🤖 8-PLAYER FULL ARENA (LIVE FRENS + AI PANDAS)'
+                  : '👥 PURE PVP ONLY (LIVE DISCORD FRENS ONLY)'}
+              </button>
+            </div>
+          </div>
+
+          <div className="max-w-5xl w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 my-2">
+            {PANDA_CLASSES.map(c => {
+              const isSelected = selectedClass.id === c.id;
+              return (
+                <div
+                  key={c.id}
+                  onClick={() => setSelectedClass(c)}
+                  className={`p-4 rounded-2xl border-2 transition cursor-pointer flex flex-col justify-between ${
+                    isSelected
+                      ? 'bg-slate-900/95 border-emerald-400 shadow-[0_0_25px_rgba(34,197,94,0.3)] scale-[1.02]'
+                      : 'bg-slate-900/60 border-slate-800 hover:border-slate-600'
+                  }`}
+                >
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span
+                        className="text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase"
+                        style={{ backgroundColor: `${c.accent}25`, color: c.accent }}
+                      >
+                        {c.badge}
+                      </span>
+                      {isSelected && (
+                        <span className="text-xs font-black text-emerald-400">★ SELECTED</span>
+                      )}
+                    </div>
+                    <h3 className="text-base font-black text-white mb-1">{c.name}</h3>
+                    <p className="text-xs text-slate-400 leading-relaxed mb-3">{c.desc}</p>
+                  </div>
+
+                  <div className="space-y-1.5 text-[11px] border-t border-slate-800 pt-2.5">
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">RING POWER</span>
+                      <span className="font-bold text-amber-400">{Math.round(c.power * 100)}%</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">GANG SPEED</span>
+                      <span className="font-bold text-emerald-400">{Math.round(c.speed * 100)}%</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">ARMOR WEIGHT</span>
+                      <span className="font-bold text-cyan-400">{Math.round(c.mass * 100)}%</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="max-w-xl w-full text-center my-4">
+            <button
+              onClick={() => setScreen('playing')}
+              className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-xl tracking-wider uppercase shadow-[0_0_35px_rgba(34,197,94,0.5)] transition transform active:scale-95 cursor-pointer"
+            >
+              🚀 DROP INTO ROOM [{roomCode}] NOW
+            </button>
+            <p className="text-xs text-slate-400 mt-2">
+              Controls: <strong className="text-white">WASD / Arrows / Touch Drag</strong> to Move •{' '}
+              <strong className="text-emerald-400">[SPACE]</strong> Call Gang •{' '}
+              <strong className="text-amber-400">[E]</strong> Ring Smash •{' '}
+              <strong className="text-rose-400">[Q]</strong> 360° Swarm
+            </p>
+          </div>
+        </div>
+      )}
+
+      {screen === 'playing' && (
+        <div className="relative z-10 pointer-events-none flex flex-col justify-between w-full h-full p-3 md:p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="pointer-events-auto bg-slate-950/85 backdrop-blur-md border border-slate-800 rounded-2xl p-3.5 shadow-xl min-w-[230px]">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <span className="text-xs font-black px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                  ROOM: {roomCode}
+                </span>
+                <span className="text-[11px] font-bold text-cyan-300">
+                  ● {netStatus} ({onlinePeersCount} LIVE)
+                </span>
+              </div>
+              <div className="text-sm font-black text-white truncate">{playerName}</div>
+              <div className="flex items-center gap-4 mt-2 pt-2 border-t border-slate-800/80 text-xs">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">PANDA GANG</span>
+                  <span className="text-lg font-black text-emerald-400">{myGangSize}x 🐼</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">RING-OUT KOs</span>
+                  <span className="text-lg font-black text-amber-400">{myKos} 💀</span>
+                </div>
+                <button
+                  onClick={() => setScreen('lobby')}
+                  className="ml-auto px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-300 cursor-pointer"
+                >
+                  LOBBY
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center gap-2 mx-auto">
+              <div className="px-4 py-1.5 rounded-full bg-slate-950/85 border border-cyan-500/40 text-cyan-300 text-xs font-extrabold tracking-wide shadow-lg">
+                {arenaEventText}
+              </div>
+              {activeBeatdownAlert && (
+                <div className="px-5 py-2 rounded-xl bg-rose-600/90 border-2 border-amber-300 text-white text-sm font-black uppercase tracking-wider animate-bounce shadow-[0_0_25px_rgba(225,29,72,0.8)]">
+                  🔥 {activeBeatdownAlert}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2 min-w-[240px]">
+              <div className="bg-slate-950/85 backdrop-blur-md border border-slate-800 rounded-2xl p-3 shadow-xl">
+                <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 mb-1.5 flex justify-between">
+                  <span>🏆 TOP PANDA GANGS</span>
+                  <span>GANG / KO</span>
+                </div>
+                <div className="space-y-1">
+                  {leaderboard.slice(0, 6).map((item, idx) => (
+                    <div
+                      key={item.id}
+                      className={`flex items-center justify-between text-xs px-2 py-1 rounded-lg ${
+                        item.isLocal
+                          ? 'bg-emerald-500/25 border border-emerald-400/50 font-black text-white'
+                          : 'text-slate-300'
+                      }`}
+                    >
+                      <span className="truncate max-w-[130px]">
+                        {idx + 1}. {item.name} {item.isBot ? '' : '⚡'}
+                      </span>
+                      <span className="font-mono font-bold text-emerald-300">
+                        {item.gangSize}🐼 / <span className="text-amber-400">{item.kos}💀</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                {killFeed.map(kf => (
+                  <div
+                    key={kf.id}
+                    className="bg-slate-950/80 border border-slate-800 px-3 py-1 rounded-lg text-[11px] font-bold shadow"
+                    style={{ color: kf.color }}
+                  >
+                    {kf.msg}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-end justify-between gap-4 w-full">
+            <div
+              onPointerDown={e => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const cx = rect.left + rect.width / 2;
+                const cy = rect.top + rect.height / 2;
+                joystickRef.current = {
+                  active: true,
+                  dx: Math.max(-1, Math.min(1, (e.clientX - cx) / 40)),
+                  dy: Math.max(-1, Math.min(1, (e.clientY - cy) / 40))
+                };
+              }}
+              onPointerMove={e => {
+                if (!joystickRef.current.active) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const cx = rect.left + rect.width / 2;
+                const cy = rect.top + rect.height / 2;
+                joystickRef.current.dx = Math.max(-1, Math.min(1, (e.clientX - cx) / 40));
+                joystickRef.current.dy = Math.max(-1, Math.min(1, (e.clientY - cy) / 40));
+              }}
+              onPointerUp={() => {
+                joystickRef.current = { active: false, dx: 0, dy: 0 };
+              }}
+              onPointerLeave={() => {
+                joystickRef.current = { active: false, dx: 0, dy: 0 };
+              }}
+              className="pointer-events-auto w-28 h-28 rounded-full bg-slate-900/75 border-2 border-slate-700 flex items-center justify-center shadow-inner cursor-grab active:cursor-grabbing"
+            >
+              <div className="w-12 h-12 rounded-full bg-emerald-400/80 shadow-lg flex items-center justify-center text-slate-950 font-black text-xs">
+                MOVE
+              </div>
+            </div>
+
+            <div className="pointer-events-auto flex items-center gap-2.5 md:gap-4">
+              <button
+                onClick={() => (actionTriggerRef.current.call = true)}
+                className={`px-4 py-3.5 rounded-2xl border-2 font-black text-xs md:text-sm uppercase transition cursor-pointer ${
+                  cooldowns.call > 0
+                    ? 'bg-slate-900/80 border-slate-700 text-slate-500'
+                    : 'bg-emerald-500 hover:bg-emerald-400 border-emerald-300 text-slate-950 shadow-[0_0_20px_rgba(34,197,94,0.5)]'
+                }`}
+              >
+                <div className="text-[10px] opacity-80">[SPACE] PHONE</div>
+                <div>{cooldowns.call > 0 ? `${cooldowns.call}s` : '📱 CALL GANG'}</div>
+              </button>
+
+              <button
+                onClick={() => (actionTriggerRef.current.smash = true)}
+                className={`px-4 py-3.5 rounded-2xl border-2 font-black text-xs md:text-sm uppercase transition cursor-pointer ${
+                  cooldowns.smash > 0
+                    ? 'bg-slate-900/80 border-slate-700 text-slate-500'
+                    : 'bg-amber-400 hover:bg-amber-300 border-yellow-200 text-slate-950 shadow-[0_0_20px_rgba(250,204,21,0.5)]'
+                }`}
+              >
+                <div className="text-[10px] opacity-80">[E] POWER RING</div>
+                <div>{cooldowns.smash > 0 ? `${cooldowns.smash}s` : '💍 RING SMASH'}</div>
+              </button>
+
+              <button
+                onClick={() => (actionTriggerRef.current.swarm = true)}
+                className={`px-4 py-3.5 rounded-2xl border-2 font-black text-xs md:text-sm uppercase transition cursor-pointer ${
+                  cooldowns.swarm > 0
+                    ? 'bg-slate-900/80 border-slate-700 text-slate-500'
+                    : 'bg-rose-500 hover:bg-rose-400 border-rose-300 text-white shadow-[0_0_20px_rgba(244,63,94,0.6)]'
+                }`}
+              >
+                <div className="text-[10px] opacity-80">[Q] ALL-IN</div>
+                <div>{cooldowns.swarm > 0 ? `${cooldowns.swarm}s` : '🔥 360° SWARM'}</div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
