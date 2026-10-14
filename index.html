@@ -146,8 +146,63 @@ const PANDA_CLASSES = [
     mass: 1.6,
     power: 1.55,
     desc: 'Black Obsidian Helmet with glowing cyan "GMI" visor + Wife Changing Money Tee. Lethal ring-out force!'
-  }
+  },
+  { id: 'astro_5833', name: 'PICNIC CHECKER ASTRO #5833', badge: 'TABLE FLIPPER', shirtText: 'GMI', shirtColor: '#d32f2f', helmetColor: '#e5e7eb', phoneColor: '#ef4444', accent: '#f87171', speed: 1.1, mass: 1.2, power: 1.4, desc: 'Red-and-white checkered suit straight off the picnic blanket. Fast hands, flips gangs like tables.' },
+  { id: 'astro_1778', name: 'MIDNIGHT ASTRO #1778', badge: 'SHADOW OPS', shirtText: 'GMI', shirtColor: '#111111', helmetColor: '#e5e7eb', phoneColor: '#a3a3a3', accent: '#a78bfa', speed: 1.18, mass: 1.15, power: 1.3, desc: 'All-black stealth suit. Slips through the crowd and lands the ring-out before anyone notices.' },
+  { id: 'astro_8817', name: 'GOLD DUST ASTRO #8817', badge: 'SPARKLE TANK', shirtText: 'GMI', shirtColor: '#1a1712', helmetColor: '#e5e7eb', phoneColor: '#facc15', accent: '#fbbf24', speed: 0.95, mass: 1.75, power: 1.5, desc: 'Black suit dusted in gold glitter. Heavy, shiny, and very hard to push off the moon.' },
+  { id: 'astro_3424', name: 'RED ROCKET ASTRO #3424', badge: 'AFTERBURNER', shirtText: 'GMI', shirtColor: '#c62828', helmetColor: '#e5e7eb', phoneColor: '#f97316', accent: '#fb923c', speed: 1.12, mass: 1.35, power: 1.6, desc: 'Candy-red metallic suit with a glowing chest badge. Hits like a launch.' },
+  { id: 'astro_149', name: 'CHROME ASTRO #149', badge: 'MIRROR GUARD', shirtText: 'GMI', shirtColor: '#9fb4d8', helmetColor: '#e5e7eb', phoneColor: '#93c5fd', accent: '#93c5fd', speed: 1.0, mass: 1.65, power: 1.45, desc: 'Polished chrome suit that reflects the moon. Balanced, sturdy, a reliable gang leader.' },
+  { id: 'astro_997', name: 'LAVENDER ASTRO #997', badge: 'MOON DRIFTER', shirtText: 'GMI', shirtColor: '#8d8aa8', helmetColor: '#e5e7eb', phoneColor: '#c4b5fd', accent: '#c4b5fd', speed: 1.22, mass: 1.05, power: 1.3, desc: 'Soft lavender-grey suit. The quickest astro in the collection, built for hit-and-run.' }
 ];
+
+// Suit look for every astronaut in the collection (helmet + black visor, no face showing)
+const SUITS = {
+  astro_gmi: { color: '#c9a227', metal: 0.95, rough: 0.22, badge: 'GMI', badgeColor: '#4d3a05' },
+  dark_gmi: { shell: '#1c1c21', color: '#151515', metal: 0.15, rough: 0.55, tee: 'wife\nchanging\nmoney', visor: 'GMI' },
+  astro_5833: { color: '#d32f2f', pattern: 'checker', metal: 0, rough: 0.8 },
+  astro_1778: { shell: '#2b2b30', color: '#121212', metal: 0.35, rough: 0.4, badge: 'GMI', badgeColor: '#6b7280' },
+  astro_8817: { color: '#1a1712', pattern: 'glitter', metal: 0.6, rough: 0.35 },
+  astro_3424: { color: '#c62828', metal: 0.85, rough: 0.25, badge: 'GMI', badgeColor: '#fde047', glowBadge: true },
+  astro_149: { color: '#a9bde0', metal: 1, rough: 0.12, badge: 'GMI', badgeColor: '#1e3a8a' },
+  astro_997: { color: '#8d8aa8', metal: 0.15, rough: 0.6, badge: 'GMI', badgeColor: '#ede9fe' }
+};
+
+function makeSuitTexture(suit) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = suit.color;
+  g.fillRect(0, 0, 512, 256);
+  if (suit.pattern === 'checker') {
+    const sq = 32;
+    for (let y = 0; y < 256; y += sq) for (let x = 0; x < 512; x += sq) {
+      if (((x + y) / sq) % 2 === 0) { g.fillStyle = '#f5f5f4'; g.fillRect(x, y, sq, sq); }
+    }
+  } else if (suit.pattern === 'glitter') {
+    for (let i = 0; i < 2600; i++) {
+      g.fillStyle = Math.random() < 0.7 ? '#d4a640' : '#fff1b0';
+      const r = Math.random() * 2.4 + 0.6;
+      g.fillRect(Math.random() * 512, Math.random() * 256, r, r);
+    }
+  }
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  if (suit.tee) {
+    g.fillStyle = '#f4f4f5';
+    g.fillRect(176, 40, 160, 190);
+    g.fillStyle = '#111111';
+    g.font = '800 26px "Rubik", sans-serif';
+    suit.tee.split('\n').forEach((t, i) => g.fillText(t, 256, 100 + i * 34));
+  } else if (suit.badge) {
+    if (suit.glowBadge) { g.shadowColor = suit.badgeColor; g.shadowBlur = 18; }
+    g.fillStyle = suit.badgeColor;
+    g.font = '900 52px "Arial Black", sans-serif';
+    g.fillText(suit.badge, 256, 120);
+    g.shadowBlur = 0;
+  }
+  return srgbTex(new THREE.CanvasTexture(c));
+}
 
 // ============================================================================
 // AUDIO: every sound is synthesised live with WebAudio (no files to load)
@@ -396,7 +451,7 @@ let GFX_CINEMATIC = true;
 function styleRenderer(r) {
   r.outputEncoding = THREE.sRGBEncoding;
   r.toneMapping = THREE.ACESFilmicToneMapping;
-  r.toneMappingExposure = 1.0;
+  r.toneMappingExposure = 0.92;
   return r;
 }
 function srgbTex(t) {
@@ -468,7 +523,7 @@ function createPost(renderer, scene, camera) {
     'c += texture2D(tex, vUv + dir * 3.231).rgb * 0.070; c += texture2D(tex, vUv - dir * 3.231).rgb * 0.070;' +
     'gl_FragColor = vec4(c, 1.0); }');
   const comp = mat(
-    { tScene: { value: null }, tBloom: { value: null }, time: { value: 0 }, res: { value: new THREE.Vector2() }, bloomStrength: { value: 0.7 }, exposure: { value: 1.0 }, flash: { value: 0 } },
+    { tScene: { value: null }, tBloom: { value: null }, time: { value: 0 }, res: { value: new THREE.Vector2() }, bloomStrength: { value: 0.55 }, exposure: { value: 0.88 }, flash: { value: 0 } },
     `uniform sampler2D tScene; uniform sampler2D tBloom; uniform float time; uniform vec2 res; uniform float bloomStrength; uniform float exposure; uniform float flash; varying vec2 vUv;
     vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0); }
     float rnd(vec2 co){ return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453); }
@@ -830,11 +885,11 @@ function LobbyBackdrop() {
 }
 
 // Rotating 3D preview of a panda class for the character select cards
-function makePreviewScene(config, w, h) {
+function makePreviewScene(config, w, h, solo = true) {
   const scene = new THREE.Scene();
   const cam = new THREE.PerspectiveCamera(30, w / h, 0.1, 100);
-  cam.position.set(0.4, 3.0, 8.4);
-  cam.lookAt(0.2, 2.0, 0);
+  cam.position.set(0, 2.7, 10.2);
+  cam.lookAt(0, 2.15, 0);
   scene.add(new THREE.HemisphereLight(0x8fa4d8, 0x2a1d14, 0.55));
   const key = new THREE.DirectionalLight(0xffd2a1, 2.3);
   key.position.set(4, 6, 6);
@@ -849,13 +904,12 @@ function makePreviewScene(config, w, h) {
   rim2.position.set(3, 4.5, -3);
   scene.add(rim2);
   const hero = buildNgmiPandaMesh(config, false, config.accent);
-  hero.position.x = -0.5;
-  hero.rotation.y = 0.45;
+  hero.rotation.y = 0.35;
   scene.add(hero);
   const minion = buildNgmiPandaMesh(config, true, config.accent);
-  minion.position.set(1.7, 0, 0.9);
+  minion.position.set(1.9, 0, 0.9);
   minion.rotation.y = -0.5;
-  scene.add(minion);
+  if (!solo) scene.add(minion);
   const ped = new THREE.Mesh(
     new THREE.CylinderGeometry(2.6, 2.8, 0.3, 64),
     new THREE.MeshStandardMaterial({ color: 0x1a1816, metalness: 0.2, roughness: 0.35, emissive: config.accent, emissiveIntensity: 0.06 })
@@ -886,6 +940,45 @@ function getPreviewSnapshots() {
     if (r.forceContextLoss) r.forceContextLoss();
   }
   return previewSnapshots;
+}
+
+function Showcase({ config }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    const w = el.clientWidth || 360;
+    const h = el.clientHeight || 300;
+    let renderer;
+    try {
+      renderer = styleRenderer(new THREE.WebGLRenderer({ antialias: true, alpha: true }));
+    } catch (e) {
+      return undefined;
+    }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_TOUCH ? 1.5 : 2));
+    renderer.setSize(w, h);
+    el.appendChild(renderer.domElement);
+    const { scene, cam, hero } = makePreviewScene(config, w, h, true);
+    let id;
+    const loop = t => {
+      id = requestAnimationFrame(loop);
+      hero.rotation.y = 0.35 + Math.sin(t * 0.0006) * 0.9;
+      hero.position.y = Math.sin(t * 0.0022) * 0.08;
+      const ud = hero.userData;
+      if (ud && ud.headGroup) ud.headGroup.position.y = 2.08 + Math.sin(t * 0.003) * 0.04;
+      if (ud && ud.rightArmGroup) ud.rightArmGroup.position.z = t % 2200 < 220 ? 0.65 : 0.2;
+      if (ud && ud.ringSpark) ud.ringSpark.rotation.y = t * 0.004;
+      renderer.render(scene, cam);
+    };
+    id = requestAnimationFrame(loop);
+    return () => {
+      cancelAnimationFrame(id);
+      renderer.dispose();
+      if (renderer.forceContextLoss) renderer.forceContextLoss();
+      el.innerHTML = '';
+    };
+  }, [config]);
+  return <div ref={ref} className="absolute inset-0" />;
 }
 
 // Rotating 3D preview on desktop; a static snapshot on phones (keeps iOS happy)
@@ -1025,9 +1118,10 @@ function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
   const scale = isMinion ? 0.62 : 1.5;
   const teamColor = gangColor || config.accent || '#22c55e';
   root.scale.set(scale, scale, scale);
-  const isAstro = config.id === 'astro_gmi' || config.id === 'dark_gmi';
+  const suit = SUITS[config.id];
+  const isAstro = !!suit;
 
-  const whiteFur = new THREE.MeshStandardMaterial({ color: 0xe8e2d6, roughness: 0.92, metalness: 0 });
+  const whiteFur = new THREE.MeshStandardMaterial({ color: 0xd8d1c3, roughness: 0.92, metalness: 0 });
   const blackFur = new THREE.MeshStandardMaterial({ color: 0x1c1a1f, roughness: 0.9, metalness: 0 });
   const muzzleMat = new THREE.MeshStandardMaterial({ color: 0xf2ebdd, roughness: 0.85 });
   const noseMat = new THREE.MeshStandardMaterial({ color: 0x141216, roughness: 0.35 });
@@ -1048,9 +1142,13 @@ function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
       [[0.001, 0.26], [0.5, 0.3], [0.78, 0.55], [0.86, 0.85], [0.8, 1.15], [0.64, 1.45], [0.42, 1.62], [0.001, 1.68]].map(([x, y]) => new THREE.Vector2(x, y)),
       32, -Math.PI, Math.PI * 2
     ),
-    new THREE.MeshStandardMaterial({ map: shirtTex, roughness: isAstro ? 0.45 : 0.8, metalness: isAstro ? 0.35 : 0 })
+    isAstro
+      ? new THREE.MeshStandardMaterial({ map: makeSuitTexture(suit), roughness: suit.rough, metalness: suit.metal, emissive: suit.glowBadge ? 0x3a0a00 : 0x000000 })
+      : new THREE.MeshStandardMaterial({ map: shirtTex, roughness: 0.8, metalness: 0 })
   );
   root.add(body);
+  const suitMat = isAstro ? new THREE.MeshStandardMaterial({ color: suit.color, roughness: suit.rough, metalness: suit.metal }) : null;
+  const glove = new THREE.MeshStandardMaterial({ color: 0xeceef2, roughness: 0.6 });
 
   // gang scarf around the neck
   const scarf = new THREE.Mesh(
@@ -1058,15 +1156,15 @@ function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
     new THREE.MeshStandardMaterial({ color: teamColor, roughness: 0.7, emissive: teamColor, emissiveIntensity: 0.25 })
   );
   scarf.rotation.x = Math.PI / 2;
-  scarf.position.y = 1.62;
+  scarf.position.y = isAstro ? 1.5 : 1.62;
   root.add(scarf);
 
   // ---- legs + feet (black) ----
   [-0.36, 0.36].forEach(x => {
-    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.2, 6, 12), blackFur);
+    const leg = new THREE.Mesh(new THREE.CapsuleGeometry(0.22, 0.2, 6, 12), isAstro ? suitMat : blackFur);
     leg.position.set(x, 0.22, 0.05);
     root.add(leg);
-    const pad = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), new THREE.MeshStandardMaterial({ color: 0x3a2f30, roughness: 0.8 }));
+    const pad = new THREE.Mesh(new THREE.SphereGeometry(isAstro ? 0.2 : 0.11, 10, 8), isAstro ? glove : new THREE.MeshStandardMaterial({ color: 0x3a2f30, roughness: 0.8 }));
     pad.scale.set(1, 0.5, 1);
     pad.position.set(x, 0.06, 0.22);
     root.add(pad);
@@ -1076,10 +1174,11 @@ function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
   const headGroup = new THREE.Group();
   headGroup.position.y = 2.08;
   root.add(headGroup);
+  const pandaFace = !isAstro;
   const head = new THREE.Mesh(new THREE.SphereGeometry(0.78, 32, 24), whiteFur);
   head.scale.set(1.08, 0.94, 0.98);
-  headGroup.add(head);
-  [-1, 1].forEach(side => {
+  if (pandaFace) headGroup.add(head);
+  if (pandaFace) [-1, 1].forEach(side => {
     const ear = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 12), blackFur);
     ear.scale.set(1, 1, 0.7);
     ear.position.set(side * 0.58, 0.58, -0.08);
@@ -1105,35 +1204,56 @@ function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
   const muzzle = new THREE.Mesh(new THREE.SphereGeometry(0.26, 16, 12), muzzleMat);
   muzzle.scale.set(1.25, 0.85, 0.75);
   muzzle.position.set(0, -0.18, 0.66);
-  headGroup.add(muzzle);
+  if (pandaFace) headGroup.add(muzzle);
   const nose = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 10), noseMat);
   nose.scale.set(1.3, 0.85, 0.9);
   nose.position.set(0, -0.1, 0.86);
-  headGroup.add(nose);
+  if (pandaFace) headGroup.add(nose);
   const mouth = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.016, 6, 12, Math.PI), noseMat);
   mouth.rotation.z = Math.PI;
   mouth.position.set(0, -0.25, 0.84);
-  headGroup.add(mouth);
+  if (pandaFace) headGroup.add(mouth);
 
   // ---- class accessories ----
   if (isAstro) {
-    const domeMat = new THREE.MeshStandardMaterial({
-      color: config.id === 'dark_gmi' ? 0x0b1220 : 0xcfe8ff,
-      transparent: true, opacity: config.id === 'dark_gmi' ? 0.55 : 0.22,
-      roughness: 0.05, metalness: 0.1, depthWrite: false
+    const shell = new THREE.Mesh(new THREE.SphereGeometry(1.0, 40, 32), new THREE.MeshStandardMaterial({ color: suit.shell || 0xeef0f4, roughness: 0.32, metalness: 0.05 }));
+    shell.position.y = 0.05;
+    headGroup.add(shell);
+    // big opaque black visor: mirror-like, nothing visible inside
+    const visor = new THREE.Mesh(
+      new THREE.SphereGeometry(1.015, 40, 24, Math.PI / 2 - Math.PI * 0.36, Math.PI * 0.72, Math.PI * 0.27, Math.PI * 0.4),
+      new THREE.MeshStandardMaterial({ color: 0x050608, roughness: 0.04, metalness: 1 })
+    );
+    visor.position.y = 0.05;
+    headGroup.add(visor);
+    const trim = new THREE.Mesh(
+      new THREE.SphereGeometry(1.03, 40, 24, Math.PI / 2 - Math.PI * 0.375, Math.PI * 0.75, Math.PI * 0.255, Math.PI * 0.43),
+      new THREE.MeshStandardMaterial({ color: 0xc8ccd4, roughness: 0.3, metalness: 0.8, side: THREE.BackSide })
+    );
+    trim.position.y = 0.05;
+    headGroup.add(trim);
+    // ear pods + little antenna, like the NFT helmets
+    [-1, 1].forEach(side => {
+      const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.16, 20), new THREE.MeshStandardMaterial({ color: 0xd5d8de, roughness: 0.35, metalness: 0.4 }));
+      pod.rotation.z = Math.PI / 2;
+      pod.position.set(side * 1.0, 0.05, 0);
+      headGroup.add(pod);
     });
-    const dome = new THREE.Mesh(new THREE.SphereGeometry(1.0, 32, 24), domeMat);
-    dome.position.y = 0.05;
-    headGroup.add(dome);
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.82, 0.12, 12, 32), new THREE.MeshStandardMaterial({ color: config.helmetColor, metalness: 1, roughness: 0.3 }));
-    rim.rotation.x = Math.PI / 2;
-    rim.position.y = -0.62;
-    headGroup.add(rim);
-    if (config.id === 'dark_gmi') {
-      const visorTex = createLabelTexture('GMI', 'transparent', '#22d3ee', 256, 128, 64, '#22d3ee');
-      const visor = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.45), new THREE.MeshBasicMaterial({ map: visorTex, transparent: true, depthWrite: false }));
-      visor.position.set(0, 0.42, 0.93);
-      headGroup.add(visor);
+    const antenna = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.5, 6), new THREE.MeshStandardMaterial({ color: 0x9ca3af, metalness: 1, roughness: 0.3 }));
+    antenna.position.set(0.82, 0.65, -0.1);
+    headGroup.add(antenna);
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), new THREE.MeshBasicMaterial({ color: config.accent }));
+    tip.position.set(0.82, 0.92, -0.1);
+    headGroup.add(tip);
+    const neck = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.11, 12, 32), new THREE.MeshStandardMaterial({ color: 0xc8ccd4, metalness: 0.9, roughness: 0.3 }));
+    neck.rotation.x = Math.PI / 2;
+    neck.position.y = -0.72;
+    headGroup.add(neck);
+    if (suit.visor) {
+      const vt = createLabelTexture(suit.visor, 'transparent', '#5ef0ff', 256, 128, 70, '#22d3ee');
+      const vText = new THREE.Mesh(new THREE.PlaneGeometry(0.85, 0.42), new THREE.MeshBasicMaterial({ map: vt, transparent: true, depthWrite: false }));
+      vText.position.set(0, 0.17, 1.03);
+      headGroup.add(vText);
     }
   } else if (config.id === 'vr_up_only') {
     const vrTex = createLabelTexture('UP ONLY', '#03140a', '#4ade80', 256, 128, 40, '#22c55e');
@@ -1177,7 +1297,7 @@ function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
   const leftArmGroup = new THREE.Group();
   leftArmGroup.position.set(-0.78, 1.35, 0.2);
   root.add(leftArmGroup);
-  const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.5, 8, 12), blackFur);
+  const leftArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.5, 8, 12), isAstro ? glove : blackFur);
   leftArm.rotation.x = -Math.PI * 0.35;
   leftArm.position.set(-0.04, -0.12, 0.26);
   leftArmGroup.add(leftArm);
@@ -1192,7 +1312,7 @@ function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
   const rightArmGroup = new THREE.Group();
   rightArmGroup.position.set(0.78, 1.35, 0.2);
   root.add(rightArmGroup);
-  const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.21, 0.54, 8, 12), blackFur);
+  const rightArm = new THREE.Mesh(new THREE.CapsuleGeometry(0.21, 0.54, 8, 12), isAstro ? glove : blackFur);
   rightArm.rotation.x = -Math.PI * 0.42;
   rightArm.rotation.z = -0.2;
   rightArm.position.set(0.06, -0.06, 0.32);
@@ -1341,9 +1461,9 @@ function App() {
     scene.environment = envRT.texture;
 
     scene.add(new THREE.AmbientLight(0x8090b0, 0.16));
-    scene.add(new THREE.HemisphereLight(0x5b78c8, 0x1a120e, 0.42));
+    scene.add(new THREE.HemisphereLight(0x5b78c8, 0x1a120e, 0.36));
 
-    const moonLight = new THREE.DirectionalLight(0xffc285, 2.5); // warm key, low angle
+    const moonLight = new THREE.DirectionalLight(0xffc89a, 1.9); // warm key, low angle
     moonLight.position.set(-34, 26, 22);
     moonLight.castShadow = GFX_CINEMATIC;
     moonLight.shadow.mapSize.width = 2048;
@@ -1416,7 +1536,7 @@ function App() {
       return srgbTex(new THREE.CanvasTexture(c));
     })();
     const shafts = [];
-    [[-14, 0.18, 9], [-2, 0.12, 6], [10, 0.1, 7]].forEach(([off, op, w]) => {
+    [[-14, 0.08, 9], [-2, 0.05, 6], [10, 0.045, 7]].forEach(([off, op, w]) => {
       const sm = new THREE.MeshBasicMaterial({ map: shaftTex, transparent: true, opacity: op, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
       const shaft = new THREE.Mesh(new THREE.PlaneGeometry(w, 90), sm);
       shaft.position.set(-22 + off, 28, 6 + off * 0.4);
@@ -1428,7 +1548,7 @@ function App() {
     const mistTex = srgbTex(new THREE.CanvasTexture(noiseCanvas(256, 6, 4, 21)));
     const mists = [];
     for (let i = 0; i < 9; i++) {
-      const mm = new THREE.SpriteMaterial({ map: mistTex, color: 0x8899bb, transparent: true, opacity: 0.07, depthWrite: false, blending: THREE.AdditiveBlending });
+      const mm = new THREE.SpriteMaterial({ map: mistTex, color: 0x8899bb, transparent: true, opacity: 0.04, depthWrite: false, blending: THREE.AdditiveBlending });
       const mist = new THREE.Sprite(mm);
       const a = (i / 9) * Math.PI * 2;
       mist.position.set(Math.cos(a) * 30, -1 + Math.random() * 2, Math.sin(a) * 30);
@@ -1453,7 +1573,7 @@ function App() {
 
     const arenaTex = makeArenaTextures();
     const floorGeo = new THREE.CylinderGeometry(ARENA_RADIUS, ARENA_RADIUS * 0.82, 3.2, 96);
-    const floorTop = new THREE.MeshStandardMaterial({ map: arenaTex.map, bumpMap: arenaTex.bump, bumpScale: 0.35, roughnessMap: arenaTex.rough, roughness: 0.85, metalness: 0.05 });
+    const floorTop = new THREE.MeshStandardMaterial({ map: arenaTex.map, bumpMap: arenaTex.bump, bumpScale: 0.22, roughnessMap: arenaTex.rough, roughness: 1, metalness: 0, envMapIntensity: 0.3 });
     const sideTex = srgbTex(new THREE.CanvasTexture(noiseCanvas(512, 20, 5, 5)));
     sideTex.wrapS = sideTex.wrapT = THREE.RepeatWrapping;
     sideTex.repeat.set(6, 1);
@@ -1465,7 +1585,7 @@ function App() {
 
     // faint ember glow under the floating arena
     const underGlow = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: makeGlowTexture('rgba(255,120,60,0.35)', 'rgba(255,120,60,0)'),
+      map: makeGlowTexture('rgba(255,120,60,0.18)', 'rgba(255,120,60,0)'),
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
     }));
     underGlow.scale.set(100, 100, 1);
@@ -3202,48 +3322,77 @@ function App() {
               </header>
 
               <div className="w-full max-w-6xl mt-8 grid gap-5 lg:grid-cols-[1fr_330px] items-start">
-                <section>
-                  <div className="flex items-center gap-3 mb-3">
+                <section className="space-y-4">
+                  <div className="flex items-center gap-3">
                     <span className="font-game text-sm text-white">CHOOSE YOUR PANDA</span>
                     <span className="flex-1 h-px bg-gradient-to-r from-slate-500/60 to-transparent" />
+                    <span className="text-[10px] font-black text-slate-400 tracking-widest">{PANDA_CLASSES.length} FIGHTERS</span>
                   </div>
-                  <div className="stagger flex overflow-x-auto snap-x snap-mandatory gap-3 pt-3 pb-3 -mx-4 px-4 sm:grid sm:grid-cols-2 xl:grid-cols-4 sm:overflow-visible sm:mx-0 sm:px-0 sm:gap-3.5">
-                    {PANDA_CLASSES.map(c => {
-                      const isSelected = selectedClass.id === c.id;
-                      const stats = [
-                        ['POWER', c.power, '#fbbf24'],
-                        ['SPEED', c.speed, '#34d399'],
-                        ['WEIGHT', c.mass, '#38bdf8']
-                      ];
-                      return (
+
+                  <div className="stagger grid gap-4 md:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
+                    <div
+                      className="glass relative rounded-3xl border overflow-hidden"
+                      style={{ borderColor: `${selectedClass.accent}66`, boxShadow: `0 24px 60px -24px ${selectedClass.accent}88` }}
+                    >
+                      <div className="relative h-64 md:h-80" style={{ background: 'radial-gradient(circle at 50% 120%, rgba(0,0,0,0.6), transparent 55%), #05060c' }}>
                         <div
-                          key={c.id}
-                          onClick={() => setSelectedClass(c)}
-                          className={`card glass p-3 rounded-2xl border-2 cursor-pointer shrink-0 w-[74vw] max-w-[300px] snap-center sm:w-auto sm:max-w-none ${isSelected ? 'selected' : 'border-slate-800 hover:border-slate-600'}`}
-                          style={isSelected ? { borderColor: c.accent, boxShadow: `0 0 0 1px ${c.accent}, 0 18px 40px -10px ${c.accent}99` } : undefined}
-                        >
-                          <PandaPreview config={c} />
-                          <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full uppercase" style={{ backgroundColor: `${c.accent}26`, color: c.accent }}>
-                              {c.badge}
-                            </span>
-                            {isSelected && <span className="text-[10px] font-black text-white">✔ PICKED</span>}
-                          </div>
-                          <h3 className="font-game text-[13px] leading-tight text-white">{c.name.split('#')[0].trim()}</h3>
-                          <p className="text-[11px] text-slate-400 leading-snug mt-1 min-h-[44px]">{c.desc}</p>
-                          <div className="space-y-1.5 mt-2.5">
-                            {stats.map(([label, v, col]) => (
-                              <div key={label} className="flex items-center gap-2">
-                                <span className="text-[9px] font-black text-slate-400 w-12">{label}</span>
-                                <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                                  <div className="stat-fill h-full rounded-full" style={{ width: `${Math.min(100, (v / 1.85) * 100)}%`, background: col }} />
-                                </div>
+                          className="absolute left-1/2 top-[44%] -translate-x-1/2 -translate-y-1/2 w-[78%] max-w-[300px] aspect-square rounded-full"
+                          style={{ background: 'radial-gradient(circle at 38% 35%, #6d8ff0 0%, #2b4fb8 45%, #142a6b 75%, #0b1740 100%)', boxShadow: '0 0 80px rgba(80,120,255,0.35)', opacity: 0.85 }}
+                        />
+                        <Showcase config={selectedClass} />
+                        <span className="absolute left-3 top-3 text-[10px] font-black px-2 py-0.5 rounded-full uppercase" style={{ backgroundColor: `${selectedClass.accent}2e`, color: selectedClass.accent }}>
+                          {selectedClass.badge}
+                        </span>
+                      </div>
+                      <div className="p-4">
+                        <h3 className="font-game text-lg leading-tight text-white">{selectedClass.name}</h3>
+                        <p className="text-[12px] text-slate-400 leading-snug mt-1">{selectedClass.desc}</p>
+                        <div className="space-y-1.5 mt-3">
+                          {[['POWER', selectedClass.power, '#fbbf24'], ['SPEED', selectedClass.speed, '#34d399'], ['WEIGHT', selectedClass.mass, '#38bdf8']].map(([label, v, col]) => (
+                            <div key={label} className="flex items-center gap-2">
+                              <span className="text-[9px] font-black text-slate-400 w-12">{label}</span>
+                              <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                                <div className="stat-fill h-full rounded-full" style={{ width: `${Math.min(100, (v / 1.85) * 100)}%`, background: col }} />
                               </div>
-                            ))}
-                          </div>
+                            </div>
+                          ))}
                         </div>
-                      );
-                    })}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-5 md:grid-cols-4 lg:grid-cols-5 gap-2 content-start">
+                      {PANDA_CLASSES.map(c => {
+                        const isSel = selectedClass.id === c.id;
+                        const snap = getPreviewSnapshots()[c.id];
+                        const num = (c.name.match(/#\d+/) || [''])[0];
+                        return (
+                          <button
+                            key={c.id}
+                            onClick={() => setSelectedClass(c)}
+                            className={`card relative rounded-2xl border-2 overflow-hidden cursor-pointer text-left ${isSel ? 'selected' : 'border-slate-800 hover:border-slate-600'}`}
+                            style={{ background: 'radial-gradient(circle at 50% 30%, #2b4fb855, #070a14 75%)', ...(isSel ? { borderColor: c.accent, boxShadow: `0 0 0 1px ${c.accent}, 0 10px 24px -8px ${c.accent}aa` } : {}) }}
+                            title={c.name}
+                          >
+                            <div className="aspect-[4/5] flex items-end justify-center">
+                              {snap ? <img src={snap} alt={c.name} className="w-full h-full object-cover pointer-events-none" draggable={false} /> : <span className="text-3xl mb-4">🐼</span>}
+                            </div>
+                            <div className="absolute inset-x-0 bottom-0 px-1.5 py-1 bg-gradient-to-t from-black/90 to-transparent">
+                              <div className="font-game text-[10px] text-white leading-none">{num}</div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="glass rounded-2xl border border-slate-800 px-4 py-3 text-[12px] text-slate-300 leading-relaxed">
+                    <span className="font-game text-[11px] text-emerald-300">THE COLLECTION · EST. 2022 ON SOLANA</span>
+                    <p className="mt-1">
+                      NGMI Pandas started as a Solana NFT collection built by a crew of software-engineer friends who met investing in GameStop, back when GME stepped into NFT marketplaces. It went live and traded on Magic Eden. These astronauts are pulled straight from that collection.
+                    </p>
+                    <p className="mt-1 text-slate-400">
+                      <b className="text-emerald-300">GMI</b> = Gonna Make It · <b className="text-rose-300">NGMI</b> = Not Gonna Make It
+                    </p>
                   </div>
                 </section>
 
