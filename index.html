@@ -12,6 +12,60 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.149.0/build/three.min.js"></script>
   <!-- Babel for in-browser JSX -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet" />
+  <style>
+    body { font-family: 'Rubik', system-ui, sans-serif; }
+    .font-game { font-family: 'Bungee', 'Arial Black', sans-serif; }
+    .game-title {
+      font-family: 'Bungee', 'Arial Black', sans-serif;
+      color: #ffffff;
+      line-height: 0.9;
+      text-shadow:
+        0 2px 0 #00ffa3, 0 4px 0 #00c482, 0 6px 0 #0a8a5f, 0 8px 0 #065f46,
+        0 10px 0 #053b2e, 0 16px 24px rgba(0,0,0,0.6), 0 0 60px rgba(0,255,163,0.35);
+      animation: titleDrop 0.9s cubic-bezier(.2,1.6,.4,1) both, titleWobble 4s ease-in-out 1s infinite;
+    }
+    .kicker { animation: fadeUp 0.6s ease-out 0.15s both; letter-spacing: 0.45em; }
+    .tagline { animation: fadeUp 0.6s ease-out 0.45s both; }
+    .stagger > * { animation: fadeUp 0.55s ease-out both; }
+    .stagger > *:nth-child(1) { animation-delay: 0.35s; }
+    .stagger > *:nth-child(2) { animation-delay: 0.45s; }
+    .stagger > *:nth-child(3) { animation-delay: 0.55s; }
+    .stagger > *:nth-child(4) { animation-delay: 0.65s; }
+    .side-panel { animation: slideIn 0.6s ease-out 0.5s both; }
+    @keyframes titleDrop { 0% { transform: translateY(-80px) scale(1.3); opacity: 0; } 100% { transform: none; opacity: 1; } }
+    @keyframes titleWobble { 0%,100% { transform: rotate(-1.2deg); } 50% { transform: rotate(1.2deg) translateY(-4px); } }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: none; } }
+    .play-btn {
+      position: relative; overflow: hidden;
+      background: linear-gradient(180deg, #5effc4 0%, #00e092 55%, #00b876 100%);
+      box-shadow: 0 8px 0 #047857, 0 14px 30px rgba(0,255,163,0.35);
+      transition: transform 0.08s, box-shadow 0.08s;
+      animation: playPulse 1.8s ease-in-out infinite;
+    }
+    .play-btn:hover { filter: brightness(1.08); }
+    .play-btn:active { transform: translateY(6px); box-shadow: 0 2px 0 #047857, 0 6px 14px rgba(0,255,163,0.3); }
+    .play-btn::after {
+      content: ''; position: absolute; top: 0; left: -60%; width: 40%; height: 100%;
+      background: linear-gradient(100deg, transparent, rgba(255,255,255,0.65), transparent);
+      transform: skewX(-20deg); animation: shine 2.6s ease-in-out infinite;
+    }
+    @keyframes shine { 0%, 55% { left: -60%; } 100% { left: 130%; } }
+    @keyframes playPulse { 0%,100% { box-shadow: 0 8px 0 #047857, 0 14px 30px rgba(0,255,163,0.3); } 50% { box-shadow: 0 8px 0 #047857, 0 14px 44px rgba(0,255,163,0.6); } }
+    .card { transition: transform 0.25s cubic-bezier(.2,1.4,.4,1), box-shadow 0.25s, border-color 0.25s; }
+    .card:hover { transform: translateY(-6px); }
+    .card.selected { transform: translateY(-10px); }
+    .stat-fill { transition: width 0.7s cubic-bezier(.2,1,.3,1); }
+    .keycap {
+      display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 28px; padding: 0 8px;
+      border-radius: 8px; background: #1e293b; border: 1px solid #475569; box-shadow: 0 3px 0 #0f172a;
+      font-weight: 800; font-size: 11px; color: #f8fafc;
+    }
+    .glass { background: rgba(8, 12, 30, 0.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  </style>
 </head>
 <body class="bg-[#04060e] text-white overflow-hidden m-0 p-0">
   <div id="root" class="w-screen h-screen"></div>
@@ -285,6 +339,9 @@ const sfx = (() => {
   };
 })();
 
+const MATCH_SECONDS = 180;
+const CD_MAX = { call: 5.5, smash: 4, swarm: 7 };
+
 const POWERUPS = [
   { id: 'burger', icon: '🍔', label: 'FAST FOOD! +45% SPEED', color: '#f97316' },
   { id: 'diamond', icon: '💎', label: 'DIAMOND HANDS! -60% KNOCKBACK', color: '#22d3ee' },
@@ -380,6 +437,114 @@ function makeArenaTexture() {
   const tex = new THREE.CanvasTexture(c);
   tex.anisotropy = 8;
   return tex;
+}
+
+// Live 3D arena spinning behind the lobby menu
+function LobbyBackdrop() {
+  const ref = useRef(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return undefined;
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+    } catch (e) {
+      return undefined;
+    }
+    const size = () => [el.clientWidth || window.innerWidth, el.clientHeight || window.innerHeight];
+    let [w, h] = size();
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.setSize(w, h);
+    el.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050816);
+    scene.fog = new THREE.FogExp2(0x050816, 0.008);
+    const cam = new THREE.PerspectiveCamera(45, w / h, 0.1, 500);
+    cam.position.set(0, 26, 46);
+    cam.lookAt(0, 0, 0);
+    scene.add(new THREE.AmbientLight(0xcbd5e1, 0.8));
+    scene.add(new THREE.HemisphereLight(0x8b5cf6, 0x0f172a, 0.6));
+    const dl = new THREE.DirectionalLight(0x93c5fd, 1.6);
+    dl.position.set(-20, 40, 20);
+    scene.add(dl);
+
+    const arena = new THREE.Group();
+    scene.add(arena);
+    const sideMat = new THREE.MeshStandardMaterial({ color: 0x1e1b4b, emissive: 0x7c3aed, emissiveIntensity: 0.4, metalness: 0.8, roughness: 0.3 });
+    const floor = new THREE.Mesh(
+      new THREE.CylinderGeometry(24, 19, 3, 64),
+      [sideMat, new THREE.MeshStandardMaterial({ map: makeArenaTexture(), emissive: 0x1e1b4b, emissiveIntensity: 0.4 }), sideMat]
+    );
+    floor.position.y = -1.5;
+    arena.add(floor);
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(168,85,247,0.8)', 'rgba(168,85,247,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    glow.scale.set(90, 90, 1);
+    glow.position.y = -8;
+    arena.add(glow);
+
+    const moon = new THREE.Mesh(
+      new THREE.SphereGeometry(20, 40, 40),
+      new THREE.MeshStandardMaterial({ color: 0x1d4ed8, emissive: 0x1e3a8a, emissiveIntensity: 0.7, roughness: 0.8 })
+    );
+    moon.position.set(-38, 22, -90);
+    scene.add(moon);
+
+    const starGeo = new THREE.BufferGeometry();
+    const sp = new Float32Array(1200 * 3);
+    for (let i = 0; i < sp.length; i += 3) {
+      sp[i] = (Math.random() - 0.5) * 300;
+      sp[i + 1] = Math.random() * 140 - 30;
+      sp[i + 2] = (Math.random() - 0.5) * 300 - 50;
+    }
+    starGeo.setAttribute('position', new THREE.BufferAttribute(sp, 3));
+    const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({ color: 0xe2e8f0, size: 0.6, transparent: true, opacity: 0.85 }));
+    scene.add(stars);
+
+    // pandas wandering + hopping on the arena
+    const walkers = [];
+    for (let i = 0; i < 7; i++) {
+      const cls = PANDA_CLASSES[i % PANDA_CLASSES.length];
+      const color = i === 0 ? LOCAL_GANG_COLOR : GANG_COLORS[i % GANG_COLORS.length];
+      const m = buildNgmiPandaMesh(cls, i > 3, color);
+      arena.add(m);
+      walkers.push({ m, a: (i / 7) * Math.PI * 2, r: 6 + (i % 3) * 5, sp: 0.25 + Math.random() * 0.35, hop: Math.random() * 6, dir: i % 2 ? 1 : -1 });
+    }
+
+    let id;
+    const loop = t => {
+      id = requestAnimationFrame(loop);
+      const s = t * 0.001;
+      arena.rotation.y = s * 0.08;
+      walkers.forEach(wk => {
+        wk.a += wk.sp * 0.016 * wk.dir;
+        wk.m.position.set(Math.cos(wk.a) * wk.r, Math.max(0, Math.sin(s * 3 + wk.hop)) * 1.6, Math.sin(wk.a) * wk.r);
+        wk.m.rotation.y = -wk.a + (wk.dir > 0 ? Math.PI : 0);
+        const ud = wk.m.userData;
+        if (ud && ud.rightArmGroup) ud.rightArmGroup.position.z = Math.sin(s * 4 + wk.hop) > 0.7 ? 0.65 : 0.2;
+      });
+      stars.rotation.y = s * 0.01;
+      cam.position.x = Math.sin(s * 0.15) * 6;
+      cam.lookAt(0, 0, 0);
+      renderer.render(scene, cam);
+    };
+    id = requestAnimationFrame(loop);
+    const onResize = () => {
+      [w, h] = size();
+      cam.aspect = w / h;
+      cam.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      cancelAnimationFrame(id);
+      window.removeEventListener('resize', onResize);
+      renderer.dispose();
+      if (renderer.forceContextLoss) renderer.forceContextLoss();
+      el.innerHTML = '';
+    };
+  }, []);
+  return <div ref={ref} className="absolute inset-0" />;
 }
 
 // Rotating 3D preview of a panda class for the character select cards
@@ -804,7 +969,10 @@ function App() {
   const myIdRef = useRef(`peer_${Math.random().toString(36).slice(2, 9)}`);
   const keysRef = useRef({});
   const joystickRef = useRef({ active: false, dx: 0, dy: 0 });
-  const actionTriggerRef = useRef({ call: false, smash: false, swarm: false });
+  const actionTriggerRef = useRef({ call: false, smash: false, swarm: false, jump: false });
+  const [matchId, setMatchId] = useState(0);
+  const [matchTime, setMatchTime] = useState(MATCH_SECONDS);
+  const [results, setResults] = useState(null);
 
   useEffect(() => {
     try {
@@ -1080,6 +1248,8 @@ function App() {
         stun: 0,
         squash: 0,
         punchCd: 0,
+        jumps: 2,
+        pounding: false,
         streak: 0,
         buffs: { speed: 0, armor: 0, pump: 0 },
         bubble: (() => {
@@ -1207,7 +1377,8 @@ function App() {
       if (fighter.isLocal) setMyGangSize(fighter.minions.length + 1);
     };
 
-    const knockbackMult = () => (fx.liqTimer > 0 ? 1.35 : 1.0);
+    const knockbackMult = () => (fx.liqTimer > 0 ? 1.35 : 1.0) * (matchRef.finalRush ? 1.5 : 1.0);
+    const matchRef = { finalRush: false };
     const volAt = pos => Math.max(0, 1 - pos.distanceTo(localFighter.mesh.position) / 48);
     const flash = (strength = 0.45) => {
       const el = flashRef.current;
@@ -1237,6 +1408,7 @@ function App() {
       const isCrit = kb > 32;
       burst(p.x, p.y + 1.5, p.z, attacker.gangColor, 6 + Math.round(kb / 6), 6 + kb * 0.25);
       const vol = (target.isLocal || attacker.isLocal) ? 1 : volAt(p) * 0.7;
+      if (attacker.isLocal && kb > stats.biggestHit) stats.biggestHit = kb;
       if (isCrit) {
         sfx.play('crit', vol);
         burst(p.x, p.y + 1.5, p.z, '#ffffff', 14, 16);
@@ -1256,6 +1428,7 @@ function App() {
       }
       if (attacker.isLocal) {
         fx.combo = fx.comboTimer > 0 ? fx.combo + 1 : 1;
+        stats.bestCombo = Math.max(stats.bestCombo, fx.combo);
         fx.comboTimer = 1.4;
         if (fx.combo >= 3) {
           spawnMemeSprite(p.x, 2.6, p.z, `x${fx.combo} COMBO! 🔥`, '#fb923c');
@@ -1263,6 +1436,43 @@ function App() {
         }
       }
       return kb;
+    };
+
+    // ---------- match flow ----------
+    const match = { left: MATCH_SECONDS, countdown: 3.3, over: false, finalRush: false };
+    const stats = { bestCombo: 0, biggestHit: 0, falls: 0 };
+    ['3', '2', '1'].forEach((n, i) => setTimeout(() => { announceNow(n, '#ffffff'); sfx.play('pop', 1, 0.8); }, 150 + i * 1000));
+    setTimeout(() => { announceNow('FIGHT!', '#00ffa3'); sfx.play('streak'); }, 3150);
+    setMatchTime(MATCH_SECONDS);
+
+    // ---------- RUG PULL: a slice of the floor collapses ----------
+    let rug = null;
+    const RUG_INNER = 13;
+    const angleOf = (x, z) => {
+      let a = Math.atan2(-z, x);
+      if (a < 0) a += Math.PI * 2;
+      return a;
+    };
+    const inRug = pos => {
+      if (!rug || rug.phase !== 'open') return false;
+      const r = Math.hypot(pos.x, pos.z);
+      if (r < RUG_INNER) return false;
+      let d = angleOf(pos.x, pos.z) - rug.a0;
+      if (d < 0) d += Math.PI * 2;
+      return d <= rug.len;
+    };
+    const startRug = () => {
+      const a0 = Math.random() * Math.PI * 2;
+      const len = Math.PI / 3;
+      const mat = new THREE.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false });
+      const mesh = new THREE.Mesh(new THREE.RingGeometry(RUG_INNER, ARENA_RADIUS + 0.5, 40, 1, a0, len), mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y = 0.08;
+      scene.add(mesh);
+      rug = { a0, len, phase: 'warn', t: 3, mesh, mat };
+      announceNow('⚠️ RUG PULL INCOMING!', '#ef4444');
+      setArenaEventText('⚠️ RUG PULL: GET OFF THE RED ZONE!');
+      sfx.play('bumper', 0.8);
     };
 
     const powerups = [];
@@ -1396,11 +1606,56 @@ function App() {
     let animationFrameId;
     let prevTime = performance.now();
 
+    // Ring smash shockwave. Airborne targets dodge it (jump to dodge!)
+    const doSmash = (attacker, radius, powerMul, label) => {
+      const px = attacker.mesh.position.x;
+      const pz = attacker.mesh.position.z;
+      attacker.punchAnim = 0.45;
+      triggerShockwave(px, pz, 0xfacc15, radius);
+      spawnMemeSprite(px, 1.8, pz, label, '#facc15');
+      sfx.play('smash', attacker.isLocal ? 1 : volAt(attacker.mesh.position) * 0.6);
+      if (attacker.isLocal) fx.shake = Math.min(1.6, fx.shake + 0.5 * powerMul);
+      burst(px, 0.6, pz, '#facc15', 18, 14);
+      fighters.forEach(other => {
+        if (other.id === attacker.id) return;
+        if (other.mesh.position.y > 1.6) {
+          if (other.isLocal) spawnMemeSprite(other.mesh.position.x, 2, other.mesh.position.z, 'DODGED! 😎', '#38bdf8');
+          return;
+        }
+        const dx = other.mesh.position.x - px;
+        const dz = other.mesh.position.z - pz;
+        const dist = Math.hypot(dx, dz);
+        if (dist < radius && dist > 0.01) {
+          const closeness = (radius - dist) / radius;
+          launch(other, attacker, dx / dist, dz / dist, (7 + 9 * closeness) * powerMul, 8, (14 + 10 * closeness) * powerMul);
+          if (Math.random() < 0.5) flingMinion(other, dx / dist, dz / dist);
+        }
+      });
+    };
+
+    const doJump = (f, dirX, dirZ) => {
+      if (f.jumps <= 0 || f.stun > 0 || f.pounding) return false;
+      const first = f.jumps === 2 && f.mesh.position.y <= 0.05;
+      f.vy = first ? 16 : 15;
+      if (!first) {
+        // double jump: also a horizontal burst so you can recover from the edge
+        f.vx = f.vx * 0.4 + dirX * 14;
+        f.vz = f.vz * 0.4 + dirZ * 14;
+        burst(f.mesh.position.x, f.mesh.position.y + 0.3, f.mesh.position.z, '#e2e8f0', 8, 5);
+      }
+      f.jumps -= 1;
+      f.squash = 0.4;
+      sfx.play('pop', f.isLocal ? 0.9 : volAt(f.mesh.position) * 0.5, first ? 0.7 : 1.1);
+      return true;
+    };
+
     const onKeyDown = (e) => {
       const code = e.code;
       keysRef.current[code] = true;
       if (code === 'Space') {
         e.preventDefault();
+        if (!e.repeat) actionTriggerRef.current.jump = true;
+      } else if (code === 'KeyR' || code === 'KeyF') {
         actionTriggerRef.current.call = true;
       } else if (code === 'KeyE') {
         actionTriggerRef.current.smash = true;
@@ -1434,6 +1689,56 @@ function App() {
       cdState.call = Math.max(0, cdState.call - dt);
       cdState.smash = Math.max(0, cdState.smash - dt);
       cdState.swarm = Math.max(0, cdState.swarm - dt);
+
+      // ---------- match clock ----------
+      const frozen = match.countdown > 0 || match.over;
+      if (match.countdown > 0) match.countdown -= rawDt;
+      else if (!match.over) {
+        match.left -= dt;
+        if (!matchRef.finalRush && match.left <= 30) {
+          matchRef.finalRush = true;
+          announceNow('FINAL 30s! KNOCKBACK x1.5', '#f97316');
+          setArenaEventText('🔥 FINAL RUSH: EVERY HIT KNOCKS 1.5x FURTHER!');
+          sfx.play('streak');
+        }
+        if (match.left <= 0) {
+          match.over = true;
+          const board = [...fighters]
+            .map(f => ({ id: f.id, name: f.name, isLocal: f.isLocal, color: f.gangColor, kos: f.kos, gang: f.minions.length + 1 }))
+            .sort((a, b) => b.kos - a.kos || b.gang - a.gang);
+          const myRank = board.findIndex(b => b.isLocal) + 1;
+          announceNow(myRank === 1 ? 'VICTORY! 🏆' : 'TIME!', myRank === 1 ? '#facc15' : '#ffffff');
+          sfx.play(myRank === 1 ? 'streak' : 'ko');
+          setTimeout(() => setResults({ board, myRank, kos: localFighter.kos, ...stats }), 1600);
+        }
+      }
+      if (frozen) {
+        actionTriggerRef.current.call = false;
+        actionTriggerRef.current.smash = false;
+        actionTriggerRef.current.swarm = false;
+        actionTriggerRef.current.jump = false;
+      }
+
+      // ---------- rug pull ----------
+      if (rug) {
+        rug.t -= dt;
+        if (rug.phase === 'warn') {
+          rug.mat.opacity = 0.25 + (Math.sin(now * 0.025) > 0 ? 0.45 : 0);
+          if (rug.t <= 0) {
+            rug.phase = 'open';
+            rug.t = 6;
+            rug.mat.color.set(0x020617);
+            rug.mat.opacity = 0.97;
+            fx.shake = Math.min(1.6, fx.shake + 0.8);
+            sfx.play('ko', 0.6);
+            setArenaEventText('🕳️ RUG PULLED! DON\'T FALL IN!');
+          }
+        } else if (rug.t <= 0) {
+          scene.remove(rug.mesh);
+          rug = null;
+          setArenaEventText('✅ FLOOR RESTORED • KEEP SWINGING!');
+        }
+      }
 
       powerTimer += dt;
       if (powerTimer > 8) {
@@ -1472,13 +1777,15 @@ function App() {
         hazardTimer = 0;
         spawnWildPanda();
         spawnWildPanda();
-        const isGravityDrop = Math.random() > 0.5;
-        if (!isGravityDrop) fx.liqTimer = 10;
-        setArenaEventText(
-          isGravityDrop
-            ? '🌕 FULL MOON AIRDROP: +2 WILD NGMI PANDAS SPAWNED!'
-            : '⚡ LIQUIDATION CANDLE: KNOCKBACK POWER +35%!'
-        );
+        const roll = Math.random();
+        if (roll < 0.4 && !rug) {
+          startRug();
+        } else if (roll < 0.7) {
+          fx.liqTimer = 10;
+          setArenaEventText('⚡ LIQUIDATION CANDLE: KNOCKBACK +35% FOR 10s!');
+        } else {
+          setArenaEventText('🌕 FULL MOON AIRDROP: +2 WILD PANDAS SPAWNED!');
+        }
       }
 
       let moveX = 0;
@@ -1492,14 +1799,38 @@ function App() {
         moveX += joystickRef.current.dx;
         moveZ += joystickRef.current.dy;
       }
+      if (frozen) {
+        moveX = 0;
+        moveZ = 0;
+      }
 
       const moveLen = Math.hypot(moveX, moveZ);
       const localAirborne = localFighter.mesh.position.y > 0.05;
+      if (actionTriggerRef.current.jump) {
+        const jl = moveLen > 0.01 ? moveLen : 1;
+        let jx = moveX / jl, jz = moveZ / jl;
+        if (moveLen <= 0.01) {
+          // no input: double jump drifts back toward the centre
+          const r = Math.hypot(localFighter.mesh.position.x, localFighter.mesh.position.z) || 1;
+          jx = r > ARENA_RADIUS - 3 ? -localFighter.mesh.position.x / r : 0;
+          jz = r > ARENA_RADIUS - 3 ? -localFighter.mesh.position.z / r : 0;
+        }
+        doJump(localFighter, jx, jz);
+      }
+      actionTriggerRef.current.jump = false;
+
       if (localFighter.stun > 0 || localAirborne) {
-        // knocked: you only get a little air control
+        // knocked: little control. jumping: decent air control for recovery
+        const airCtl = localFighter.stun > 0 ? 9 : 26;
         if (moveLen > 0.01) {
-          localFighter.vx += (moveX / moveLen) * 9 * dt;
-          localFighter.vz += (moveZ / moveLen) * 9 * dt;
+          localFighter.vx += (moveX / moveLen) * airCtl * dt;
+          localFighter.vz += (moveZ / moveLen) * airCtl * dt;
+          const cap = 16;
+          const hs = Math.hypot(localFighter.vx, localFighter.vz);
+          if (localFighter.stun <= 0 && hs > cap) {
+            localFighter.vx *= cap / hs;
+            localFighter.vz *= cap / hs;
+          }
         }
       } else if (moveLen > 0.01) {
         const speedBoost = localFighter.swarmTimer > 0 ? 1.48 : 1.0;
@@ -1533,27 +1864,17 @@ function App() {
 
       if (actionTriggerRef.current.smash && cdState.smash <= 0) {
         cdState.smash = 4.0;
-        localFighter.punchAnim = 0.45;
         netEvent = 'smash';
-        const px = localFighter.mesh.position.x;
-        const pz = localFighter.mesh.position.z;
-        triggerShockwave(px, pz, 0xfacc15, 11);
-        spawnMemeSprite(px, 1.8, pz, '💍 GMI RING SMASH!', '#facc15');
-        sfx.play('smash');
-
-        fx.shake = Math.min(1.6, fx.shake + 0.5);
-        burst(px, 0.6, pz, '#facc15', 18, 14);
-        fighters.forEach(other => {
-          if (other.id === localFighter.id) return;
-          const dx = other.mesh.position.x - px;
-          const dz = other.mesh.position.z - pz;
-          const dist = Math.hypot(dx, dz);
-          if (dist < 12 && dist > 0.01) {
-            const closeness = (12 - dist) / 12;
-            launch(other, localFighter, dx / dist, dz / dist, 7 + 9 * closeness, 8, 14 + 10 * closeness);
-            if (Math.random() < 0.5) flingMinion(other, dx / dist, dz / dist);
-          }
-        });
+        if (localAirborne && localFighter.stun <= 0) {
+          // GROUND POUND: slam straight down, bigger blast on landing
+          localFighter.pounding = true;
+          localFighter.vy = -48;
+          localFighter.vx *= 0.15;
+          localFighter.vz *= 0.15;
+          sfx.play('fall', 0.6);
+        } else {
+          doSmash(localFighter, 12, 1, '💍 GMI RING SMASH!');
+        }
       }
       actionTriggerRef.current.smash = false;
 
@@ -1588,9 +1909,19 @@ function App() {
         f.bubble.visible = f.buffs.armor > 0;
         if (f.bubble.visible) f.bubble.material.opacity = 0.2 + Math.sin(now * 0.01) * 0.08;
 
-        if (f.isBot) {
+        if (f.isBot && frozen) {
+          f.vx *= Math.exp(-6 * dt);
+          f.vz *= Math.exp(-6 * dt);
+        } else if (f.isBot) {
+          // recovery: double jump back toward the arena when falling off
+          const bp = f.mesh.position;
+          const br = Math.hypot(bp.x, bp.z);
+          if ((br > ARENA_RADIUS || inRug(bp)) && f.vy < 0 && bp.y < 1.5 && f.jumps > 0 && f.stun <= 0) {
+            doJump(f, -bp.x / (br || 1), -bp.z / (br || 1));
+          }
           f.aiTimer -= dt;
           if (f.aiTimer <= 0) {
+            if (Math.random() < 0.12) doJump(f, 0, 0);
             f.aiTimer = 0.6 + Math.random() * 0.6;
             const distFromCenter = Math.hypot(f.mesh.position.x, f.mesh.position.z);
             if (distFromCenter > ARENA_RADIUS - 7) {
@@ -1622,6 +1953,7 @@ function App() {
                   const vdx = victim.mesh.position.x - f.mesh.position.x;
                   const vdz = victim.mesh.position.z - f.mesh.position.z;
                   const vd = Math.hypot(vdx, vdz);
+                  if (victim.mesh.position.y > 1.6) return;
                   if (vd < 6.5 && vd > 0.01) launch(victim, f, vdx / vd, vdz / vd, 5 + 5 * (1 - vd / 6.5), 6, 9);
                 });
               }
@@ -1643,10 +1975,27 @@ function App() {
           pos.z += f.vz * dt;
           pos.y += f.vy * dt;
           f.vy -= 38 * dt;
-          const onArena = Math.hypot(pos.x, pos.z) <= ARENA_RADIUS + 0.4;
+          const onArena = Math.hypot(pos.x, pos.z) <= ARENA_RADIUS + 0.4 && !inRug(pos) && pos.y > -2.5;
           const airborne = pos.y > 0.05;
 
-          if (onArena && pos.y <= 0 && f.vy <= 0) {
+          if (onArena && pos.y <= 0 && f.vy <= 0 && f.pounding) {
+            f.pounding = false;
+            pos.y = 0;
+            f.vy = 0;
+            f.jumps = 2;
+            f.squash = 1;
+            doSmash(f, 9.5, 1.3, '⬇️ GROUND POUND!');
+          } else if (onArena && pos.y <= 0 && f.vy <= 0 && f.vy > -9) {
+            pos.y = 0;
+            f.vy = 0;
+            f.jumps = 2;
+          } else if (onArena && pos.y <= 0 && f.vy <= 0 && f.stun <= 0) {
+            // normal landing from a jump: little squash, no bounce
+            pos.y = 0;
+            f.vy = 0;
+            f.jumps = 2;
+            f.squash = 0.35;
+          } else if (onArena && pos.y <= 0 && f.vy <= 0) {
             if (f.vy < -9) {
               // BOUNCE
               const impact = -f.vy;
@@ -1835,6 +2184,9 @@ function App() {
           sfx.play('ko', (f.isLocal || (killer && killer.isLocal)) ? 1 : volAt(f.mesh.position) * 0.6);
           f.streak = 0;
           f.fallSnd = false;
+          f.pounding = false;
+          f.jumps = 2;
+          if (f.isLocal) stats.falls += 1;
           if (f.isLocal) announceNow('YOU GOT LIQUIDATED 💀', '#ef4444');
 
           burst(f.mesh.position.x, -2, f.mesh.position.z, f.gangColor, 30, 18);
@@ -1956,6 +2308,7 @@ function App() {
         });
         setActiveBeatdownAlert(currentBeatdownBanner);
         setMyDmg(Math.round(localFighter.dmg));
+        setMatchTime(Math.max(0, Math.ceil(match.left)));
         const b = localFighter.buffs;
         const hud = [];
         if (b.speed > 0) hud.push(`🍔 ${b.speed.toFixed(0)}s`);
@@ -2027,152 +2380,145 @@ function App() {
       }
       renderer.dispose();
     };
-  }, [screen, roomCode, selectedClass, playerName, fillWithBots]);
+  }, [screen, roomCode, selectedClass, playerName, fillWithBots, matchId]);
 
   return (
     <div className="relative w-full h-screen bg-[#04060e] text-white font-sans overflow-hidden select-none">
       <div ref={mountRef} className="absolute inset-0 w-full h-full" />
 
       {screen === 'lobby' && (
-        <div className="relative z-20 flex flex-col items-center justify-between w-full h-full overflow-y-auto bg-gradient-to-b from-[#050814]/95 via-[#090d1f]/90 to-[#04060e]/95 p-4 md:p-8">
-          <div className="max-w-5xl w-full text-center mt-2">
-            <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-xs font-bold tracking-widest uppercase mb-3">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              SOLANA NFT 3D ARENA • 8-12 PLAYER LIVE MULTIPLAYER
-            </div>
-            <h1 className="text-4xl md:text-6xl font-black tracking-tight bg-gradient-to-r from-emerald-400 via-cyan-300 to-purple-400 bg-clip-text text-transparent drop-shadow-lg">
-              NGMI PANDAS: BEATDOWN 3D
-            </h1>
-            <p className="text-slate-300 text-sm md:text-base mt-2 max-w-2xl mx-auto">
-              Flash your glowing ring, call your panda gang on your smartphone, and 360° surround-beatdown your Discord frens off the GMI Moon Arena!
-            </p>
-          </div>
+        <div className="absolute inset-0 z-20 overflow-hidden">
+          <LobbyBackdrop />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#050816]/70 via-[#050816]/35 to-[#050816]/90 pointer-events-none" />
 
-          <div className="max-w-5xl w-full grid grid-cols-1 md:grid-cols-3 gap-3 my-4 bg-slate-900/90 border border-slate-700/80 rounded-2xl p-4 shadow-2xl">
-            <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                YOUR DISCORD / PANDA HANDLE
-              </label>
-              <input
-                type="text"
-                maxLength={16}
-                value={playerName}
-                onChange={e => setPlayerName(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white font-bold focus:outline-none focus:border-emerald-400"
-                placeholder="e.g. PandaKing.sol"
-              />
-            </div>
+          <div className="relative h-full overflow-y-auto">
+            <div className="min-h-full flex flex-col items-center px-4 py-6 md:py-10">
+              <header className="text-center select-none">
+                <div className="kicker text-[11px] md:text-xs font-black text-emerald-300">NGMI PANDAS</div>
+                <h1 className="game-title text-6xl md:text-8xl mt-2">BEATDOWN</h1>
+                <p className="tagline text-slate-200 text-sm md:text-lg mt-4 font-semibold">
+                  Gang up. Pump their <span className="text-amber-300 font-black">%</span>. Ring them out.
+                </p>
+              </header>
 
-            <div>
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                SHARED MULTIPLAYER ROOM CODE
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  maxLength={12}
-                  value={roomCode}
-                  onChange={e => setRoomCode(e.target.value.toUpperCase())}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-emerald-500/50 text-emerald-300 font-black tracking-wider uppercase focus:outline-none focus:border-emerald-400"
-                />
-                <button
-                  onClick={handleCopyInvite}
-                  className="px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-extrabold whitespace-nowrap transition cursor-pointer"
-                >
-                  {copiedNotice ? '✅ COPIED!' : '🔗 COPY INVITE'}
-                </button>
-              </div>
-            </div>
+              <div className="w-full max-w-6xl mt-8 grid gap-5 lg:grid-cols-[1fr_330px] items-start">
+                <section>
+                  <div className="flex items-center gap-3 mb-3">
+                    <span className="font-game text-sm text-white">CHOOSE YOUR PANDA</span>
+                    <span className="flex-1 h-px bg-gradient-to-r from-slate-500/60 to-transparent" />
+                  </div>
+                  <div className="stagger grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3.5">
+                    {PANDA_CLASSES.map(c => {
+                      const isSelected = selectedClass.id === c.id;
+                      const stats = [
+                        ['POWER', c.power, '#fbbf24'],
+                        ['SPEED', c.speed, '#34d399'],
+                        ['WEIGHT', c.mass, '#38bdf8']
+                      ];
+                      return (
+                        <div
+                          key={c.id}
+                          onClick={() => setSelectedClass(c)}
+                          className={`card glass p-3 rounded-2xl border-2 cursor-pointer ${isSelected ? 'selected' : 'border-slate-800 hover:border-slate-600'}`}
+                          style={isSelected ? { borderColor: c.accent, boxShadow: `0 0 0 1px ${c.accent}, 0 18px 40px -10px ${c.accent}99` } : undefined}
+                        >
+                          <PandaPreview config={c} />
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-full uppercase" style={{ backgroundColor: `${c.accent}26`, color: c.accent }}>
+                              {c.badge}
+                            </span>
+                            {isSelected && <span className="text-[10px] font-black text-white">✔ PICKED</span>}
+                          </div>
+                          <h3 className="font-game text-[13px] leading-tight text-white">{c.name.split('#')[0].trim()}</h3>
+                          <p className="text-[11px] text-slate-400 leading-snug mt-1 min-h-[44px]">{c.desc}</p>
+                          <div className="space-y-1.5 mt-2.5">
+                            {stats.map(([label, v, col]) => (
+                              <div key={label} className="flex items-center gap-2">
+                                <span className="text-[9px] font-black text-slate-400 w-12">{label}</span>
+                                <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                                  <div className="stat-fill h-full rounded-full" style={{ width: `${Math.min(100, (v / 1.85) * 100)}%`, background: col }} />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
 
-            <div className="flex flex-col justify-between">
-              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                LOBBY SLOT MODE (8+ PLAYERS)
-              </label>
-              <button
-                onClick={() => setFillWithBots(!fillWithBots)}
-                className={`w-full py-2.5 px-3 rounded-xl font-bold text-xs border transition cursor-pointer ${
-                  fillWithBots
-                    ? 'bg-emerald-500/20 border-emerald-400 text-emerald-300'
-                    : 'bg-slate-800 border-slate-700 text-slate-300'
-                }`}
-              >
-                {fillWithBots
-                  ? '🤖 8-PLAYER FULL ARENA (LIVE FRENS + AI PANDAS)'
-                  : '👥 PURE PVP ONLY (LIVE DISCORD FRENS ONLY)'}
-              </button>
-            </div>
-          </div>
-
-          <div className="max-w-5xl w-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 my-2">
-            {PANDA_CLASSES.map(c => {
-              const isSelected = selectedClass.id === c.id;
-              return (
-                <div
-                  key={c.id}
-                  onClick={() => setSelectedClass(c)}
-                  className={`p-4 rounded-2xl border-2 transition cursor-pointer flex flex-col justify-between ${
-                    isSelected
-                      ? 'bg-slate-900/95 border-emerald-400 shadow-[0_0_25px_rgba(34,197,94,0.3)] scale-[1.02]'
-                      : 'bg-slate-900/60 border-slate-800 hover:border-slate-600'
-                  }`}
-                >
+                <aside className="side-panel glass border border-slate-700/70 rounded-3xl p-5 space-y-4">
                   <div>
-                    <PandaPreview config={c} />
-                    <div className="flex items-center justify-between mb-2">
-                      <span
-                        className="text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase"
-                        style={{ backgroundColor: `${c.accent}25`, color: c.accent }}
+                    <label className="block text-[10px] font-black tracking-widest text-slate-400 mb-1.5">YOUR NAME</label>
+                    <input
+                      type="text"
+                      maxLength={16}
+                      value={playerName}
+                      onChange={e => setPlayerName(e.target.value)}
+                      className="w-full px-4 py-3 rounded-xl bg-slate-950/80 border border-slate-700 text-white font-black text-lg focus:outline-none focus:border-emerald-400"
+                      placeholder="PandaKing"
+                    />
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      sfx.unlock();
+                      setResults(null);
+                      setScreen('playing');
+                    }}
+                    className="play-btn w-full py-4 rounded-2xl font-game text-2xl text-slate-950 cursor-pointer"
+                  >
+                    ▶ PLAY
+                  </button>
+
+                  <div className="flex items-center justify-between gap-3 text-xs">
+                    <span className="font-bold text-slate-300">AI pandas fill empty slots</span>
+                    <button
+                      onClick={() => setFillWithBots(!fillWithBots)}
+                      className={`relative w-11 h-6 rounded-full transition cursor-pointer ${fillWithBots ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                    >
+                      <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${fillWithBots ? 'left-[22px]' : 'left-0.5'}`} />
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black tracking-widest text-slate-400 mb-1.5">ROOM CODE · SHARE TO PLAY WITH FRIENDS</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        maxLength={12}
+                        value={roomCode}
+                        onChange={e => setRoomCode(e.target.value.toUpperCase())}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-950/80 border border-slate-700 text-emerald-300 font-black tracking-wider uppercase focus:outline-none focus:border-emerald-400"
+                      />
+                      <button
+                        onClick={handleCopyInvite}
+                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-black whitespace-nowrap cursor-pointer"
                       >
-                        {c.badge}
-                      </span>
-                      {isSelected && (
-                        <span className="text-xs font-black text-emerald-400">★ SELECTED</span>
-                      )}
-                    </div>
-                    <h3 className="text-base font-black text-white mb-1">{c.name}</h3>
-                    <p className="text-xs text-slate-400 leading-relaxed mb-3">{c.desc}</p>
-                  </div>
-
-                  <div className="space-y-1.5 text-[11px] border-t border-slate-800 pt-2.5">
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">RING POWER</span>
-                      <span className="font-bold text-amber-400">{Math.round(c.power * 100)}%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">GANG SPEED</span>
-                      <span className="font-bold text-emerald-400">{Math.round(c.speed * 100)}%</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-400">ARMOR WEIGHT</span>
-                      <span className="font-bold text-cyan-400">{Math.round(c.mass * 100)}%</span>
+                        {copiedNotice ? '✓ COPIED' : 'COPY LINK'}
+                      </button>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
 
-          <div className="max-w-xl w-full text-center my-4">
-            <button
-              onClick={() => {
-                sfx.unlock();
-                setScreen('playing');
-              }}
-              className="w-full py-4 rounded-2xl bg-gradient-to-r from-emerald-500 via-teal-400 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-black text-xl tracking-wider uppercase shadow-[0_0_35px_rgba(34,197,94,0.5)] transition transform active:scale-95 cursor-pointer"
-            >
-              🚀 DROP INTO ROOM [{roomCode}] NOW
-            </button>
-            <p className="text-xs text-slate-400 mt-2">
-              Controls: <strong className="text-white">WASD / Arrows / Touch Drag</strong> to Move •{' '}
-              <strong className="text-emerald-400">[SPACE]</strong> Call Gang •{' '}
-              <strong className="text-amber-400">[E]</strong> Ring Smash •{' '}
-              <strong className="text-rose-400">[Q]</strong> 360° Swarm •{' '}
-              <strong className="text-slate-200">[M]</strong> Mute
-            </p>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-3 text-[11px] text-left">
-              <div className="bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-2"><span className="font-black text-amber-300">① BUILD %</span><br />Every hit raises their damage %. Higher % = they fly further.</div>
-              <div className="bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-2"><span className="font-black text-pink-300">② USE BUMPERS</span><br />Knock rivals into the pink bumpers for a pinball launch.</div>
-              <div className="bg-slate-900/80 border border-slate-800 rounded-xl px-3 py-2"><span className="font-black text-cyan-300">③ GRAB POWER-UPS</span><br />🍔 speed • 💎 armor • 🚀 x1.7 hits • 🎁 +3 pandas</div>
+                  <div className="border-t border-slate-700/70 pt-3">
+                    <div className="text-[10px] font-black tracking-widest text-slate-400 mb-2">CONTROLS</div>
+                    <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 items-center text-[12px] text-slate-200">
+                      <span className="flex gap-1"><span className="keycap">W</span><span className="keycap">A</span><span className="keycap">S</span><span className="keycap">D</span></span><span>Move</span>
+                      <span><span className="keycap">SPACE</span></span><span>Jump · double jump</span>
+                      <span><span className="keycap">E</span></span><span>Ring Smash · air = ground pound</span>
+                      <span><span className="keycap">R</span></span><span>Call gang (recruit grey pandas)</span>
+                      <span><span className="keycap">Q</span></span><span>Swarm (gang goes berserk)</span>
+                      <span><span className="keycap">M</span></span><span>Mute</span>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-slate-700/70 pt-3 space-y-1.5 text-[12px] text-slate-300">
+                    <div><span className="font-black text-amber-300">① </span>Hits raise their <b className="text-white">%</b>. Higher % = they fly further.</div>
+                    <div><span className="font-black text-pink-300">② </span>Bounce rivals off the pink <b className="text-white">bumpers</b>.</div>
+                    <div><span className="font-black text-cyan-300">③ </span>Grab 🍔 💎 🚀 🎁 power-ups. Most K.O.s in 3 minutes wins.</div>
+                  </div>
+                </aside>
+              </div>
             </div>
           </div>
         </div>
@@ -2180,6 +2526,53 @@ function App() {
 
       {screen === 'playing' && (
         <div ref={flashRef} className="absolute inset-0 z-30 pointer-events-none bg-white" style={{ opacity: 0 }} />
+      )}
+
+      {screen === 'playing' && results && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/75 backdrop-blur-sm p-4">
+          <div className="w-full max-w-lg glass border border-slate-700 rounded-3xl p-6 text-center" style={{ animation: 'fadeUp 0.5s ease-out both' }}>
+            <div className="font-game text-4xl md:text-5xl" style={{ color: results.myRank === 1 ? '#facc15' : '#ffffff' }}>
+              {results.myRank === 1 ? '🏆 VICTORY' : `#${results.myRank} PLACE`}
+            </div>
+            <div className="text-slate-400 text-sm mt-1">Match over · ranked by ring-out K.O.s</div>
+            <div className="mt-4 space-y-1.5 text-left">
+              {results.board.slice(0, 8).map((r, i) => (
+                <div key={r.id} className={`flex items-center gap-3 px-3 py-2 rounded-xl ${r.isLocal ? 'bg-emerald-500/20 border border-emerald-400/60' : 'bg-slate-900/70'}`}>
+                  <span className="font-game w-6 text-slate-400">{i + 1}</span>
+                  <span className="w-3 h-3 rounded-full" style={{ background: r.color }} />
+                  <span className="flex-1 font-bold truncate">{r.name}{r.isLocal ? ' (you)' : ''}</span>
+                  <span className="font-black text-amber-300">{r.kos} 💀</span>
+                  <span className="font-black text-emerald-300 w-12 text-right">{r.gang} 🐼</span>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-3 gap-2 mt-4">
+              <div className="bg-slate-900/80 rounded-xl py-2"><div className="font-game text-xl text-orange-300">x{results.bestCombo}</div><div className="text-[10px] text-slate-400 font-bold">BEST COMBO</div></div>
+              <div className="bg-slate-900/80 rounded-xl py-2"><div className="font-game text-xl text-pink-300">{Math.round(results.biggestHit)}</div><div className="text-[10px] text-slate-400 font-bold">BIGGEST HIT</div></div>
+              <div className="bg-slate-900/80 rounded-xl py-2"><div className="font-game text-xl text-sky-300">{results.falls}</div><div className="text-[10px] text-slate-400 font-bold">TIMES YOU FELL</div></div>
+            </div>
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => {
+                  setResults(null);
+                  setMatchId(m => m + 1);
+                }}
+                className="play-btn flex-1 py-3 rounded-2xl font-game text-lg text-slate-950 cursor-pointer"
+              >
+                PLAY AGAIN
+              </button>
+              <button
+                onClick={() => {
+                  setResults(null);
+                  setScreen('lobby');
+                }}
+                className="px-5 py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 font-bold cursor-pointer"
+              >
+                LOBBY
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {screen === 'playing' && announce && (
@@ -2227,7 +2620,10 @@ function App() {
                   {muted ? '🔇' : '🔊'}
                 </button>
                 <button
-                  onClick={() => setScreen('lobby')}
+                  onClick={() => {
+                    setResults(null);
+                    setScreen('lobby');
+                  }}
                   className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-[11px] font-bold text-slate-300 cursor-pointer"
                 >
                   LOBBY
@@ -2236,6 +2632,9 @@ function App() {
             </div>
 
             <div className="flex flex-col items-center gap-2 mx-auto">
+              <div className={`font-game text-2xl md:text-3xl px-4 py-0.5 rounded-xl bg-slate-950/85 border ${matchTime <= 30 ? 'border-orange-400 text-orange-300 animate-pulse' : 'border-slate-700 text-white'}`}>
+                {Math.floor(matchTime / 60)}:{String(matchTime % 60).padStart(2, '0')}
+              </div>
               <div className="px-4 py-1.5 rounded-full bg-slate-950/85 border border-cyan-500/40 text-cyan-300 text-xs font-extrabold tracking-wide shadow-lg">
                 {arenaEventText}
               </div>
@@ -2338,42 +2737,32 @@ function App() {
               <div className="text-[10px] font-black tracking-widest text-slate-300">YOUR DAMAGE</div>
             </div>
 
-            <div className="pointer-events-auto flex items-center gap-2.5 md:gap-4">
-              <button
-                onClick={() => (actionTriggerRef.current.call = true)}
-                className={`px-4 py-3.5 rounded-2xl border-2 font-black text-xs md:text-sm uppercase transition cursor-pointer ${
-                  cooldowns.call > 0
-                    ? 'bg-slate-900/80 border-slate-700 text-slate-500'
-                    : 'bg-emerald-500 hover:bg-emerald-400 border-emerald-300 text-slate-950 shadow-[0_0_20px_rgba(34,197,94,0.5)]'
-                }`}
-              >
-                <div className="text-[10px] opacity-80">[SPACE] PHONE</div>
-                <div>{cooldowns.call > 0 ? `${cooldowns.call}s` : '📱 CALL GANG'}</div>
-              </button>
-
-              <button
-                onClick={() => (actionTriggerRef.current.smash = true)}
-                className={`px-4 py-3.5 rounded-2xl border-2 font-black text-xs md:text-sm uppercase transition cursor-pointer ${
-                  cooldowns.smash > 0
-                    ? 'bg-slate-900/80 border-slate-700 text-slate-500'
-                    : 'bg-amber-400 hover:bg-amber-300 border-yellow-200 text-slate-950 shadow-[0_0_20px_rgba(250,204,21,0.5)]'
-                }`}
-              >
-                <div className="text-[10px] opacity-80">[E] POWER RING</div>
-                <div>{cooldowns.smash > 0 ? `${cooldowns.smash}s` : '💍 RING SMASH'}</div>
-              </button>
-
-              <button
-                onClick={() => (actionTriggerRef.current.swarm = true)}
-                className={`px-4 py-3.5 rounded-2xl border-2 font-black text-xs md:text-sm uppercase transition cursor-pointer ${
-                  cooldowns.swarm > 0
-                    ? 'bg-slate-900/80 border-slate-700 text-slate-500'
-                    : 'bg-rose-500 hover:bg-rose-400 border-rose-300 text-white shadow-[0_0_20px_rgba(244,63,94,0.6)]'
-                }`}
-              >
-                <div className="text-[10px] opacity-80">[Q] ALL-IN</div>
-                <div>{cooldowns.swarm > 0 ? `${cooldowns.swarm}s` : '🔥 360° SWARM'}</div>
-              </button>
+            <div className="pointer-events-auto flex items-end gap-2 md:gap-3">
+              {[
+                { key: 'jump', keyLabel: 'SPACE', title: '🦘 JUMP', desc: 'Double jump · dodge smashes · save yourself at the edge', bg: 'bg-sky-500', border: 'border-sky-300', text: 'text-slate-950', cd: 0, max: 1 },
+                { key: 'call', keyLabel: 'R', title: '📱 CALL GANG', desc: 'Recruit nearby grey pandas into your gang', bg: 'bg-emerald-500', border: 'border-emerald-300', text: 'text-slate-950', cd: cooldowns.call, max: CD_MAX.call },
+                { key: 'smash', keyLabel: 'E', title: '💍 RING SMASH', desc: 'Blast everyone near you away · in the air = ground pound', bg: 'bg-amber-400', border: 'border-yellow-200', text: 'text-slate-950', cd: cooldowns.smash, max: CD_MAX.smash },
+                { key: 'swarm', keyLabel: 'Q', title: '🔥 SWARM', desc: '3.6s: gang punches 2x faster & you run faster', bg: 'bg-rose-500', border: 'border-rose-300', text: 'text-white', cd: cooldowns.swarm, max: CD_MAX.swarm }
+              ].map(b => (
+                <button
+                  key={b.key}
+                  onClick={() => (actionTriggerRef.current[b.key] = true)}
+                  className={`relative overflow-hidden w-[118px] md:w-[150px] text-left px-3 py-2.5 rounded-2xl border-2 transition cursor-pointer ${
+                    b.cd > 0 ? 'bg-slate-900/85 border-slate-700 text-slate-400' : `${b.bg} ${b.border} ${b.text} shadow-lg hover:brightness-110`
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-game text-[12px] md:text-[13px] leading-none">{b.title}</span>
+                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-black/25">{b.keyLabel}</span>
+                  </div>
+                  <div className="text-[9.5px] md:text-[10.5px] font-semibold leading-tight mt-1 opacity-90">
+                    {b.cd > 0 ? `Ready in ${b.cd}s` : b.desc}
+                  </div>
+                  {b.cd > 0 && (
+                    <div className="absolute left-0 bottom-0 h-1 bg-white/60" style={{ width: `${(1 - b.cd / b.max) * 100}%` }} />
+                  )}
+                </button>
+              ))}
             </div>
           </div>
         </div>
