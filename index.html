@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NGMI Pandas: 3D Gang Beatdown</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React & ReactDOM CDN -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Three.js & MQTT CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js"></script>
+  <!-- Babel for In-browser JSX compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-[#04060e] text-white overflow-hidden m-0 p-0">
+  <div id="root" class="w-screen h-screen"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    const PANDA_CLASSES = [
+      {
+        id: 'vr_up_only',
+        name: 'UP ONLY VR PANDA #4483',
+        badge: 'BERSERKER LEAD',
+        shirtText: 'BTC / UP ONLY',
+        shirtColor: '#6b3e16',
+        phoneColor: '#ef4444',
+        accent: '#22c55e',
+        speed: 1.08,
+        mass: 1.15,
+        power: 1.45,
+        desc: 'Green "Up Only" VR Visor. Exponential crit damage when swarming with 4+ pandas!'
+      },
+      {
+        id: 'street_gm',
+        name: 'FAST FOOD OG PANDA #3663',
+        badge: 'SWARM CALLER',
+        shirtText: 'Fast Food',
+        shirtColor: '#16a34a',
+        phoneColor: '#b91c1c',
+        accent: '#c084fc',
+        speed: 1.25,
+        mass: 1.0,
+        power: 1.15,
+        desc: 'Purple Shades + Fast Food Tee. +40% Phone Recruitment radius & ultra-fast gang sprint!'
+      },
+      {
+        id: 'astro_gmi',
+        name: 'GMI MOON ASTRONAUT #2394',
+        badge: 'HEAVY TITAN',
+        shirtText: 'GMI',
+        shirtColor: '#eab308',
+        helmetColor: '#ca8a04',
+        phoneColor: '#facc15',
+        accent: '#38bdf8',
+        speed: 0.96,
+        mass: 1.85,
+        power: 1.65,
+        desc: 'Golden Metallic GMI Space Suit. Massive knockback resistance & devastating Ring Shockwave!'
+      }
+    ];
+
+    function createLabelTexture(text, bgColor, textColor, width = 256, height = 128, fontSize = 44) {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (bgColor !== 'transparent') {
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, width, height);
+      }
+      ctx.font = `900 ${fontSize}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = textColor;
+      ctx.fillText(text, width / 2, height / 2);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.needsUpdate = true;
+      return tex;
+    }
+
+    function buildNgmiPandaMesh(config, isMinion = false) {
+      const root = new THREE.Group();
+      const scale = isMinion ? 0.68 : 1.18;
+      root.scale.set(scale, scale, scale);
+
+      const isAstro = config.id === 'astro_gmi';
+      const whiteFurMat = new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.45 });
+      const blackFurMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 });
+
+      const shirtTex = createLabelTexture(isMinion ? 'GM' : config.shirtText, config.shirtColor || '#7c3aed', '#f8fafc', 256, 256, 46);
+      const torsoMat = new THREE.MeshStandardMaterial({ map: shirtTex, roughness: isAstro ? 0.22 : 0.6, metalness: isAstro ? 0.8 : 0.1 });
+      const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.82, 1.38, 20), torsoMat);
+      torso.position.y = 0.95;
+      root.add(torso);
+
+      const headGroup = new THREE.Group();
+      headGroup.position.y = 2.08;
+      root.add(headGroup);
+
+      if (isAstro) {
+        const helmet = new THREE.Mesh(new THREE.SphereGeometry(0.78, 28, 24), new THREE.MeshStandardMaterial({ color: config.helmetColor, metalness: 0.9 }));
+        headGroup.add(helmet);
+      } else {
+        const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.7, 24, 20), whiteFurMat);
+        headGroup.add(headMesh);
+      }
+
+      const aura = new THREE.Mesh(new THREE.RingGeometry(0.85, 1.05, 32), new THREE.MeshBasicMaterial({ color: config.accent || 0x22c55e, side: THREE.DoubleSide, transparent: true, opacity: 0.7 }));
+      aura.rotation.x = -Math.PI / 2;
+      aura.position.y = 0.04;
+      root.add(aura);
+
+      return root;
+    }
+
+    function App() {
+      const [screen, setScreen] = useState('lobby');
+      const [playerName, setPlayerName] = useState(`Panda_${Math.floor(100 + Math.random() * 899)}`);
+      const [roomCode, setRoomCode] = useState('NGMI-888');
+      const [selectedClass, setSelectedClass] = useState(PANDA_CLASSES[0]);
+      const mountRef = useRef(null);
+
+      useEffect(() => {
+        if (screen !== 'playing' || !mountRef.current) return;
+        const container = mountRef.current;
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x04060e);
+
+        const camera = new THREE.PerspectiveCamera(50, container.clientWidth / container.clientHeight, 0.1, 400);
+        camera.position.set(0, 28, 34);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        container.innerHTML = '';
+        container.appendChild(renderer.domElement);
+
+        scene.add(new THREE.AmbientLight(0xcbd5e1, 0.85));
+        const moonLight = new THREE.DirectionalLight(0x60a5fa, 1.9);
+        moonLight.position.set(-25, 45, -35);
+        scene.add(moonLight);
+
+        // Arena Floor
+        const floor = new THREE.Mesh(
+          new THREE.CylinderGeometry(34, 31, 2.2, 48),
+          new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.35 })
+        );
+        floor.position.y = -1.1;
+        scene.add(floor);
+
+        const playerMesh = buildNgmiPandaMesh(selectedClass, false);
+        scene.add(playerMesh);
+
+        let animId;
+        const animate = () => {
+          animId = requestAnimationFrame(animate);
+          playerMesh.rotation.y += 0.01;
+          renderer.render(scene, camera);
+        };
+        animate();
+
+        return () => cancelAnimationFrame(animId);
+      }, [screen, selectedClass]);
+
+      return (
+        <div className="relative w-full h-screen bg-[#04060e] text-white">
+          {screen === 'lobby' ? (
+            <div className="flex flex-col items-center justify-center h-full p-6 text-center">
+              <h1 className="text-5xl font-black bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent mb-4">
+                NGMI PANDAS: BEATDOWN 3D
+              </h1>
+              <p className="text-slate-300 mb-6">Solana NFT 3D Gang Beatdown Arena</p>
+              <div className="bg-slate-900 border border-slate-700 p-6 rounded-2xl max-w-md w-full mb-6">
+                <input
+                  type="text"
+                  value={playerName}
+                  onChange={e => setPlayerName(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl bg-slate-950 border border-slate-700 mb-4 font-bold text-center"
+                />
+                <button
+                  onClick={() => setScreen('playing')}
+                  className="w-full py-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-lg uppercase shadow-lg cursor-pointer"
+                >
+                  🚀 ENTER ARENA [{roomCode}]
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="relative w-full h-full">
+              <div ref={mountRef} className="absolute inset-0 w-full h-full" />
+              <div className="absolute top-4 left-4 z-20 bg-slate-950/80 p-4 rounded-xl border border-slate-800">
+                <div className="text-emerald-400 font-bold">ROOM: {roomCode}</div>
+                <div className="text-sm text-slate-300">{playerName}</div>
+                <button onClick={() => setScreen('lobby')} className="mt-2 px-3 py-1 bg-slate-800 text-xs rounded font-bold">EXIT</button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
