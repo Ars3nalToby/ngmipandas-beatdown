@@ -1922,7 +1922,284 @@ function buildShootoutMap(scene, cinematic) {
   return { colliders, solids, spawns, pickupSpots, clouds, pads };
 }
 
-function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
+function makeSmokeTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  for (let i = 0; i < 16; i++) {
+    const x = 64 + (Math.random() - 0.5) * 46, y = 64 + (Math.random() - 0.5) * 46, r = 16 + Math.random() * 28;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, 'rgba(255,255,255,0.32)');
+    gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr;
+    g.beginPath();
+    g.arc(x, y, r, 0, Math.PI * 2);
+    g.fill();
+  }
+  return srgbTex(new THREE.CanvasTexture(c));
+}
+
+const SIEGE_TEAMS = {
+  atk: { name: 'NGMI RAIDERS', color: '#ef4444', icon: '⚔️' },
+  def: { name: 'DIAMOND HANDS', color: '#3b82f6', icon: '🛡️' }
+};
+
+function buildSiegeMap(scene, cinematic) {
+  const colliders = [], solids = [];
+  const edgeMat = new THREE.LineBasicMaterial({ color: 0x2a1a12, transparent: true, opacity: 0.45 });
+  const box = (x, z, w, h, d, color, o = {}) => {
+    const y0 = o.y || 0;
+    const geo = new THREE.BoxGeometry(w, h, d);
+    const m = new THREE.Mesh(geo, o.mat || new THREE.MeshStandardMaterial({ color, roughness: 0.85 }));
+    m.position.set(x, y0 + h / 2, z);
+    m.castShadow = cinematic;
+    m.receiveShadow = true;
+    scene.add(m);
+    if (!o.noEdge) {
+      const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat);
+      e.position.copy(m.position);
+      scene.add(e);
+    }
+    if (!o.noCollide) {
+      colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, bottom: y0, top: y0 + h });
+      solids.push(m);
+    }
+    return m;
+  };
+  const plane = (w, h, mat, x, y, z, rotY) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    m.position.set(x, y, z);
+    m.rotation.y = rotY;
+    scene.add(m);
+    return m;
+  };
+  const signMat = (text, bg, fg, w, h) => {
+    const cw = 512, ch = Math.max(64, Math.round(512 * h / w));
+    const fs = Math.min(ch * 0.62, (cw * 1.5) / Math.max(4, text.length));
+    return new THREE.MeshStandardMaterial({ map: createLabelTexture(text, bg, fg, cw, ch, Math.round(fs)), roughness: 0.7, side: THREE.DoubleSide });
+  };
+
+  // ---- sunset sky, warm fog ----
+  const sky = document.createElement('canvas');
+  sky.width = 4;
+  sky.height = 256;
+  const sg = sky.getContext('2d');
+  const grd = sg.createLinearGradient(0, 0, 0, 256);
+  grd.addColorStop(0, '#23295a');
+  grd.addColorStop(0.35, '#6e4a8c');
+  grd.addColorStop(0.68, '#f0874f');
+  grd.addColorStop(1, '#ffd49c');
+  sg.fillStyle = grd;
+  sg.fillRect(0, 0, 4, 256);
+  scene.background = srgbTex(new THREE.CanvasTexture(sky));
+  scene.fog = new THREE.Fog(0xe9a37a, 60, 240);
+  const sunDisc = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(255,236,190,1)', 'rgba(255,150,80,0)'), transparent: true, depthWrite: false, fog: false }));
+  sunDisc.position.set(-160, 28, 110);
+  sunDisc.scale.set(70, 70, 1);
+  scene.add(sunDisc);
+
+  // ---- desert ground + road ----
+  const sandC = document.createElement('canvas');
+  sandC.width = sandC.height = 256;
+  const sgc = sandC.getContext('2d');
+  sgc.fillStyle = '#c48a5a';
+  sgc.fillRect(0, 0, 256, 256);
+  sgc.globalAlpha = 0.25;
+  sgc.drawImage(noiseCanvas(256, 20, 4, 77), 0, 0);
+  const sandTex = srgbTex(new THREE.CanvasTexture(sandC));
+  sandTex.wrapS = sandTex.wrapT = THREE.RepeatWrapping;
+  sandTex.repeat.set(40, 40);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), new THREE.MeshStandardMaterial({ map: sandTex, roughness: 1 }));
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+  solids.push(ground);
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(10, 84), new THREE.MeshStandardMaterial({ color: 0xa8714a, roughness: 1 }));
+  road.rotation.x = -Math.PI / 2;
+  road.position.set(0, 0.02, 20);
+  road.receiveShadow = true;
+  scene.add(road);
+
+  // ---- canyon cliffs around the map ----
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0xa35f3c, roughness: 1, flatShading: true });
+  for (let i = 0; i < 46; i++) {
+    const a = (i / 46) * Math.PI * 2;
+    const r = 74 + Math.random() * 12;
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(9 + Math.random() * 9, 0), rockMat);
+    rock.scale.y = 1.2 + Math.random() * 1.3;
+    rock.rotation.set(Math.random(), Math.random() * 6, Math.random());
+    rock.position.set(Math.cos(a) * r, 2 + Math.random() * 5, Math.sin(a) * r);
+    scene.add(rock);
+  }
+  const L = 63;
+  [[0, -L, 2 * L, 2], [0, L, 2 * L, 2], [-L, 0, 2, 2 * L], [L, 0, 2, 2 * L]].forEach(([x, z, w, d]) => {
+    colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, bottom: 0, top: 60 });
+  });
+
+  // ---- Fort HODL: walls with a south gate and two side doors ----
+  const wallMat = new THREE.MeshStandardMaterial({ color: 0xcdb596, roughness: 0.9 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: 0x7c6a58, roughness: 0.8 });
+  const wireMat = new THREE.LineBasicMaterial({ color: 0x3f3f46 });
+  const wall = (x1, z1, x2, z2) => {
+    const horiz = z1 === z2;
+    const len = horiz ? Math.abs(x2 - x1) : Math.abs(z2 - z1);
+    const cx = (x1 + x2) / 2, cz = (z1 + z2) / 2;
+    box(cx, cz, horiz ? len : 2, 6, horiz ? 2 : len, 0, { mat: wallMat });
+    box(cx, cz, horiz ? len + 0.4 : 2.5, 0.45, horiz ? 2.5 : len + 0.4, 0, { mat: trimMat, y: 6, noCollide: true });
+    const pts = [];
+    const n = Math.floor(len / 0.8);
+    for (let i = 0; i <= n; i++) {
+      const t = i / n;
+      const px = horiz ? x1 + (x2 - x1) * t : x1, pz = horiz ? z1 : z1 + (z2 - z1) * t;
+      pts.push(new THREE.Vector3(px + (horiz ? 0 : (i % 2 ? 0.3 : -0.3)), 6.9 + (i % 2 ? 0.3 : 0), pz + (horiz ? (i % 2 ? 0.3 : -0.3) : 0)));
+    }
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
+  };
+  wall(-40, -22, -7, -22);
+  wall(7, -22, 40, -22);
+  wall(-40, -62, -40, -45);
+  wall(-40, -38, -40, -22);
+  wall(40, -62, 40, -45);
+  wall(40, -38, 40, -22);
+  wall(-40, -62, 40, -62);
+  [-8, 8].forEach(x => box(x, -22, 2.6, 8.5, 2.6, 0, { mat: trimMat }));
+  plane(15, 2.2, signMat('FORT HODL', '#1e293b', '#fbbf24', 15, 2.2), 0, 7.6, -20.6, 0);
+
+  // ---- watchtowers with sweeping searchlights ----
+  const searchlights = [];
+  const legMat = new THREE.MeshStandardMaterial({ color: 0x5b4636, roughness: 0.9 });
+  [[-34, -28], [34, -28]].forEach(([x, z], ti) => {
+    [[-1.6, -1.6], [1.6, -1.6], [-1.6, 1.6], [1.6, 1.6]].forEach(([ox, oz]) => box(x + ox, z + oz, 0.35, 7, 0.35, 0, { mat: legMat, noEdge: true }));
+    box(x, z, 4.6, 0.4, 4.6, 0, { mat: legMat, y: 7, noCollide: true });
+    [[0, -2.2, 4.6, 0.15], [0, 2.2, 4.6, 0.15], [-2.2, 0, 0.15, 4.6], [2.2, 0, 0.15, 4.6]].forEach(([ox, oz, w, d]) => box(x + ox, z + oz, w, 1.1, d, 0, { mat: legMat, y: 7.4, noCollide: true, noEdge: true }));
+    const roof = new THREE.Mesh(new THREE.ConeGeometry(3.6, 1.8, 4), new THREE.MeshStandardMaterial({ color: 0x3f2f24 }));
+    roof.position.set(x, 10.4, z);
+    roof.rotation.y = Math.PI / 4;
+    scene.add(roof);
+    const pivot = new THREE.Group();
+    pivot.position.set(x, 8.6, z);
+    const beam = new THREE.Mesh(new THREE.ConeGeometry(4, 26, 20, 1, true), new THREE.MeshBasicMaterial({ color: 0xfff3c4, transparent: true, opacity: 0.1, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    beam.rotation.x = -Math.PI / 2 - 0.5;
+    beam.position.set(0, -4, 12);
+    pivot.add(beam);
+    const lamp = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 0.7, 12), new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xfff3c4, emissiveIntensity: 1.5 }));
+    lamp.rotation.x = Math.PI / 2;
+    pivot.add(lamp);
+    scene.add(pivot);
+    searchlights.push({ pivot, ph: ti * 2 });
+  });
+
+  // ---- Objective B: the Moon Vault ----
+  const steel = new THREE.MeshStandardMaterial({ color: 0x8a94a3, metalness: 0.85, roughness: 0.35 });
+  box(12, -50, 22, 9, 12, 0, { mat: new THREE.MeshStandardMaterial({ color: 0x5b6472, roughness: 0.7, metalness: 0.4 }) });
+  box(12, -50, 23, 0.6, 13, 0x3f4651, { y: 9, noCollide: true });
+  const door = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.4, 0.6, 40), steel);
+  door.rotation.x = Math.PI / 2;
+  door.position.set(12, 3.8, -43.7);
+  scene.add(door);
+  const doorRing = new THREE.Mesh(new THREE.TorusGeometry(3.4, 0.25, 12, 40), new THREE.MeshStandardMaterial({ color: 0xd4a640, metalness: 1, roughness: 0.25 }));
+  doorRing.position.set(12, 3.8, -43.35);
+  scene.add(doorRing);
+  const wheel = new THREE.Group();
+  wheel.position.set(12, 3.8, -43.2);
+  for (let i = 0; i < 6; i++) {
+    const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.22, 2.6, 0.18), steel);
+    spoke.rotation.z = (i / 6) * Math.PI;
+    wheel.add(spoke);
+  }
+  wheel.add(new THREE.Mesh(new THREE.TorusGeometry(1.3, 0.12, 8, 24), steel));
+  scene.add(wheel);
+  plane(13, 1.8, signMat('MOON VAULT · HODL', '#0f172a', '#fde68a', 13, 1.8), 12, 8.1, -43.9, 0);
+
+  // ---- Objective A: the server farm ----
+  const ledCanvas = document.createElement('canvas');
+  ledCanvas.width = 64;
+  ledCanvas.height = 256;
+  const lg = ledCanvas.getContext('2d');
+  lg.fillStyle = '#0b1220';
+  lg.fillRect(0, 0, 64, 256);
+  for (let y = 8; y < 256; y += 14) {
+    for (let x = 6; x < 64; x += 12) {
+      lg.fillStyle = Math.random() < 0.6 ? '#22d3ee' : Math.random() < 0.5 ? '#4ade80' : '#f43f5e';
+      lg.fillRect(x, y, 5, 4);
+    }
+  }
+  const ledTex = srgbTex(new THREE.CanvasTexture(ledCanvas));
+  const ledMat = new THREE.MeshStandardMaterial({ map: ledTex, emissive: 0xffffff, emissiveMap: ledTex, emissiveIntensity: 1.2, roughness: 0.4 });
+  const floorPlate = new THREE.Mesh(new THREE.PlaneGeometry(18, 15), new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.6, metalness: 0.4 }));
+  floorPlate.rotation.x = -Math.PI / 2;
+  floorPlate.position.set(-18, 0.03, 6);
+  floorPlate.receiveShadow = true;
+  scene.add(floorPlate);
+  [-24, -18, -12].forEach(x => {
+    box(x, 6, 1.3, 2.7, 6.5, 0x1f2937);
+    [-1, 1].forEach(side => plane(6.2, 2.4, ledMat, x + side * 0.67, 1.4, 6, side * Math.PI / 2));
+    box(x, 6, 0.4, 0.15, 6.5, 0xf59e0b, { y: 3.1, noCollide: true, noEdge: true });
+  });
+  const dishPole = box(-31, 14, 0.4, 4, 0.4, 0x6b7280, { noEdge: true });
+  void dishPole;
+  const dish = new THREE.Mesh(new THREE.SphereGeometry(2.4, 20, 10, 0, Math.PI * 2, 0, Math.PI / 3), new THREE.MeshStandardMaterial({ color: 0xe5e7eb, side: THREE.DoubleSide, roughness: 0.5 }));
+  dish.position.set(-31, 4.6, 14);
+  dish.rotation.set(-0.9, 0.6, 0);
+  scene.add(dish);
+
+  // ---- cover: sandbags, barriers, containers, trucks ----
+  const bagMat = new THREE.MeshStandardMaterial({ color: 0xb79a6c, roughness: 1 });
+  [[-8, 18, 8, 0], [-30, -4, 6, 0], [0, 2, 6, 1], [10, 12, 8, 0], [24, -6, 6, 1], [-6, -10, 8, 0], [16, -14, 6, 0], [-22, -14, 6, 0], [28, 16, 6, 0], [4, -32, 6, 0], [22, -30, 5, 1]].forEach(([x, z, len, rot]) => {
+    box(x, z, rot ? 1.3 : len, 1.25, rot ? len : 1.3, 0, { mat: bagMat });
+    box(x, z, rot ? 1.0 : len - 0.4, 0.35, rot ? len - 0.4 : 1.0, 0, { mat: bagMat, y: 1.25, noCollide: true, noEdge: true });
+  });
+  const concrete = new THREE.MeshStandardMaterial({ color: 0xa8a29e, roughness: 0.9 });
+  [[-14, 30], [14, 30], [0, 38], [-28, 32], [28, 32], [-6, -30], [30, -50]].forEach(([x, z]) => box(x, z, 4, 1.2, 0.9, 0, { mat: concrete }));
+  const CONT = [0x2bb3a3, 0xd9534f, 0xf28c38, 0x4f7df0];
+  [[30, 4, 1], [-36, 20, 0], [24, 40, 0], [-24, 44, 1]].forEach(([x, z, r], i) => box(x, z, r ? 2.6 : 6, 3, r ? 6 : 2.6, CONT[i]));
+  const truck = (x, z, color) => {
+    box(x, z, 3, 2.4, 6, color);
+    box(x, z - 3.6, 2.8, 2.2, 1.8, color, { y: 0.4 });
+    plane(2.4, 1, new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.6, roughness: 0.2 }), x, 2, z - 4.52, Math.PI);
+    [[-1.5, -3.4], [1.5, -3.4], [-1.5, 1.8], [1.5, 1.8]].forEach(([ox, oz]) => {
+      const wh = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 0.45, 14), new THREE.MeshStandardMaterial({ color: 0x111111 }));
+      wh.rotation.z = Math.PI / 2;
+      wh.position.set(x + ox, 0.6, z + oz);
+      scene.add(wh);
+    });
+  };
+  truck(-28, 50, 0x5f6b3a);
+  truck(28, 50, 0x8b2a2a);
+
+  // ---- flags ----
+  const flag = (x, z, text, bg) => {
+    box(x, z, 0.2, 7, 0.2, 0x374151, { noEdge: true });
+    const f = plane(3.6, 2, signMat(text, bg, '#ffffff', 3.6, 2), x + 1.9, 6, z, 0);
+    return f;
+  };
+  const flags = [flag(-10, 58, 'NGMI', '#b91c1c'), flag(10, 58, 'RAIDERS', '#b91c1c'), flag(-20, -32, 'DIAMOND', '#1d4ed8'), flag(20, -32, 'HANDS', '#1d4ed8')];
+
+  // ---- burning barrels ----
+  const barrels = [];
+  [[-6, 24], [6, 24], [-30, -10], [30, -10], [0, -27], [-14, 44], [14, 44]].forEach(([x, z]) => {
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 1.2, 14), new THREE.MeshStandardMaterial({ color: 0x7a3b1d, roughness: 0.8, metalness: 0.3 }));
+    b.position.set(x, 0.6, z);
+    scene.add(b);
+    const fire = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(255,200,110,1)', 'rgba(255,90,20,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    fire.position.set(x, 1.6, z);
+    fire.scale.set(1.6, 2, 1);
+    scene.add(fire);
+    barrels.push({ fire, ph: Math.random() * 6 });
+  });
+
+  const spawns = {
+    atk: [[-20, 56], [0, 58], [20, 56], [-10, 52], [10, 52]],
+    atkFwd: [[-32, 22], [-20, 26], [0, 24], [16, 22], [30, 26]],
+    def: [[-22, -54], [-10, -57], [30, -54], [-30, -40], [32, -36]]
+  };
+  const pickupSpots = [[0, 30, 'ak'], [-30, 26, 'gatling'], [32, 24, 'rpg'], [-18, -4, 'burger'], [20, 0, 'ak'], [0, -34, 'gatling'], [-28, -48, 'rpg'], [32, -44, 'burger'], [-10, 46, 'burger'], [24, -38, 'ak']];
+  const objectives = [{ key: 'A', name: 'SERVER FARM', x: -18, z: 6, r: 8 }, { key: 'B', name: 'MOON VAULT', x: 12, z: -36, r: 7 }];
+  const dropSpots = [[0, 14], [-12, 0], [16, 6], [0, -30], [-26, 20], [24, 26]];
+  return { colliders, solids, spawns, pickupSpots, clouds: [], pads: [], objectives, dropSpots, sunset: true, anim: { searchlights, barrels, ledMat, wheel, flags } };
+}
+
+function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant = 'ffa', team = 'auto' }) {
   const mountRef = useRef(null);
   const hitRef = useRef(null);
   const hurtRef = useRef(null);
@@ -1930,7 +2207,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
   const joyKnobRef = useRef(null);
   const ctl = useRef({ firing: false, ads: false, jump: false, reload: false, swap: false, mx: 0, mz: 0, joyPtr: null, jox: 0, joy: 0, lookPtr: null, lx: 0, ly: 0, firePtr: null, fx: 0, fy: 0, lookDX: 0, lookDY: 0 });
   const lockRef = useRef(null);
-  const [hud, setHud] = useState({ weapons: [], moon: 0, bull: 0, started: false, hp: 100, mag: 30, reserve: Infinity, wname: 'AK-47', wkey: 'ak', reloading: 0, kills: 0, deaths: 0, left: SHOOT_SECONDS, feed: [], dead: null, board: [], aim: null, scope: false, locked: false, peers: 1, net: 'CONNECTING' });
+  const [hud, setHud] = useState({ siege: false, team: null, obj: null, marker: null, weapons: [], moon: 0, bull: 0, started: false, hp: 100, mag: 30, reserve: Infinity, wname: 'AK-47', wkey: 'ak', reloading: 0, kills: 0, deaths: 0, left: SHOOT_SECONDS, feed: [], dead: null, board: [], aim: null, scope: false, locked: false, peers: 1, net: 'CONNECTING' });
   const [announce, setAnnounce] = useState(null);
   const [results, setResults] = useState(null);
   const [showBoard, setShowBoard] = useState(false);
@@ -1956,7 +2233,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
     const camera = new THREE.PerspectiveCamera(BASE_FOV, W() / H(), 0.05, 600);
     scene.add(camera);
 
-    scene.add(new THREE.HemisphereLight(0xd6ecff, 0xd8c39a, 1.05));
+    const hemi = new THREE.HemisphereLight(0xd6ecff, 0xd8c39a, 1.05);
+    scene.add(hemi);
     const sun = new THREE.DirectionalLight(0xfff0d8, 2.1);
     sun.position.set(-40, 70, 30);
     sun.castShadow = cinematic;
@@ -1967,7 +2245,18 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
     scene.add(sun);
     scene.add(sun.target);
 
-    const map = buildShootoutMap(scene, cinematic);
+    const siege = variant === 'siege';
+    const map = siege ? buildSiegeMap(scene, cinematic) : buildShootoutMap(scene, cinematic);
+    if (map.sunset) {
+      sun.color.set(0xffa868);
+      sun.intensity = 2.5;
+      sun.position.set(-70, 26, 45);
+      hemi.color.set(0xffc6a0);
+      hemi.groundColor.set(0x5a3a2a);
+      hemi.intensity = 0.8;
+    }
+    const myTeam = siege ? (team === 'atk' || team === 'def' ? team : Math.random() < 0.5 ? 'atk' : 'def') : null;
+    const obj = { stage: 0, prog: 0, contested: false, capturing: false, warnAt: 0 };
     const { colliders, solids } = map;
     const raycaster = new THREE.Raycaster();
 
@@ -2049,7 +2338,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       let best = wh ? wh.distance : 260;
       let hitF = null, head = false;
       for (const f of fighters) {
-        if (f === shooter || f.dead) continue;
+        if (f === shooter || f.dead || (siege && shooter && f.team === shooter.team)) continue;
         const p = f.pos;
         const th = raySphere(o, d, p.x, p.y + 2.1, p.z, 0.72 * assist);
         const tb = raySphere(o, d, p.x, p.y + 1.0, p.z, 0.88 * assist);
@@ -2112,6 +2401,68 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       }
     };
 
+    // ---------- sprite FX system ----------
+    const smokeTex = makeSmokeTexture();
+    const softTex = makeGlowTexture('rgba(255,255,255,1)', 'rgba(255,255,255,0)');
+    const fxs = [];
+    const spawnFx = o => {
+      if (fxs.length > 450) return;
+      const mat = new THREE.SpriteMaterial({ map: o.smoke ? smokeTex : softTex, color: o.color, transparent: true, opacity: o.opacity == null ? 1 : o.opacity, depthWrite: false, blending: o.add ? THREE.AdditiveBlending : THREE.NormalBlending, rotation: Math.random() * 6.28 });
+      const sp = new THREE.Sprite(mat);
+      sp.position.copy(o.pos);
+      sp.scale.setScalar(o.size);
+      scene.add(sp);
+      fxs.push({ sp, mat, vx: o.vx || 0, vy: o.vy || 0, vz: o.vz || 0, life: o.life, max: o.life, size: o.size, grow: o.grow || 0, g: o.g || 0, drag: o.drag || 0, op: o.opacity == null ? 1 : o.opacity, spin: o.spin || (Math.random() - 0.5) * 1.5 });
+    };
+    const rnd = () => Math.random() - 0.5;
+    const impactFx = (p, n) => {
+      spawnFx({ pos: p.clone().addScaledVector(n, 0.06), size: 0.55, grow: 0.5, life: 0.07, color: 0xfff3c4, add: true });
+      for (let i = 0; i < 6; i++) {
+        spawnFx({ pos: p.clone().addScaledVector(n, 0.05), size: 0.07, life: 0.25 + Math.random() * 0.3, color: 0xffc46b, add: true, vx: n.x * 6 + rnd() * 7, vy: n.y * 6 + Math.random() * 5, vz: n.z * 6 + rnd() * 7, g: 24 });
+      }
+      spawnFx({ pos: p.clone().addScaledVector(n, 0.25), size: 0.35, grow: 1.5, life: 0.8, color: 0xd6c8b4, smoke: true, opacity: 0.6, vx: n.x * 1.4, vy: 0.7 + n.y, vz: n.z * 1.4, drag: 2.5 });
+    };
+    const hitFx = (target, p, head) => {
+      spawnFx({ pos: p, size: head ? 1.0 : 0.6, grow: 0.6, life: 0.09, color: head ? 0xfff1a8 : 0xffffff, add: true });
+      const col = new THREE.Color(target.color);
+      for (let i = 0; i < (head ? 12 : 7); i++) spawnFx({ pos: p, size: 0.14 + Math.random() * 0.12, life: 0.45 + Math.random() * 0.3, color: col, vx: rnd() * 7, vy: Math.random() * 6, vz: rnd() * 7, g: 16 });
+      if (head) spawnFx({ pos: p, size: 0.3, grow: 2.4, life: 0.22, color: 0xfacc15, add: true, opacity: 0.8 });
+    };
+    // floating damage numbers (fixed screen size)
+    const dmgPool = Array.from({ length: 20 }, () => {
+      const c = document.createElement('canvas');
+      c.width = 160;
+      c.height = 64;
+      const tex = srgbTex(new THREE.CanvasTexture(c));
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false, sizeAttenuation: false }));
+      sp.renderOrder = 60;
+      sp.visible = false;
+      scene.add(sp);
+      return { c, tex, sp, life: 0 };
+    });
+    let dmgIdx = 0;
+    const dmgNumber = (p, val, head, big) => {
+      const d = dmgPool[dmgIdx++ % dmgPool.length];
+      const g = d.c.getContext('2d');
+      g.clearRect(0, 0, 160, 64);
+      g.font = `900 ${head || big ? 46 : 36}px "Arial Black", sans-serif`;
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.lineWidth = 8;
+      g.strokeStyle = '#000';
+      g.strokeText(String(val), 80, 34);
+      g.fillStyle = big ? '#fb923c' : head ? '#facc15' : '#ffffff';
+      g.fillText(String(val), 80, 34);
+      d.tex.needsUpdate = true;
+      d.sp.position.copy(p).add(new THREE.Vector3(rnd() * 0.6, 0.4, rnd() * 0.6));
+      d.sp.scale.set(head || big ? 0.085 : 0.065, head || big ? 0.034 : 0.026, 1);
+      d.sp.material.opacity = 1;
+      d.sp.visible = true;
+      d.life = 0.85;
+    };
+    const boomLight = new THREE.PointLight(0xff8a3c, 0, 45, 1.6);
+    scene.add(boomLight);
+
     // ---------- viewmodel ----------
     const vm = new THREE.Group();
     camera.add(vm);
@@ -2154,8 +2505,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
     const createFighter = (id, nm, klass, opts = {}) => {
       let hash = 0;
       for (let k = 0; k < id.length; k++) hash = (hash * 31 + id.charCodeAt(k)) >>> 0;
-      const color = opts.isMe ? LOCAL_GANG_COLOR : GANG_COLORS[(opts.isBot ? colorIdx++ : hash) % GANG_COLORS.length];
-      const f = { id, name: nm, cls: klass, color, isMe: !!opts.isMe, isBot: !!opts.isBot, remote: !!opts.remote, pos: new THREE.Vector3(), vel: new THREE.Vector3(), face: 0, hp: 100, dead: false, kills: 0, deaths: 0, streak: 0, respawnT: 0, thinkT: 0, fireCd: 0, burst: 0, react: 0, strafe: 1, goal: null, stuckT: 0, lastHitBy: null, onGround: true };
+      const color = siege && opts.team ? SIEGE_TEAMS[opts.team].color : opts.isMe ? LOCAL_GANG_COLOR : GANG_COLORS[(opts.isBot ? colorIdx++ : hash) % GANG_COLORS.length];
+      const f = { team: opts.team || null, id, name: nm, cls: klass, color, isMe: !!opts.isMe, isBot: !!opts.isBot, remote: !!opts.remote, pos: new THREE.Vector3(), vel: new THREE.Vector3(), face: 0, hp: 100, dead: false, kills: 0, deaths: 0, streak: 0, respawnT: 0, thinkT: 0, fireCd: 0, burst: 0, react: 0, strafe: 1, goal: null, stuckT: 0, lastHitBy: null, onGround: true };
       if (!f.isMe) {
         const mesh = buildNgmiPandaMesh(klass, false, color);
         mesh.scale.setScalar(1);
@@ -2211,8 +2562,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
     scene.add(myMesh);
     const myHolder = {};
     const pickSpawn = self => {
-      let best = map.spawns[0], bd = -1;
-      map.spawns.forEach(([x, z]) => {
+      const list = siege ? (self.team === 'atk' ? (obj.stage > 0 ? map.spawns.atkFwd : map.spawns.atk) : map.spawns.def) : map.spawns;
+      let best = list[0], bd = -1;
+      list.forEach(([x, z]) => {
         let md = 1e9;
         fighters.forEach(f => {
           if (f !== self && !f.dead) md = Math.min(md, Math.hypot(f.pos.x - x, f.pos.z - z));
@@ -2223,7 +2575,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       return freeSpot(best[0], best[1]);
     };
 
-    const me = createFighter(myId, name || 'Panda', cls, { isMe: true });
+    const me = createFighter(myId, name || 'Panda', cls, { isMe: true, team: myTeam });
     me.yaw = 0;
     me.pitch = 0;
     me.weapons = [{ key: 'ak', mag: 30 }, { key: 'pistol', mag: 12 }];
@@ -2337,10 +2689,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
     const damage = (target, attacker, dmg, hs) => {
       if (target.isMe || target.isBot) applyDamage(target, attacker.id, attacker.name, dmg, hs);
       else send({ t: 'h', id: myId, to: target.id, from: attacker.id, fn: attacker.name, d: Math.round(dmg), hs: hs ? 1 : 0 });
-      if (target.mesh) puff(target.pos.clone().setY(target.pos.y + (hs ? 2.1 : 1.1)), target.color, hs ? 10 : 5, 4);
+
     };
 
     const fwd = new THREE.Vector3();
+    const hitTally = new Map();
     const fireMe = () => {
       const w = me.weapons[me.slot];
       const def = SHOOT_WEAPONS[w.key];
@@ -2384,13 +2737,19 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
         queueTracer(muzzle, res.point);
         if (res.fighter) {
           damage(res.fighter, me, def.dmg * (res.head ? 2 : 1), res.head);
+          hitFx(res.fighter, res.point, res.head);
+          const prevHit = hitTally.get(res.fighter);
+          hitTally.set(res.fighter, { dmg: (prevHit ? prevHit.dmg : 0) + def.dmg * (res.head ? 2 : 1), head: res.head || (prevHit && prevHit.head), p: res.point });
           hitAny = true;
           headAny = headAny || res.head;
         } else if (res.wall && res.normal) {
           inkSplat(res.point, res.normal, w.key === 'shotgun' ? 0.45 : 0.75);
+          impactFx(res.point, res.normal);
           if (i === 0) puff(res.point, '#3a2f2a', 3, 2);
         }
       }
+      hitTally.forEach(v => dmgNumber(v.p, Math.round(v.dmg), v.head));
+      hitTally.clear();
       if (hitAny) {
         showHit(headAny, false);
         sfx.play(headAny ? 'headshot' : 'hitmark');
@@ -2423,9 +2782,22 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       rockets.push({ g, dir: dir.clone(), owner, start: origin.clone(), life: 3, speed: 48 });
     };
     const explodeAt = (point, owner, visualOnly, start) => {
-      puff(point, '#ff8a2a', 26, 13);
-      puff(point, '#fde047', 12, 9);
-      puff(point, '#3f3f46', 16, 6);
+      boomLight.position.set(point.x, point.y + 1.5, point.z);
+      boomLight.intensity = 10;
+      spawnFx({ pos: point, size: 1.6, grow: 5.5, life: 0.14, color: 0xffd9a0, add: true, opacity: 0.85 });
+      for (let i = 0; i < 13; i++) {
+        const dv = new THREE.Vector3(rnd(), Math.random() * 0.8, rnd()).normalize();
+        spawnFx({ pos: point.clone().addScaledVector(dv, 0.4), size: 1.2 + Math.random() * 1.2, grow: 3.8, life: 0.5 + Math.random() * 0.4, color: [0xffb347, 0xff7a1a, 0xe2420f][i % 3], add: true, opacity: 0.9, vx: dv.x * 7, vy: dv.y * 7 + 2, vz: dv.z * 7, drag: 3 });
+      }
+      for (let i = 0; i < 12; i++) {
+        spawnFx({ pos: point.clone().add(new THREE.Vector3(rnd() * 1.6, Math.random(), rnd() * 1.6)), size: 1.4, grow: 6.5, life: 2.4 + Math.random() * 1.4, color: i % 2 ? 0x2e2a28 : 0x4a423c, smoke: true, opacity: 0.9, vx: rnd() * 3, vy: 1.8 + Math.random() * 2.6, vz: rnd() * 3, drag: 1.1 });
+      }
+      for (let i = 0; i < 26; i++) {
+        const dv = new THREE.Vector3(rnd(), Math.random() * 0.9 + 0.1, rnd()).normalize();
+        spawnFx({ pos: point, size: 0.09, life: 0.7 + Math.random() * 0.8, color: 0xffb347, add: true, vx: dv.x * 17, vy: dv.y * 17 + 3, vz: dv.z * 17, g: 18, drag: 0.5 });
+      }
+      puff(point, '#2d2a28', 10, 11);
+      puff(point, '#7a5a3a', 6, 8);
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.6, 1.0, 40), new THREE.MeshBasicMaterial({ color: 0xffa94d, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
       ring.rotation.x = -Math.PI / 2;
       ring.position.set(point.x, Math.max(0.1, point.y - 0.8), point.z);
@@ -2442,6 +2814,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       if (start) queueTracer(start, point);
       fighters.forEach(f => {
         if (f.dead) return;
+        if (siege && owner && f !== owner && f.team === owner.team) return;
         const cx = f.pos.x, cy = f.pos.y + 1.2, cz = f.pos.z;
         const d = Math.hypot(cx - point.x, cy - point.y, cz - point.z);
         if (d > 7) return;
@@ -2455,6 +2828,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
           f.vel.y = Math.max(f.vel.y, 6 + 9 * (1 - d / 7));
         }
         damage(f, owner, Math.round(dmg), false);
+        if (owner && owner.isMe && f !== owner) dmgNumber(new THREE.Vector3(f.pos.x, f.pos.y + 2.6, f.pos.z), Math.round(dmg), false, true);
       });
     };
     const selectSlot = i => {
@@ -2492,15 +2866,21 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       queueTracer(muzzle, res.point);
       const vol = Math.max(0, 1 - me.pos.distanceTo(b.pos) / 70);
       sfx.play('shot_ak', vol * 0.5);
-      if (res.fighter) damage(res.fighter, b, (b.golden ? 20 : 11) * (res.head ? 1.6 : 1), res.head);
-      else if (res.wall && res.normal) inkSplat(res.point, res.normal, 0.6);
+      if (res.fighter) {
+        damage(res.fighter, b, (b.golden ? 20 : 11) * (res.head ? 1.6 : 1), res.head);
+        if (!res.fighter.isMe) hitFx(res.fighter, res.point, res.head);
+      } else if (res.wall && res.normal) {
+        inkSplat(res.point, res.normal, 0.6);
+        if (vol > 0.25) impactFx(res.point, res.normal);
+      }
     };
 
     // ---------- bots ----------
     const spawnBots = count => {
       for (let i = 0; i < count; i++) {
         const klass = PANDA_CLASSES[Math.floor(Math.random() * PANDA_CLASSES.length)];
-        const b = createFighter(`${myId}_b${i}`, RIVAL_NAMES[i % RIVAL_NAMES.length], klass, { isBot: true });
+        const nAtk = fighters.filter(f => f.team === 'atk').length, nDef = fighters.filter(f => f.team === 'def').length;
+        const b = createFighter(`${myId}_b${i}`, RIVAL_NAMES[i % RIVAL_NAMES.length], klass, { isBot: true, team: siege ? (nAtk <= nDef ? 'atk' : 'def') : null });
         b.skill = 0.85 + Math.random() * 0.5;
         b.dropSeeker = Math.random() < 0.5;
         const [x, z] = pickSpawn(b);
@@ -2512,6 +2892,17 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       const p = map.pickupSpots[Math.floor(Math.random() * map.pickupSpots.length)];
       const src = Math.random() < 0.5 ? s : p;
       return new THREE.Vector3(src[0] + (Math.random() - 0.5) * 6, 0, src[1] + (Math.random() - 0.5) * 6);
+    };
+    const siegeGoal = b => {
+      const o = map.objectives[Math.min(obj.stage, 1)];
+      const inFort = z => z < -23;
+      const goalIn = inFort(o.z);
+      if (inFort(b.pos.z) !== goalIn) {
+        if (Math.abs(b.pos.x) > 4) return new THREE.Vector3((Math.random() - 0.5) * 5, 0, goalIn ? -16 : -28);
+        return new THREE.Vector3((Math.random() - 0.5) * 4, 0, goalIn ? -29 : -15);
+      }
+      const spread = b.team === 'atk' ? 4 : 10;
+      return new THREE.Vector3(o.x + (Math.random() - 0.5) * spread * 2, 0, o.z + (Math.random() - 0.5) * spread * 2);
     };
     const eyeOf = f => new THREE.Vector3(f.pos.x, f.pos.y + 2.0, f.pos.z);
     const chestOf = f => new THREE.Vector3(f.pos.x, f.pos.y + 1.3, f.pos.z);
@@ -2554,7 +2945,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
         let best = null, bd = 1e9;
         const eye = eyeOf(b);
         for (const f of fighters) {
-          if (f === b || f.dead) continue;
+          if (f === b || f.dead || (siege && f.team === b.team)) continue;
           const d = f.pos.distanceTo(b.pos);
           if (d < 75 && d < bd && hasLOS(eye, chestOf(f))) { bd = d; best = f; }
         }
@@ -2564,7 +2955,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
         }
         if (Math.random() < 0.25) b.strafe = -b.strafe;
         if (!best && (!b.goal || b.goal.distanceTo(b.pos) < 3 || b.stuckT > 1.2)) {
-          b.goal = randomGoal();
+          b.goal = siege ? siegeGoal(b) : randomGoal();
           b.stuckT = 0;
         }
       }
@@ -2704,7 +3095,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
     const world = { moonT: 0, bullT: 0 };
     const drops = [];
     const spawnAirdrop = () => {
-      const s0 = map.spawns[Math.floor(Math.random() * map.spawns.length)];
+      const dropList = map.dropSpots || map.spawns;
+      const s0 = dropList[Math.floor(Math.random() * dropList.length)];
       const [x, z] = freeSpot(s0[0] * 0.55, s0[1] * 0.55);
       const grp = new THREE.Group();
       const crate = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), new THREE.MeshStandardMaterial({ color: 0xd4a640, metalness: 0.9, roughness: 0.25, emissive: 0x5a3a00, emissiveIntensity: 0.7 }));
@@ -2737,7 +3129,32 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       } else spawnAirdrop();
     };
     const EVENTS = [[150, 'moon'], [125, 'drop'], [95, 'bull'], [70, 'drop'], [45, 'moon'], [25, 'drop']];
-    const endMatch = () => {
+    const objVis = siege ? map.objectives.map(o => {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(o.r - 0.45, o.r, 64), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false, fog: false }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(o.x, 0.07, o.z);
+      const disc = new THREE.Mesh(new THREE.CircleGeometry(o.r - 0.45, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false, fog: false }));
+      disc.rotation.x = -Math.PI / 2;
+      disc.position.set(o.x, 0.06, o.z);
+      const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 80, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.18, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false }));
+      beacon.position.set(o.x, 40, o.z);
+      const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: createLabelTexture(`${o.key} · ${o.name}`, 'transparent', '#ffffff', 512, 96, 54), transparent: true, depthTest: false, sizeAttenuation: false }));
+      label.scale.set(0.22, 0.042, 1);
+      label.position.set(o.x, 7, o.z);
+      label.renderOrder = 40;
+      scene.add(ring, disc, beacon, label);
+      return { o, ring, disc, beacon, label };
+    }) : [];
+    const objectiveTaken = idx => {
+      const o = map.objectives[idx];
+      announceNow(`${o.key} · ${o.name} CAPTURED`, SIEGE_TEAMS.atk.color);
+      pushFeed(`⚔️ Raiders captured ${o.name}${idx === 0 ? ' · +75s' : ''}`, SIEGE_TEAMS.atk.color);
+      sfx.play('streak');
+      if (idx === 0) {
+        setTimeout(() => announceNow(me.team === 'atk' ? '⚔️ PUSH THE VAULT!' : '🛡️ FALL BACK TO THE VAULT!', me.team === 'atk' ? SIEGE_TEAMS.atk.color : SIEGE_TEAMS.def.color), 1800);
+      }
+    };
+    const endMatch = (winner = null) => {
       if (match.over) return;
       match.over = true;
       ctl.current.firing = false;
@@ -2746,15 +3163,19 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       const rank = board.findIndex(r => r.isMe) + 1;
       announceNow(rank === 1 ? 'VICTORY 🏆' : 'MATCH OVER', rank === 1 ? '#facc15' : '#ffffff');
       sfx.play(rank === 1 ? 'streak' : 'ko');
-      setTimeout(() => setResults({ board, rank }), 1400);
+      if (siege) {
+        const won = winner === me.team;
+        announceNow(won ? 'VICTORY 🏆' : 'DEFEAT', won ? '#facc15' : '#f87171');
+      }
+      setTimeout(() => setResults({ board, rank, winner, myTeam: me.team }), 1400);
     };
 
     // ---------- MQTT ----------
-    const upsertRemote = (id, nm, c) => {
+    const upsertRemote = (id, nm, c, tm) => {
       let f = fighters.find(x => x.id === id);
       if (!f) {
         const klass = PANDA_CLASSES.find(k => k.id === c) || PANDA_CLASSES[0];
-        f = createFighter(id, nm, klass, { remote: true });
+        f = createFighter(id, nm, klass, { remote: true, team: siege ? tm || 'atk' : null });
         f.tx = f.pos.x;
         f.tz = f.pos.z;
       }
@@ -2774,17 +3195,32 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       if (d.t === 's') {
         const isNew = !net.peers[d.id];
         net.peers[d.id] = performance.now();
-        const f = upsertRemote(d.id, d.n, d.c);
+        const f = upsertRemote(d.id, d.n, d.c, d.tm);
         applyRemote(f, d);
         if (isNew) pushFeed(`🟢 ${d.n} joined`, '#38bdf8');
         if (d.id === net.hostId) {
-          (d.b || []).forEach(bs => applyRemote(upsertRemote(bs.i, bs.n, bs.c), bs));
+          (d.b || []).forEach(bs => applyRemote(upsertRemote(bs.i, bs.n, bs.c, bs.tm), bs));
+          if (siege && Array.isArray(d.obj)) {
+            const [st, pg, ct, cp] = d.obj;
+            if (st > obj.stage) {
+              if (obj.stage === 0) objectiveTaken(0);
+              if (st >= 2) {
+                objectiveTaken(1);
+                endMatch('atk');
+              }
+            }
+            obj.stage = st;
+            obj.prog = pg;
+            obj.contested = !!ct;
+            obj.capturing = !!cp;
+          }
           if (typeof d.left === 'number' && Math.abs(match.left - d.left) > 1.5) match.left = d.left;
         }
         (d.ex || []).forEach(e => explodeAt(new THREE.Vector3(e[0], e[1], e[2]), null, true));
         (d.tr || []).forEach(t => {
           const a = new THREE.Vector3(t[0], t[1], t[2]), b = new THREE.Vector3(t[3], t[4], t[5]);
           spawnTracer(a, b);
+          if (me.pos.distanceTo(b) < 45) spawnFx({ pos: b, size: 0.5, grow: 0.4, life: 0.07, color: 0xfff3c4, add: true });
           const vol = Math.max(0, 1 - me.pos.distanceTo(a) / 70);
           if (vol > 0.05) sfx.play('shot_rifle', vol * 0.45);
         });
@@ -2851,7 +3287,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
           sfx.play('pop', 1, 0.8);
         }
         if (match.countdown <= 0) {
-          announceNow('SHOOT!', '#4ade80');
+          announceNow(siege ? (me.team === 'atk' ? '⚔️ ATTACK!' : '🛡️ DEFEND!') : 'SHOOT!', siege ? SIEGE_TEAMS[me.team].color : '#4ade80');
           sfx.play('streak');
         }
       } else if (!match.over) {
@@ -2860,7 +3296,38 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
           startEvent(EVENTS[match.evIdx][1]);
           match.evIdx += 1;
         }
-        if (match.left <= 0 || fighters.some(f => f.kills >= KILL_TARGET)) endMatch();
+        if (siege) {
+          if (match.left <= 0) endMatch('def');
+        } else if (match.left <= 0 || fighters.some(f => f.kills >= KILL_TARGET)) endMatch();
+        if (siege && net.isHost && obj.stage < 2 && !match.over) {
+          const o = map.objectives[obj.stage];
+          let na = 0, nd = 0;
+          fighters.forEach(f => {
+            if (f.dead || f.pos.y > 4 || Math.hypot(f.pos.x - o.x, f.pos.z - o.z) > o.r) return;
+            if (f.team === 'atk') na++;
+            else nd++;
+          });
+          obj.contested = na > 0 && nd > 0;
+          obj.capturing = na > 0 && nd === 0;
+          if (obj.capturing) obj.prog += dt * (4 + 2 * Math.min(3, na));
+          else if (na === 0) obj.prog = Math.max(Math.floor(obj.prog / 33.4) * 33.4, obj.prog - dt * 2);
+          if (obj.prog >= 100) {
+            if (obj.stage === 0) {
+              obj.stage = 1;
+              obj.prog = 0;
+              match.left += 75;
+              objectiveTaken(0);
+            } else {
+              obj.stage = 2;
+              objectiveTaken(1);
+              endMatch('atk');
+            }
+          }
+        }
+        if (siege && obj.capturing && me.team === 'def' && now - obj.warnAt > 9000) {
+          obj.warnAt = now;
+          announceNow(`⚠️ RAIDERS ON ${map.objectives[Math.min(obj.stage, 1)].key}!`, '#f87171');
+        }
       }
       if (world.moonT > 0) world.moonT -= dt;
       if (world.bullT > 0) world.bullT -= dt;
@@ -3081,7 +3548,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
         const wh = step > 0 ? wallHit(from, rk.dir, step) : null;
         if (wh) hitPoint = wh.point.clone().addScaledVector(rk.dir, -0.2);
         if (!hitPoint) {
-          const hf = fighters.find(f => f !== rk.owner && !f.dead && Math.hypot(f.pos.x - next.x, f.pos.y + 1.2 - next.y, f.pos.z - next.z) < 1.3);
+          const hf = fighters.find(f => f !== rk.owner && !f.dead && !(siege && rk.owner && f.team === rk.owner.team) && Math.hypot(f.pos.x - next.x, f.pos.y + 1.2 - next.y, f.pos.z - next.z) < 1.3);
           if (hf) hitPoint = next;
         }
         if (!hitPoint && (next.y <= 0.05 || rk.life <= 0)) hitPoint = next;
@@ -3107,6 +3574,55 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
           booms.splice(i, 1);
         }
       }
+      for (let i = fxs.length - 1; i >= 0; i--) {
+        const f = fxs[i];
+        f.life -= dt;
+        const k = 1 - f.life / f.max;
+        f.vy -= f.g * dt;
+        const dr = Math.exp(-f.drag * dt);
+        f.vx *= dr;
+        f.vy *= dr;
+        f.vz *= dr;
+        f.sp.position.x += f.vx * dt;
+        f.sp.position.y += f.vy * dt;
+        f.sp.position.z += f.vz * dt;
+        f.sp.scale.setScalar(f.size + f.grow * Math.sqrt(k));
+        f.mat.opacity = f.op * Math.pow(1 - Math.min(1, k), 1.3);
+        f.mat.rotation += f.spin * dt;
+        if (f.life <= 0) {
+          scene.remove(f.sp);
+          f.mat.dispose();
+          fxs.splice(i, 1);
+        }
+      }
+      dmgPool.forEach(d => {
+        if (d.life <= 0) return;
+        d.life -= dt;
+        d.sp.position.y += dt * 1.6;
+        d.sp.material.opacity = Math.min(1, d.life * 2.5);
+        if (d.life <= 0) d.sp.visible = false;
+      });
+      if (boomLight.intensity > 0.05) boomLight.intensity *= Math.exp(-dt * 7);
+      else boomLight.intensity = 0;
+      if (map.anim) {
+        map.anim.searchlights.forEach(sl => { sl.pivot.rotation.y = Math.sin(now * 0.00035 + sl.ph) * 1.4 + (sl.ph ? Math.PI : 0); });
+        map.anim.barrels.forEach(b => { const fl = 1 + Math.sin(now * 0.02 + b.ph) * 0.12 + Math.sin(now * 0.047 + b.ph) * 0.08; b.fire.scale.set(1.6 * fl, 2 * fl, 1); });
+        map.anim.ledMat.emissiveIntensity = 1 + Math.sin(now * 0.01) * 0.3;
+        map.anim.wheel.rotation.z = now * 0.0003;
+        map.anim.flags.forEach((fg, i) => { fg.rotation.y = Math.sin(now * 0.002 + i) * 0.25; });
+      }
+      objVis.forEach((v, i) => {
+        const active = i === obj.stage;
+        const done = i < obj.stage;
+        const col = done ? 0x4ade80 : !active ? 0x94a3b8 : obj.contested ? 0xfacc15 : obj.capturing ? 0xef4444 : 0xffffff;
+        v.ring.material.color.setHex(col);
+        v.disc.material.color.setHex(col);
+        v.beacon.material.color.setHex(col);
+        v.beacon.visible = !done;
+        v.beacon.material.opacity = active ? 0.16 + Math.sin(now * 0.005) * 0.06 : 0.06;
+        v.disc.material.opacity = active ? 0.08 + (obj.prog / 100) * 0.22 : 0.05;
+        v.label.visible = !done;
+      });
       for (let i = parts.length - 1; i >= 0; i--) {
         const p = parts[i];
         p.vy -= 18 * dt;
@@ -3178,10 +3694,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       if (now - lastNet > 66) {
         lastNet = now;
         const r2 = v => Math.round(v * 100) / 100;
-        const pkt = { t: 's', id: myId, n: name, c: cls.id, x: r2(me.pos.x), y: r2(me.pos.y), z: r2(me.pos.z), f: r2(me.yaw + Math.PI), hp: Math.round(me.hp), dd: me.dead ? 1 : 0, k: me.kills, dt: me.deaths, tr: net.pendingTr, w: me.weapons[me.slot].key, dn: me.dancing ? 1 : 0, ex: net.pendingEx };
+        const pkt = { t: 's', id: myId, n: name, c: cls.id, x: r2(me.pos.x), y: r2(me.pos.y), z: r2(me.pos.z), f: r2(me.yaw + Math.PI), hp: Math.round(me.hp), dd: me.dead ? 1 : 0, k: me.kills, dt: me.deaths, tr: net.pendingTr, w: me.weapons[me.slot].key, dn: me.dancing ? 1 : 0, ex: net.pendingEx, tm: me.team };
         if (net.isHost) {
           pkt.left = Math.round(match.left * 10) / 10;
-          pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.cls.id, x: r2(b.pos.x), y: r2(b.pos.y), z: r2(b.pos.z), f: r2(b.face), hp: Math.round(b.hp), dd: b.dead ? 1 : 0, k: b.kills, dt: b.deaths, dn: b.danceT > 0 ? 1 : 0, w: b.golden ? 'golden' : 'ak' }));
+          pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.cls.id, x: r2(b.pos.x), y: r2(b.pos.y), z: r2(b.pos.z), f: r2(b.face), hp: Math.round(b.hp), dd: b.dead ? 1 : 0, k: b.kills, dt: b.deaths, dn: b.danceT > 0 ? 1 : 0, w: b.golden ? 'golden' : 'ak', tm: b.team }));
+          if (siege) pkt.obj = [obj.stage, Math.round(obj.prog), obj.contested ? 1 : 0, obj.capturing ? 1 : 0];
         }
         send(pkt);
         net.pendingTr = [];
@@ -3223,6 +3740,17 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
           dead: me.dead ? { by: me.deathBy ? me.deathBy.name : '', hs: me.deathBy && me.deathBy.hs, t: Math.max(0, Math.ceil(me.respawnT)) } : null,
           board,
           aim: aimRes && aimRes.fighter ? { name: aimRes.fighter.name, hp: Math.max(0, Math.round(aimRes.fighter.hp)), color: aimRes.fighter.color } : null,
+          siege,
+          team: me.team,
+          obj: siege ? { stage: obj.stage, prog: Math.min(100, Math.round(obj.prog)), contested: obj.contested, capturing: obj.capturing, name: obj.stage < 2 ? `${map.objectives[obj.stage].key} · ${map.objectives[obj.stage].name}` : 'ALL CAPTURED' } : null,
+          marker: (() => {
+            if (!siege || obj.stage > 1 || me.dead) return null;
+            const o = map.objectives[obj.stage];
+            const v = new THREE.Vector3(o.x, 4, o.z).project(camera);
+            let x = (v.x * 0.5 + 0.5) * 100, y = (-v.y * 0.5 + 0.5) * 100;
+            if (v.z > 1) { x = 100 - x; y = 92; }
+            return { k: o.key, x: Math.max(4, Math.min(96, x)), y: Math.max(10, Math.min(90, y)), d: Math.round(Math.hypot(o.x - me.pos.x, o.z - me.pos.z)) };
+          })(),
           scope: w.key === 'sniper' && me.adsT > 0.8 && !me.dead,
           weapons: me.weapons.map((wp, i) => ({ key: wp.key, short: SHOOT_WEAPONS[wp.key].short, icon: SHOOT_WEAPONS[wp.key].icon, active: i === me.slot })),
           moon: Math.max(0, Math.ceil(world.moonT)),
@@ -3305,7 +3833,22 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       {/* top centre: timer */}
       <div className="absolute left-1/2 -translate-x-1/2 top-0 safe-top flex flex-col items-center gap-1 pointer-events-none">
         <div className={`font-game text-lg md:text-2xl px-3 py-0.5 rounded-lg bg-white/90 text-slate-900 shadow ${hud.left <= 30 ? 'text-rose-600 animate-pulse' : ''}`}>{fmt(hud.left)}</div>
-        <div className="text-[9px] md:text-[10px] font-black px-2 py-0.5 rounded bg-slate-900/70">FIRST TO {KILL_TARGET} · {leader ? `${leader.name} ${leader.kills}` : ''}</div>
+        {hud.siege && hud.obj ? (
+          <div className="w-[230px] md:w-[340px] bg-slate-950/80 rounded-xl px-2.5 py-1.5 text-center">
+            <div className="flex items-center justify-between gap-2 text-[9px] md:text-[11px] font-black">
+              <span style={{ color: SIEGE_TEAMS[hud.team].color }}>{SIEGE_TEAMS[hud.team].icon} {hud.team === 'atk' ? 'ATTACK' : 'DEFEND'}</span>
+              <span className="truncate">{hud.obj.name}</span>
+            </div>
+            <div className="h-2 mt-1 bg-slate-700 rounded overflow-hidden">
+              <div className={`h-full ${hud.obj.contested ? 'bg-amber-400 animate-pulse' : 'bg-rose-500'}`} style={{ width: `${hud.obj.prog}%` }} />
+            </div>
+            <div className="text-[9px] font-bold mt-0.5 text-slate-300">
+              {hud.obj.contested ? '⚔️ CONTESTED' : hud.obj.capturing ? `CAPTURING · ${hud.obj.prog}%` : hud.team === 'atk' ? 'Stand in the zone to capture' : 'Keep the Raiders out of the zone'}
+            </div>
+          </div>
+        ) : (
+          <div className="text-[9px] md:text-[10px] font-black px-2 py-0.5 rounded bg-slate-900/70">FIRST TO {KILL_TARGET} · {leader ? `${leader.name} ${leader.kills}` : ''}</div>
+        )}
         {(hud.moon > 0 || hud.bull > 0) && (
           <div className="text-[10px] md:text-xs font-black px-2.5 py-0.5 rounded-full bg-indigo-600/90 animate-pulse">
             {hud.moon > 0 ? `🌕 LOW GRAVITY ${hud.moon}s ` : ''}{hud.bull > 0 ? `🐂 BULL RUN ${hud.bull}s` : ''}
@@ -3365,6 +3908,12 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       </div>
 
       {/* death screen */}
+      {hud.marker && !hud.dancing && (
+        <div className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2 text-center" style={{ left: `${hud.marker.x}%`, top: `${hud.marker.y}%` }}>
+          <div className={`w-8 h-8 mx-auto rounded-full border-2 border-white font-game text-white flex items-center justify-center text-sm ${hud.obj && hud.obj.contested ? 'bg-amber-500' : hud.obj && hud.obj.capturing ? 'bg-rose-500' : 'bg-slate-900/70'}`}>{hud.marker.k}</div>
+          <div className="text-[10px] font-black text-white" style={{ textShadow: '0 1px 2px #000' }}>{hud.marker.d}m</div>
+        </div>
+      )}
       {hud.dancing && !hud.dead && (
         <div className="absolute left-1/2 bottom-[18%] -translate-x-1/2 pointer-events-none text-center">
           <div className="font-game text-lg md:text-2xl text-pink-300" style={{ textShadow: '0 3px 0 #000' }}>💃 DANCING {hud.hp >= 100 ? '· FULL HP' : '· +15 HP/s'}</div>
@@ -3522,8 +4071,17 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       {results && (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/75 p-4">
           <div data-scroll="1" className="w-full max-w-md max-h-[92%] overflow-y-auto glass border border-slate-700 rounded-3xl p-5 text-center">
-            <div className="font-game text-4xl" style={{ color: results.rank === 1 ? '#facc15' : '#ffffff' }}>{results.rank === 1 ? '🏆 VICTORY' : `#${results.rank} PLACE`}</div>
-            <div className="text-slate-400 text-sm">Ranked by eliminations</div>
+            {results.winner ? (
+              <>
+                <div className="font-game text-4xl" style={{ color: results.winner === results.myTeam ? '#facc15' : '#f87171' }}>{results.winner === results.myTeam ? '🏆 VICTORY' : 'DEFEAT'}</div>
+                <div className="text-sm font-black" style={{ color: SIEGE_TEAMS[results.winner].color }}>{SIEGE_TEAMS[results.winner].icon} {SIEGE_TEAMS[results.winner].name} WIN</div>
+              </>
+            ) : (
+              <>
+                <div className="font-game text-4xl" style={{ color: results.rank === 1 ? '#facc15' : '#ffffff' }}>{results.rank === 1 ? '🏆 VICTORY' : `#${results.rank} PLACE`}</div>
+                <div className="text-slate-400 text-sm">Ranked by eliminations</div>
+              </>
+            )}
             <div className="mt-3 space-y-1 text-left">
               {results.board.slice(0, 8).map((r, i) => (
                 <div key={r.id} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${r.isMe ? 'bg-emerald-500/20 border border-emerald-400/60' : 'bg-slate-900/70'}`}>
@@ -3569,6 +4127,8 @@ function App() {
   const [myDeaths, setMyDeaths] = useState(0);
   const [gfx, setGfx] = useState(IS_TOUCH ? 'fast' : 'cinematic');
   const [mode, setMode] = useState('beatdown');
+  const [soVariant, setSoVariant] = useState('ffa');
+  const [soTeam, setSoTeam] = useState('auto');
   const [muted, setMuted] = useState(false);
   const [announce, setAnnounce] = useState(null);
   const [buffHud, setBuffHud] = useState([]);
@@ -5527,7 +6087,11 @@ function App() {
                 <h1 className="game-title text-[15vw] sm:text-7xl md:text-8xl mt-2">{mode === 'shootout' ? 'SHOOTOUT' : 'BEATDOWN'}</h1>
                 <p className="tagline text-slate-200 text-sm md:text-lg mt-4 font-semibold">
                   {mode === 'shootout' ? (
-                    <>Grab an AK. Splat your rivals. Chase the <span className="text-amber-300 font-black">Golden AK</span>.</>
+                    soVariant === 'siege' ? (
+                      <>Raid Fort HODL. Crack the <span className="text-amber-300 font-black">Moon Vault</span>. Or hold the line.</>
+                    ) : (
+                      <>Grab an AK. Splat your rivals. Chase the <span className="text-amber-300 font-black">Golden AK</span>.</>
+                    )
                   ) : (
                     <>Gang up. Pump their <span className="text-amber-300 font-black">%</span>. Ring them out.</>
                   )}
@@ -5562,6 +6126,35 @@ function App() {
                       </button>
                     ))}
                   </div>
+
+                  {mode === 'shootout' && (
+                    <div className="glass rounded-2xl border border-slate-700 p-3 space-y-2">
+                      <div className="text-[10px] font-black tracking-widest text-slate-400">SHOOTOUT MODE</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { id: 'ffa', icon: '🏙️', title: 'FREE-FOR-ALL', sub: 'Cartoon Town · first to 25' },
+                          { id: 'siege', icon: '🏰', title: 'SIEGE', sub: 'Fort HODL · attack or defend' }
+                        ].map(v => (
+                          <button key={v.id} onClick={() => setSoVariant(v.id)} className={`text-left rounded-xl border-2 px-3 py-2 cursor-pointer transition ${soVariant === v.id ? 'border-amber-300 bg-amber-300/10' : 'border-slate-800 hover:border-slate-600'}`}>
+                            <div className="font-game text-sm text-white">{v.icon} {v.title}</div>
+                            <div className="text-[11px] text-slate-400">{v.sub}</div>
+                          </button>
+                        ))}
+                      </div>
+                      {soVariant === 'siege' && (
+                        <div className="space-y-1.5">
+                          <div className="grid grid-cols-3 gap-2">
+                            {[['atk', '⚔️ ATTACK', '#ef4444'], ['def', '🛡️ DEFEND', '#3b82f6'], ['auto', '🎲 RANDOM', '#a3a3a3']].map(([id, label, col]) => (
+                              <button key={id} onClick={() => setSoTeam(id)} className="rounded-xl border-2 py-2 font-black text-xs cursor-pointer" style={soTeam === id ? { borderColor: col, background: `${col}22`, color: '#fff' } : { borderColor: '#1e293b', color: '#cbd5e1' }}>{label}</button>
+                            ))}
+                          </div>
+                          <div className="text-[11px] text-slate-400 leading-snug">
+                            <b className="text-rose-300">NGMI Raiders</b> must capture the <b>Server Farm</b>, then crack the <b>Moon Vault</b> inside Fort HODL. <b className="text-sky-300">Diamond Hands</b> hold until the clock runs out.
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-3">
                     <span className="font-game text-sm text-white">CHOOSE YOUR PANDA</span>
@@ -5761,7 +6354,9 @@ function App() {
 
       {screen === 'shootout' && (
         <ShootoutGame
-          key={`so_${matchId}`}
+          key={`so_${matchId}_${soVariant}`}
+          variant={soVariant}
+          team={soTeam}
           cls={selectedClass}
           name={playerName}
           room={roomCode}
