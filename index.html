@@ -3286,6 +3286,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       match.over = true;
       ctl.current.firing = false;
       if (document.pointerLockElement) document.exitPointerLock();
+      // no freeze: everyone breaks into a victory dance while the camera orbits you
+      fighters.forEach(f => { if (f.isBot && !f.dead) f.danceT = 99; });
+      if (!me.dead) me.dancing = true;
       const board = [...fighters].map(f => ({ id: f.id, name: f.name, color: f.color, isMe: f.isMe, kills: f.kills, deaths: f.deaths })).sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
       const rank = board.findIndex(r => r.isMe) + 1;
       announceNow(rank === 1 ? 'VICTORY 🏆' : 'MATCH OVER', rank === 1 ? '#facc15' : '#ffffff');
@@ -4969,7 +4972,7 @@ function App() {
       target.stun = Math.max(target.stun, Math.min(1.4, 0.2 + kb / 55));
       if (target.isLocal || attacker.isLocal) {
         fx.shake = Math.min(1.6, fx.shake + kb / 45);
-        if (kb > 22) fx.hitStop = Math.max(fx.hitStop, Math.min(isCrit ? 0.16 : 0.1, kb / 500));
+        if (kb > 22) fx.shake = Math.min(1.6, fx.shake + (isCrit ? 0.35 : 0.15));
       }
       if (attacker.isLocal) {
         fx.combo = fx.comboTimer > 0 ? fx.combo + 1 : 1;
@@ -5373,7 +5376,6 @@ function App() {
         fx.shake = 1.6;
         spawnMemeSprite(vx * 0.7, 3, vz * 0.7, 'K.O.!! 💥', '#facc15');
         flash(0.35);
-        fx.slowmo = 0.7;
         fx.postFlash = 0.25;
         sfx.play('ko');
         const STREAKS = { 2: ['DOUBLE K.O.!', '#38bdf8'], 3: ['TRIPLE K.O.!!', '#a855f7'], 4: ['RAMPAGE!!!', '#f97316'], 5: ['UNSTOPPABLE GMI!!!', '#facc15'] };
@@ -5470,11 +5472,9 @@ function App() {
       let dt = rawDt;
       if (fx.hitStop > 0) {
         fx.hitStop -= rawDt;
-        dt = rawDt * 0.06; // freeze-frame on big hits
       }
       if (fx.slowmo > 0) {
         fx.slowmo -= rawDt;
-        dt *= 0.3;
       }
       if (fx.liqTimer > 0) fx.liqTimer -= dt;
       if (fx.comboTimer > 0) fx.comboTimer -= rawDt;
