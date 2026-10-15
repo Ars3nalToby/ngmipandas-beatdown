@@ -335,6 +335,40 @@ const sfx = (() => {
       case 'powerup':
         [659, 880, 1175, 1568].forEach((f, i) => tone('square', f, 0, 0.08, 0.12 * vol, null, now + i * 0.06));
         break;
+      case 'shot_rifle':
+        tone('square', 190 * p, 60, 0.07, 0.22 * vol);
+        hiss(0.11, 0.55 * vol, 'lowpass', 5000, 700);
+        tone('sine', 95, 38, 0.14, 0.55 * vol);
+        break;
+      case 'shot_pistol':
+        hiss(0.07, 0.45 * vol, 'bandpass', 2600, 900);
+        tone('sine', 230, 70, 0.09, 0.42 * vol);
+        break;
+      case 'shot_shotgun':
+        hiss(0.32, 0.9 * vol, 'lowpass', 3200, 260);
+        tone('sine', 110, 32, 0.32, 0.95 * vol);
+        break;
+      case 'shot_sniper':
+        hiss(0.55, 0.8 * vol, 'lowpass', 6500, 180);
+        tone('sine', 150, 28, 0.55, 1.0 * vol);
+        tone('square', 1700, 300, 0.05, 0.18 * vol);
+        break;
+      case 'reload':
+        [0, 0.22, 0.48].forEach((d, i) => tone('square', i === 2 ? 950 : 480, 0, 0.035, 0.14 * vol, null, now + d));
+        break;
+      case 'hitmark':
+        tone('square', 1900, 0, 0.035, 0.11 * vol);
+        break;
+      case 'headshot':
+        tone('triangle', 2500, 1300, 0.12, 0.24 * vol);
+        tone('square', 1900, 0, 0.035, 0.14 * vol);
+        break;
+      case 'empty':
+        tone('square', 1300, 0, 0.025, 0.12 * vol);
+        break;
+      case 'hurt':
+        tone('sawtooth', 320, 110, 0.15, 0.22 * vol, null, null, 1200);
+        break;
       case 'streak':
         [392, 494, 587, 784].forEach(f => tone('sawtooth', f, 0, 0.6, 0.09 * vol, null, now, 3000));
         tone('sine', 98, 49, 0.6, 0.6 * vol);
@@ -499,7 +533,8 @@ function noiseCanvas(size, scale, octaves, seed = 1) {
 // ---------- cinematic post: bloom + ACES + split-tone grade + vignette + grain + subtle CA ----------
 function createPost(renderer, scene, camera) {
   const isGL2 = renderer.capabilities.isWebGL2;
-  const type = isGL2 ? THREE.HalfFloatType : THREE.UnsignedByteType;
+  const canHalf = isGL2 && (renderer.extensions.has('EXT_color_buffer_float') || renderer.extensions.has('EXT_color_buffer_half_float'));
+  const type = canHalf ? THREE.HalfFloatType : THREE.UnsignedByteType;
   const size = new THREE.Vector2();
   renderer.getDrawingBufferSize(size);
   const rtScene = new THREE.WebGLRenderTarget(size.x, size.y, { type, samples: isGL2 ? 4 : 0 });
@@ -1339,6 +1374,1577 @@ function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
   return root;
 }
 
+// ============================================================================
+// NGMI PANDAS: SHOOTOUT — first-person free-for-all in a cartoon town
+// ============================================================================
+const SHOOT_SECONDS = 180;
+const KILL_TARGET = 25;
+const SHOOT_WEAPONS = {
+  rifle: { name: 'MOON RIFLE', dmg: 24, rate: 0.115, mag: 30, reserve: 120, reload: 1.7, spread: 0.012, moveSpread: 0.03, pellets: 1, auto: true, recoil: 0.016, snd: 'shot_rifle', zoom: 1.4 },
+  pistol: { name: 'GM PISTOL', dmg: 27, rate: 0.2, mag: 12, reserve: Infinity, reload: 1.1, spread: 0.01, moveSpread: 0.02, pellets: 1, auto: false, recoil: 0.03, snd: 'shot_pistol', zoom: 1.25 },
+  smg: { name: 'DEGEN SMG', dmg: 15, rate: 0.068, mag: 40, reserve: 160, reload: 1.5, spread: 0.028, moveSpread: 0.025, pellets: 1, auto: true, recoil: 0.011, snd: 'shot_pistol', zoom: 1.25 },
+  shotgun: { name: 'FLOOR SWEEPER', dmg: 13, rate: 0.8, mag: 6, reserve: 30, reload: 2.1, spread: 0.085, moveSpread: 0.02, pellets: 9, auto: false, recoil: 0.07, snd: 'shot_shotgun', zoom: 1.15 },
+  sniper: { name: 'DIAMOND SNIPER', dmg: 110, rate: 1.2, mag: 5, reserve: 20, reload: 2.4, spread: 0.0012, moveSpread: 0.07, pellets: 1, auto: false, recoil: 0.09, snd: 'shot_sniper', zoom: 3.4 }
+};
+const SHOOT_PICKUPS = {
+  shotgun: { icon: '💥', label: 'FLOOR SWEEPER (shotgun)', color: '#f97316' },
+  smg: { icon: '⚡', label: 'DEGEN SMG', color: '#a3e635' },
+  sniper: { icon: '🎯', label: 'DIAMOND SNIPER', color: '#38bdf8' },
+  burger: { icon: '🍔', label: '+50 HP', color: '#facc15' },
+  ammo: { icon: '📦', label: 'AMMO REFILL', color: '#e2e8f0' }
+};
+
+function makeInkTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#0d0c12';
+  g.strokeStyle = '#0d0c12';
+  g.beginPath();
+  g.arc(64, 64, 26, 0, Math.PI * 2);
+  g.fill();
+  for (let i = 0; i < 16; i++) {
+    const a = Math.random() * Math.PI * 2, r = 24 + Math.random() * 34, sz = 2 + Math.random() * 8;
+    g.lineWidth = sz * 0.9;
+    g.beginPath();
+    g.moveTo(64, 64);
+    g.lineTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r);
+    g.stroke();
+    g.beginPath();
+    g.arc(64 + Math.cos(a) * r, 64 + Math.sin(a) * r, sz, 0, Math.PI * 2);
+    g.fill();
+  }
+  return srgbTex(new THREE.CanvasTexture(c));
+}
+
+function drawShooterTag(canvas, name, hp, color) {
+  const g = canvas.getContext('2d');
+  g.clearRect(0, 0, 256, 64);
+  g.fillStyle = 'rgba(8,10,20,0.72)';
+  g.fillRect(0, 0, 256, 64);
+  g.fillStyle = color;
+  g.fillRect(0, 0, 7, 64);
+  g.font = '800 25px Rubik, Arial, sans-serif';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = '#ffffff';
+  g.fillText(name, 132, 22, 230);
+  g.fillStyle = '#1f2937';
+  g.fillRect(18, 42, 222, 12);
+  g.fillStyle = hp > 50 ? '#4ade80' : hp > 25 ? '#facc15' : '#ef4444';
+  g.fillRect(18, 42, Math.max(0, 222 * hp / 100), 12);
+}
+
+// Gun model. Points down -Z. In viewmodel mode it ignores depth so it never clips into walls.
+function makeGunModel(key, view) {
+  const g = new THREE.Group();
+  let order = 1000;
+  const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.35, depthTest: !view, depthWrite: !view, fog: !view, ...extra });
+  const part = (w, h, d, x, y, z, m) => {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    p.position.set(x, y, z);
+    if (view) p.renderOrder = order++;
+    g.add(p);
+    return p;
+  };
+  const dark = mat(0x2a2d35), body = mat(key === 'shotgun' ? 0x8a5a2b : key === 'sniper' ? 0x3c4a3a : key === 'smg' ? 0x45404f : 0x4b4a63), accent = mat(0x9aa3b5, { metalness: 0.8, roughness: 0.3 });
+  if (key === 'pistol') {
+    part(0.07, 0.18, 0.09, 0, -0.1, 0.05, dark);
+    part(0.08, 0.11, 0.34, 0, 0, -0.08, body);
+    part(0.04, 0.04, 0.1, 0, 0.01, -0.29, accent);
+  } else if (key === 'shotgun') {
+    part(0.1, 0.13, 0.3, 0, -0.02, 0.22, body);
+    part(0.11, 0.12, 0.5, 0, 0, -0.15, dark);
+    part(0.06, 0.06, 0.6, 0, 0.03, -0.55, accent);
+    part(0.09, 0.08, 0.22, 0, -0.06, -0.45, body);
+  } else if (key === 'sniper') {
+    part(0.1, 0.14, 0.32, 0, -0.03, 0.25, body);
+    part(0.1, 0.12, 0.6, 0, 0, -0.15, dark);
+    part(0.04, 0.04, 0.75, 0, 0.02, -0.75, accent);
+    const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.36, 12), dark);
+    scope.rotation.x = Math.PI / 2;
+    scope.position.set(0, 0.12, -0.1);
+    if (view) scope.renderOrder = order++;
+    g.add(scope);
+  } else {
+    const long = key === 'smg' ? 0.42 : 0.62;
+    part(0.09, 0.13, 0.26, 0, -0.02, 0.24, dark);
+    part(0.11, 0.15, long, 0, 0, -long / 2 + 0.08, body);
+    part(0.08, key === 'smg' ? 0.3 : 0.22, 0.11, 0, -0.17, -0.08, dark);
+    part(0.045, 0.045, 0.3, 0, 0.01, -long + 0.05, accent);
+    part(0.05, 0.05, 0.12, 0, 0.1, -0.12, dark);
+    // red-dot sight
+    const frame = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.012, 6, 18), mat(0x16181d));
+    frame.position.set(0, 0.165, -0.14);
+    if (view) frame.renderOrder = order++;
+    g.add(frame);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.008, 6, 6), new THREE.MeshBasicMaterial({ color: 0xff2a2a, depthTest: !view, fog: false }));
+    dot.position.set(0, 0.165, -0.14);
+    if (view) dot.renderOrder = order++;
+    g.add(dot);
+  }
+  const muzzle = new THREE.Object3D();
+  muzzle.position.set(0, 0.02, key === 'pistol' ? -0.36 : key === 'shotgun' ? -0.88 : key === 'sniper' ? -1.15 : key === 'smg' ? -0.55 : -0.75);
+  g.add(muzzle);
+  g.userData.muzzle = muzzle;
+  g.userData.sightY = key === 'pistol' ? 0.03 : key === 'shotgun' ? 0.04 : key === 'sniper' ? 0.12 : 0.165;
+  return g;
+}
+
+function buildShootoutMap(scene, cinematic) {
+  const colliders = [], solids = [];
+  const edgeMat = new THREE.LineBasicMaterial({ color: 0x15141c, transparent: true, opacity: 0.55 });
+  const box = (x, z, w, h, d, color, o = {}) => {
+    const y0 = o.y || 0;
+    const geo = new THREE.BoxGeometry(w, h, d);
+    const m = new THREE.Mesh(geo, o.mat || new THREE.MeshStandardMaterial({ color, roughness: 0.85 }));
+    m.position.set(x, y0 + h / 2, z);
+    m.castShadow = cinematic;
+    m.receiveShadow = true;
+    scene.add(m);
+    if (!o.noEdge) {
+      const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat);
+      e.position.copy(m.position);
+      scene.add(e);
+    }
+    if (!o.noCollide) {
+      colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, bottom: y0, top: y0 + h });
+      solids.push(m);
+    }
+    return m;
+  };
+  const plane = (w, h, mat, x, y, z, rotY) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+    m.position.set(x, y, z);
+    m.rotation.y = rotY;
+    scene.add(m);
+    return m;
+  };
+  const signMat = (text, bg, fg, w, h) => {
+    const cw = 512, ch = Math.max(64, Math.round(512 * h / w));
+    const fs = Math.min(ch * 0.62, (cw * 1.5) / Math.max(4, text.length));
+    return new THREE.MeshStandardMaterial({ map: createLabelTexture(text, bg, fg, cw, ch, Math.round(fs)), roughness: 0.7 });
+  };
+  // faces: 'z+' front points to +z, etc.
+  const ROT = { 'z+': 0, 'z-': Math.PI, 'x+': Math.PI / 2, 'x-': -Math.PI / 2 };
+  const faceOffset = (face, x, z, w, d, along, out) => {
+    if (face === 'z+') return [x + along, z + d / 2 + out];
+    if (face === 'z-') return [x - along, z - d / 2 - out];
+    if (face === 'x+') return [x + w / 2 + out, z - along];
+    return [x - w / 2 - out, z + along];
+  };
+  const winMat = new THREE.MeshStandardMaterial({ color: 0x1d3550, roughness: 0.25, metalness: 0.4, emissive: 0x0b1a2a, emissiveIntensity: 0.4 });
+  const building = (x, z, w, h, d, color, roof, label, face, signBg, signFg) => {
+    box(x, z, w, h, d, color);
+    box(x, z, w + 0.9, 0.55, d + 0.9, roof, { y: h, noCollide: true });
+    const span = face === 'z+' || face === 'z-' ? w : d;
+    const n = Math.max(1, Math.floor(span / 4.5));
+    ['z+', 'z-', 'x+', 'x-'].forEach(f => {
+      const fs = f === 'z+' || f === 'z-' ? w : d;
+      const k = Math.max(1, Math.floor(fs / 4.5));
+      for (let i = 0; i < k; i++) {
+        const along = (i - (k - 1) / 2) * (fs / k);
+        if (f === face && Math.abs(along) < 2.5) continue; // door space
+        const [px, pz] = faceOffset(f, x, z, w, d, along, 0.03);
+        plane(1.8, 1.5, winMat, px, Math.min(h - 1.6, 3.4), pz, ROT[f]);
+      }
+    });
+    const [dx, dz] = faceOffset(face, x, z, w, d, 0, 0.03);
+    plane(2.4, 3.2, new THREE.MeshStandardMaterial({ color: 0x3b2a20, roughness: 0.8 }), dx, 1.6, dz, ROT[face]);
+    const sw = Math.min(span * 0.8, label.length * 1.1 + 2);
+    const [sx, sz] = faceOffset(face, x, z, w, d, 0, 0.06);
+    plane(sw, 1.6, signMat(label, signBg, signFg, sw, 1.6), sx, h - 1.1, sz, ROT[face]);
+    void n;
+  };
+
+  // ---- sky, ground, roads ----
+  const sky = document.createElement('canvas');
+  sky.width = 4;
+  sky.height = 256;
+  const sg = sky.getContext('2d');
+  const grd = sg.createLinearGradient(0, 0, 0, 256);
+  grd.addColorStop(0, '#4f9fe0');
+  grd.addColorStop(0.55, '#9ed0f2');
+  grd.addColorStop(1, '#f3e9d6');
+  sg.fillStyle = grd;
+  sg.fillRect(0, 0, 4, 256);
+  scene.background = srgbTex(new THREE.CanvasTexture(sky));
+  scene.fog = new THREE.Fog(0xcfe6f3, 70, 230);
+
+  const sandC = document.createElement('canvas');
+  sandC.width = sandC.height = 256;
+  const sgc = sandC.getContext('2d');
+  sgc.fillStyle = '#d9bb84';
+  sgc.fillRect(0, 0, 256, 256);
+  sgc.globalAlpha = 0.22;
+  sgc.drawImage(noiseCanvas(256, 22, 4, 31), 0, 0);
+  const sandTex = srgbTex(new THREE.CanvasTexture(sandC));
+  sandTex.wrapS = sandTex.wrapT = THREE.RepeatWrapping;
+  sandTex.repeat.set(40, 40);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), new THREE.MeshStandardMaterial({ color: 0xffffff, map: sandTex, roughness: 1 }));
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+  solids.push(ground);
+  const roadMat = new THREE.MeshStandardMaterial({ color: 0xd9c49b, roughness: 1 });
+  [[0, 0, 124, 9], [0, 0, 9, 124]].forEach(([x, z, w, d]) => {
+    const r = new THREE.Mesh(new THREE.PlaneGeometry(w, d), roadMat);
+    r.rotation.x = -Math.PI / 2;
+    r.position.set(x, 0.02, z);
+    r.receiveShadow = true;
+    scene.add(r);
+  });
+  const dashMat = new THREE.MeshBasicMaterial({ color: 0xfaf6ee });
+  for (let i = -58; i <= 58; i += 7) {
+    if (Math.abs(i) < 6) continue;
+    [[i, 0, 3, 0.35], [0, i, 0.35, 3]].forEach(([x, z, w, d]) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), dashMat);
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(x, 0.03, z);
+      scene.add(m);
+    });
+  }
+
+  // ---- perimeter wall + invisible tall colliders ----
+  const L = 62;
+  [[0, -L, 2 * L + 2, 1.4], [0, L, 2 * L + 2, 1.4], [-L, 0, 1.4, 2 * L + 2], [L, 0, 1.4, 2 * L + 2]].forEach(([x, z, w, d]) => {
+    box(x, z, w, 3, d, 0xd8cfc0, { noCollide: true });
+    colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, bottom: 0, top: 60 });
+  });
+  for (let i = -L; i <= L; i += 8) {
+    [[i, -L], [i, L], [-L, i], [L, i]].forEach(([x, z]) => box(x, z, 0.3, 5.5, 0.3, 0x6b7280, { noCollide: true, noEdge: true }));
+  }
+
+  // ---- buildings ----
+  building(-40, -38, 22, 9, 12, 0xef6a86, 0x9b2c46, 'BARRACKS', 'z+', '#1f2937', '#fde68a');
+  building(38, -40, 20, 8, 12, 0x5b8def, 0x223f8a, 'MOON EDEN MARKET', 'z+', '#fef3c7', '#1e3a8a');
+  building(-42, 40, 16, 7, 14, 0xf4c84a, 0xa5761a, 'NGMI DINER', 'z-', '#b91c1c', '#ffffff');
+  building(42, 38, 14, 10, 16, 0x37b9a8, 0x14675d, 'HODL GYM', 'z-', '#0f172a', '#5eead4');
+  building(0, -51, 12, 6, 8, 0xf2913d, 0x9a4a12, 'GM COFFEE', 'z+', '#fff7ed', '#9a3412');
+  building(0, 51, 18, 7, 8, 0x8b5cf6, 0x4c1d95, 'WAGMI FM 99.9', 'z-', '#111827', '#f0abfc');
+  building(-52, 0, 10, 7, 18, 0xe5484d, 0x7f1d1d, 'BARRACKS B', 'x+', '#111827', '#fecaca');
+  building(52, 0, 10, 8, 18, 0x6cc070, 0x2f6b33, 'DIAMOND HANDS CO', 'x-', '#052e16', '#bbf7d0');
+
+  // ---- water tower ----
+  const towerMat = new THREE.MeshStandardMaterial({ color: 0x6d3fc4, roughness: 0.6, metalness: 0.3 });
+  const tx = 14, tz = -14;
+  [[-2.4, -2.4], [2.4, -2.4], [-2.4, 2.4], [2.4, 2.4]].forEach(([ox, oz]) => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, 12, 8), towerMat);
+    leg.position.set(tx + ox, 6, tz + oz);
+    leg.castShadow = cinematic;
+    scene.add(leg);
+    solids.push(leg);
+    colliders.push({ minX: tx + ox - 0.3, maxX: tx + ox + 0.3, minZ: tz + oz - 0.3, maxZ: tz + oz + 0.3, bottom: 0, top: 12 });
+  });
+  [4, 8].forEach(y => {
+    box(tx, tz - 2.4, 4.8, 0.18, 0.18, 0x5b33a8, { y, noCollide: true, noEdge: true });
+    box(tx, tz + 2.4, 4.8, 0.18, 0.18, 0x5b33a8, { y, noCollide: true, noEdge: true });
+    box(tx - 2.4, tz, 0.18, 0.18, 4.8, 0x5b33a8, { y, noCollide: true, noEdge: true });
+    box(tx + 2.4, tz, 0.18, 0.18, 4.8, 0x5b33a8, { y, noCollide: true, noEdge: true });
+  });
+  const tank = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, 5, 24), towerMat);
+  tank.position.set(tx, 14.5, tz);
+  tank.castShadow = cinematic;
+  scene.add(tank);
+  const cap = new THREE.Mesh(new THREE.ConeGeometry(4.5, 2.2, 24), new THREE.MeshStandardMaterial({ color: 0x4c2a96, roughness: 0.6 }));
+  cap.position.set(tx, 18.1, tz);
+  scene.add(cap);
+  const tankSign = new THREE.Mesh(new THREE.CylinderGeometry(4.22, 4.22, 1.6, 24, 1, true, -0.9, 1.8), new THREE.MeshStandardMaterial({ map: createLabelTexture('NGMI', '#6d3fc4', '#fde047', 512, 128, 90), roughness: 0.6 }));
+  tankSign.position.set(tx, 14.5, tz);
+  scene.add(tankSign);
+
+  // ---- containers, crates, low walls ----
+  const CONT = [0x2bb3a3, 0xf27ba6, 0xf28c38, 0x4f7df0, 0xe5484d, 0x8bc34a];
+  [[-20, -20, 0], [-14, -26, 1], [20, 22, 0], [27, 17, 1], [-22, 20, 0], [19, -27, 1], [-7, 9, 0], [9, -7, 1], [-31, 6, 1], [31, -8, 0], [-4, 31, 0], [4, -31, 0], [-36, -18, 0], [36, 20, 0]].forEach(([x, z, r], i) => {
+    box(x, z, r ? 2.6 : 6, 3, r ? 6 : 2.6, CONT[i % CONT.length]);
+  });
+  box(-20, -20, 6, 3, 2.6, 0x4f7df0, { y: 3 });
+  box(20, 22, 6, 3, 2.6, 0xf27ba6, { y: 3 });
+  const crateMat = new THREE.MeshStandardMaterial({ color: 0xc28b52, roughness: 0.8 });
+  [[-11, -11], [11, 11], [13, -2], [-13, 2], [-34, -8], [34, 8], [-9, -37], [9, 37], [36, -24], [-36, 26], [-25, -31], [25, 31]].forEach(([x, z]) => box(x, z, 2, 2, 2, 0, { mat: crateMat }));
+  box(-11, -11, 2, 2, 2, 0, { mat: crateMat, y: 2 });
+  box(11, 11, 2, 2, 2, 0, { mat: crateMat, y: 2 });
+  [[0, -14, 8, 0.6], [0, 14, 8, 0.6], [-14, 0, 0.6, 8], [14, 0, 0.6, 8]].forEach(([x, z, w, d]) => box(x, z, w, 1.1, d, 0xb8b0a2));
+
+  // ---- billboards ----
+  [[-27, -3, Math.PI / 2, 'GME TO THE MOON 🚀', '#111827', '#facc15'], [27, 3, -Math.PI / 2, 'NGMI PANDAS · EST 2022', '#fde68a', '#7c2d12'], [-3, -42, 0, 'DIAMOND HANDS ONLY', '#0ea5e9', '#ffffff'], [3, 42, Math.PI, 'GMI = GONNA MAKE IT', '#16a34a', '#ffffff']].forEach(([x, z, ry, text, bg, fg]) => {
+    const dx = Math.cos(ry) * 3.2, dz = -Math.sin(ry) * 3.2;
+    [[x - dx, z - dz], [x + dx, z + dz]].forEach(([px, pz]) => box(px, pz, 0.3, 5, 0.3, 0x374151, { noEdge: true }));
+    const board = plane(8, 2.6, signMat(text, bg, fg, 8, 2.6), x, 5.6, z, ry);
+    const back = plane(8, 2.6, new THREE.MeshStandardMaterial({ color: 0x374151 }), x, 5.6, z, ry + Math.PI);
+    void board; void back;
+  });
+
+  // ---- lamps ----
+  [[-6, -20], [6, 20], [-20, 6], [20, -6], [-46, -22], [46, 22]].forEach(([x, z]) => {
+    box(x, z, 0.25, 6, 0.25, 0x2f3542, { noEdge: true });
+    box(x + 0.6, z, 1.4, 0.25, 0.5, 0x2f3542, { y: 6, noCollide: true, noEdge: true });
+  });
+
+  // ---- outside: trees, hills, clouds, sun ----
+  const leafMats = [0x4caf50, 0x3f9e4a, 0x66bb6a].map(c => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9 }));
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x7a5230 });
+  for (let i = 0; i < 70; i++) {
+    const a = (i / 70) * Math.PI * 2 + Math.random() * 0.05;
+    const r = 72 + Math.random() * 38;
+    const t = new THREE.Group();
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 2.5, 6), trunkMat);
+    trunk.position.y = 1.25;
+    const h = 7 + Math.random() * 6;
+    const crown = new THREE.Mesh(new THREE.ConeGeometry(2.6 + Math.random(), h, 8), leafMats[i % 3]);
+    crown.position.y = 2.5 + h / 2;
+    t.add(trunk, crown);
+    t.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+    scene.add(t);
+  }
+  const hillMat = new THREE.MeshStandardMaterial({ color: 0x8fca7c, roughness: 1 });
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const hill = new THREE.Mesh(new THREE.SphereGeometry(40 + Math.random() * 25, 20, 12), hillMat);
+    hill.scale.y = 0.35;
+    hill.position.set(Math.cos(a) * 190, -4, Math.sin(a) * 190);
+    scene.add(hill);
+  }
+  const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.55, roughness: 1, fog: false });
+  const clouds = [];
+  for (let i = 0; i < 12; i++) {
+    const c = new THREE.Group();
+    for (let k = 0; k < 4; k++) {
+      const p = new THREE.Mesh(new THREE.SphereGeometry(3 + Math.random() * 2.5, 12, 10), cloudMat);
+      p.position.set(k * 3.4 - 5, Math.random() * 1.2, Math.random() * 2);
+      p.scale.y = 0.7;
+      c.add(p);
+    }
+    c.position.set((Math.random() - 0.5) * 300, 55 + Math.random() * 25, (Math.random() - 0.5) * 300);
+    scene.add(c);
+    clouds.push(c);
+  }
+
+  const spawns = [[-48, -22], [48, 22], [-48, 22], [48, -22], [-20, -46], [20, 46], [0, 0], [-40, 0], [40, 0], [0, -40], [0, 40], [-24, 34], [24, -34]];
+  const pickupSpots = [[-24, -8, 'shotgun'], [24, 8, 'smg'], [14, -14, 'sniper'], [-38, -24, 'burger'], [38, 24, 'burger'], [-16, 30, 'ammo'], [12, -36, 'ammo'], [-14, -42, 'smg'], [30, 44, 'shotgun'], [-44, 12, 'sniper']];
+  return { colliders, solids, spawns, pickupSpots, clouds };
+}
+
+function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
+  const mountRef = useRef(null);
+  const hitRef = useRef(null);
+  const hurtRef = useRef(null);
+  const joyBaseRef = useRef(null);
+  const joyKnobRef = useRef(null);
+  const ctl = useRef({ firing: false, ads: false, jump: false, reload: false, swap: false, mx: 0, mz: 0, joyPtr: null, jox: 0, joy: 0, lookPtr: null, lx: 0, ly: 0, firePtr: null, fx: 0, fy: 0, lookDX: 0, lookDY: 0 });
+  const lockRef = useRef(null);
+  const [hud, setHud] = useState({ hp: 100, mag: 30, reserve: 120, wname: 'MOON RIFLE', wkey: 'rifle', reloading: 0, kills: 0, deaths: 0, left: SHOOT_SECONDS, feed: [], dead: null, board: [], aim: null, scope: false, locked: false, peers: 1, net: 'CONNECTING' });
+  const [announce, setAnnounce] = useState(null);
+  const [results, setResults] = useState(null);
+  const [showBoard, setShowBoard] = useState(false);
+  const [muted, setMutedS] = useState(sfx.isMuted());
+
+  useEffect(() => {
+    const el = mountRef.current;
+    if (!el) return undefined;
+    const cinematic = gfx === 'cinematic';
+    GFX_CINEMATIC = cinematic;
+    const W = () => el.clientWidth || window.innerWidth;
+    const H = () => el.clientHeight || window.innerHeight;
+    const renderer = styleRenderer(new THREE.WebGLRenderer({ antialias: !cinematic, powerPreference: 'high-performance' }));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_TOUCH ? 1.4 : 2));
+    renderer.setSize(W(), H());
+    renderer.shadowMap.enabled = cinematic;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    el.appendChild(renderer.domElement);
+    lockRef.current = renderer.domElement;
+
+    const scene = new THREE.Scene();
+    const BASE_FOV = 78;
+    const camera = new THREE.PerspectiveCamera(BASE_FOV, W() / H(), 0.05, 600);
+    scene.add(camera);
+
+    scene.add(new THREE.HemisphereLight(0xd6ecff, 0xd8c39a, 1.05));
+    const sun = new THREE.DirectionalLight(0xfff0d8, 2.1);
+    sun.position.set(-40, 70, 30);
+    sun.castShadow = cinematic;
+    sun.shadow.mapSize.set(2048, 2048);
+    Object.assign(sun.shadow.camera, { left: -75, right: 75, top: 75, bottom: -75, far: 200 });
+    sun.shadow.bias = -0.0005;
+    sun.shadow.normalBias = 0.04;
+    scene.add(sun);
+    scene.add(sun.target);
+
+    const map = buildShootoutMap(scene, cinematic);
+    const { colliders, solids } = map;
+    const raycaster = new THREE.Raycaster();
+
+    // ---------- helpers ----------
+    const announceNow = (text, color) => {
+      setAnnounce({ text, color, id: Date.now() + Math.random() });
+      setTimeout(() => setAnnounce(a => (a && a.text === text ? null : a)), 1700);
+    };
+    const feed = [];
+    const pushFeed = (msg, color = '#ffffff') => {
+      feed.unshift({ id: Date.now() + Math.random(), msg, color });
+      feed.length = Math.min(feed.length, 5);
+    };
+    const freeSpot = (x, z) => {
+      for (let i = 0; i < 30; i++) {
+        const ox = x + (i ? (Math.random() - 0.5) * i * 1.5 : 0), oz = z + (i ? (Math.random() - 0.5) * i * 1.5 : 0);
+        if (!colliders.some(c => ox > c.minX - 1 && ox < c.maxX + 1 && oz > c.minZ - 1 && oz < c.maxZ + 1 && c.bottom < 2)) return [ox, oz];
+      }
+      return [x, z];
+    };
+    const moveBody = (pos, vel, r, dt) => {
+      const axis = (ax) => {
+        for (const c of colliders) {
+          if (pos.y >= c.top - 0.5 || pos.y + 2.6 <= c.bottom) continue;
+          if (pos.x > c.minX - r && pos.x < c.maxX + r && pos.z > c.minZ - r && pos.z < c.maxZ + r) {
+            if (ax === 'x') {
+              const v = vel.x !== 0 ? vel.x : (pos.x < (c.minX + c.maxX) / 2 ? 1 : -1);
+              pos.x = v > 0 ? c.minX - r : c.maxX + r;
+              vel.x = 0;
+            } else {
+              const v = vel.z !== 0 ? vel.z : (pos.z < (c.minZ + c.maxZ) / 2 ? 1 : -1);
+              pos.z = v > 0 ? c.minZ - r : c.maxZ + r;
+              vel.z = 0;
+            }
+          }
+        }
+      };
+      pos.x += vel.x * dt;
+      axis('x');
+      pos.z += vel.z * dt;
+      axis('z');
+      pos.y += vel.y * dt;
+      let ground = 0;
+      const rr = r * 0.6;
+      for (const c of colliders) {
+        if (c.top <= pos.y + 0.5 && pos.x > c.minX - rr && pos.x < c.maxX + rr && pos.z > c.minZ - rr && pos.z < c.maxZ + rr) ground = Math.max(ground, c.top);
+      }
+      if (pos.y <= ground) {
+        pos.y = ground;
+        if (vel.y < 0) vel.y = 0;
+        return true;
+      }
+      return pos.y - ground < 0.06;
+    };
+    const raySphere = (o, d, cx, cy, cz, r) => {
+      const ox = o.x - cx, oy = o.y - cy, oz = o.z - cz;
+      const b = ox * d.x + oy * d.y + oz * d.z;
+      const c = ox * ox + oy * oy + oz * oz - r * r;
+      const h = b * b - c;
+      if (h < 0) return -1;
+      const t = -b - Math.sqrt(h);
+      return t > 0 ? t : -1;
+    };
+    const wallHit = (o, d, far) => {
+      raycaster.set(o, d);
+      raycaster.far = far;
+      const hit = raycaster.intersectObjects(solids, false)[0];
+      return hit || null;
+    };
+    const hasLOS = (a, b) => {
+      const d = new THREE.Vector3().subVectors(b, a);
+      const len = d.length();
+      d.divideScalar(len);
+      const h = wallHit(a, d, len);
+      return !h || h.distance > len - 0.4;
+    };
+    const traceShot = (o, d, shooter, assist = 1) => {
+      const wh = wallHit(o, d, 260);
+      let best = wh ? wh.distance : 260;
+      let hitF = null, head = false;
+      for (const f of fighters) {
+        if (f === shooter || f.dead) continue;
+        const p = f.pos;
+        const th = raySphere(o, d, p.x, p.y + 2.1, p.z, 0.72 * assist);
+        const tb = raySphere(o, d, p.x, p.y + 1.0, p.z, 0.88 * assist);
+        if (th > 0 && th < best) { best = th; hitF = f; head = true; }
+        if (tb > 0 && tb < best - 0.01) { best = tb; hitF = f; head = false; }
+      }
+      const point = o.clone().addScaledVector(d, best);
+      return { point, fighter: hitF, head, normal: !hitF && wh && wh.face ? wh.face.normal.clone().transformDirection(wh.object.matrixWorld) : null, wall: !hitF && !!wh };
+    };
+
+    // ---------- FX pools ----------
+    const tracerGeo = new THREE.BoxGeometry(0.035, 0.035, 1);
+    const tracers = Array.from({ length: 56 }, () => {
+      const mat = new THREE.MeshBasicMaterial({ color: 0xfff1a8, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+      const m = new THREE.Mesh(tracerGeo, mat);
+      m.visible = false;
+      scene.add(m);
+      return { m, mat, life: 0 };
+    });
+    let tracerIdx = 0;
+    const spawnTracer = (a, b) => {
+      const t = tracers[tracerIdx++ % tracers.length];
+      const len = a.distanceTo(b);
+      if (len < 0.5) return;
+      t.m.position.copy(a).lerp(b, 0.5);
+      t.m.lookAt(b);
+      t.m.scale.set(1, 1, len);
+      t.mat.opacity = 0.85;
+      t.life = 0.07;
+      t.m.visible = true;
+    };
+    const inkTex = makeInkTexture();
+    const inkMat = new THREE.MeshBasicMaterial({ map: inkTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+    const inkGeo = new THREE.PlaneGeometry(1, 1);
+    const inks = [];
+    const inkSplat = (point, normal, size = 0.7) => {
+      let m;
+      if (inks.length >= 160) m = inks.shift();
+      else {
+        m = new THREE.Mesh(inkGeo, inkMat);
+        scene.add(m);
+      }
+      m.position.copy(point).addScaledVector(normal, 0.02);
+      m.lookAt(point.clone().add(normal));
+      m.rotation.z = Math.random() * Math.PI * 2;
+      const s = size * (0.7 + Math.random() * 0.6);
+      m.scale.set(s, s, 1);
+      inks.push(m);
+    };
+    const partGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14);
+    const parts = [];
+    const puff = (p, color, n = 8, sp = 5) => {
+      for (let i = 0; i < n && parts.length < 220; i++) {
+        const mat = new THREE.MeshBasicMaterial({ color, transparent: true });
+        const m = new THREE.Mesh(partGeo, mat);
+        m.position.copy(p);
+        scene.add(m);
+        parts.push({ m, mat, vx: (Math.random() - 0.5) * sp, vy: Math.random() * sp, vz: (Math.random() - 0.5) * sp, life: 0.5 + Math.random() * 0.3 });
+      }
+    };
+
+    // ---------- viewmodel ----------
+    const vm = new THREE.Group();
+    camera.add(vm);
+    const armMat = new THREE.MeshStandardMaterial({ color: 0x1c1a1f, roughness: 0.9, depthTest: false, depthWrite: false, fog: false });
+    const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.5, 6, 10), armMat);
+    arm.renderOrder = 999;
+    const flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(255,236,170,1)', 'rgba(255,150,40,0)'), transparent: true, depthTest: false, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+    flash.renderOrder = 2000;
+    flash.scale.set(0.35, 0.35, 1);
+    let gunModel = null;
+    const equipModel = key => {
+      if (gunModel) vm.remove(gunModel);
+      gunModel = makeGunModel(key, true);
+      gunModel.scale.setScalar(0.72);
+      vm.add(gunModel);
+      gunModel.add(arm);
+      arm.position.set(0.05, -0.2, 0.22);
+      arm.rotation.set(1.1, 0, 0.25);
+      gunModel.userData.muzzle.add(flash);
+      flash.visible = false;
+    };
+
+    // ---------- fighters ----------
+    const myId = `p_${Math.random().toString(36).slice(2, 9)}`;
+    const fighters = [];
+    let colorIdx = 0;
+    const makeTag = (nm, color) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 64;
+      drawShooterTag(canvas, nm, 100, color);
+      const tex = srgbTex(new THREE.CanvasTexture(canvas));
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true }));
+      sprite.scale.set(2.2, 0.55, 1);
+      sprite.position.y = 3.35;
+      return { canvas, tex, sprite, hp: 100 };
+    };
+    const createFighter = (id, nm, klass, opts = {}) => {
+      let hash = 0;
+      for (let k = 0; k < id.length; k++) hash = (hash * 31 + id.charCodeAt(k)) >>> 0;
+      const color = opts.isMe ? LOCAL_GANG_COLOR : GANG_COLORS[(opts.isBot ? colorIdx++ : hash) % GANG_COLORS.length];
+      const f = { id, name: nm, cls: klass, color, isMe: !!opts.isMe, isBot: !!opts.isBot, remote: !!opts.remote, pos: new THREE.Vector3(), vel: new THREE.Vector3(), face: 0, hp: 100, dead: false, kills: 0, deaths: 0, streak: 0, respawnT: 0, thinkT: 0, fireCd: 0, burst: 0, react: 0, strafe: 1, goal: null, stuckT: 0, lastHitBy: null, onGround: true };
+      if (!f.isMe) {
+        const mesh = buildNgmiPandaMesh(klass, false, color);
+        mesh.scale.setScalar(1);
+        mesh.rotation.order = 'YXZ';
+        const gun = makeGunModel('rifle', false);
+        gun.rotation.y = Math.PI;
+        gun.position.set(-0.05, 0.1, 0.55);
+        mesh.userData.rightArmGroup.add(gun);
+        mesh.userData.leftArmGroup.rotation.x = -0.35;
+        f.mesh = mesh;
+        f.tag = makeTag(nm, color);
+        mesh.add(f.tag.sprite);
+        scene.add(mesh);
+      }
+      fighters.push(f);
+      return f;
+    };
+    const removeFighter = f => {
+      if (f.mesh) scene.remove(f.mesh);
+      const i = fighters.indexOf(f);
+      if (i >= 0) fighters.splice(i, 1);
+    };
+    const pickSpawn = self => {
+      let best = map.spawns[0], bd = -1;
+      map.spawns.forEach(([x, z]) => {
+        let md = 1e9;
+        fighters.forEach(f => {
+          if (f !== self && !f.dead) md = Math.min(md, Math.hypot(f.pos.x - x, f.pos.z - z));
+        });
+        const score = md + Math.random() * 12;
+        if (score > bd) { bd = score; best = [x, z]; }
+      });
+      return freeSpot(best[0], best[1]);
+    };
+
+    const me = createFighter(myId, name || 'Panda', cls, { isMe: true });
+    me.yaw = 0;
+    me.pitch = 0;
+    me.weapons = [{ key: 'rifle', mag: 30, reserve: 120 }, { key: 'pistol', mag: 12, reserve: Infinity }];
+    me.slot = 0;
+    me.reloadT = 0;
+    me.shotCd = 0;
+    me.adsT = 0;
+    me.recoil = 0;
+    me.semiHeld = false;
+    const spawnMe = () => {
+      const [x, z] = pickSpawn(me);
+      me.pos.set(x, 0, z);
+      me.vel.set(0, 0, 0);
+      me.yaw = Math.atan2(x, z); // face the centre
+      me.pitch = 0;
+      me.hp = 100;
+      me.dead = false;
+      el.style.filter = '';
+    };
+    spawnMe();
+    equipModel('rifle');
+
+    // ---------- network ----------
+    const net = { isHost: true, hostId: myId, seen: {}, peers: {}, status: 'CONNECTING', client: null, pendingTr: [] };
+    const topic = `ngmipandas/shootout/v1/${String(room || 'NGMI-888').trim().toUpperCase()}`;
+    const send = obj => {
+      const c = net.client;
+      if (c && c.connected) {
+        try { c.publish(topic, JSON.stringify(obj)); } catch (e) {}
+      }
+    };
+    const r1 = v => Math.round(v * 10) / 10;
+    const queueTracer = (a, b) => {
+      if (net.pendingTr.length < 14) net.pendingTr.push([r1(a.x), r1(a.y), r1(a.z), r1(b.x), r1(b.y), r1(b.z)]);
+    };
+
+    // ---------- combat ----------
+    const showHit = (head, kill) => {
+      const hm = hitRef.current;
+      if (!hm) return;
+      hm.style.transition = 'none';
+      hm.style.opacity = '1';
+      hm.style.color = kill ? '#ef4444' : head ? '#facc15' : '#ffffff';
+      hm.style.transform = `translate(-50%,-50%) scale(${kill ? 1.5 : 1})`;
+      requestAnimationFrame(() => {
+        hm.style.transition = 'opacity 0.25s ease-out';
+        hm.style.opacity = '0';
+      });
+    };
+    const hurtFx = amount => {
+      const hv = hurtRef.current;
+      if (!hv) return;
+      hv.style.transition = 'none';
+      hv.style.opacity = String(Math.min(0.9, 0.35 + amount / 60));
+      requestAnimationFrame(() => {
+        hv.style.transition = 'opacity 0.6s ease-out';
+        hv.style.opacity = '0';
+      });
+    };
+    const handleDeath = ev => {
+      pushFeed(`${ev.kn || '☠'} ${ev.hs ? '🎯' : '🔫'} ${ev.vn}`, ev.kid === myId ? '#4ade80' : ev.vid === myId ? '#f87171' : '#ffffff');
+      const k = fighters.find(f => f.id === ev.kid && (f.isMe || f.isBot));
+      if (k && ev.kid !== ev.vid) {
+        k.kills += 1;
+        k.streak += 1;
+        if (k.isMe) {
+          showHit(ev.hs, true);
+          sfx.play('ko', 0.8);
+          const STREAK = { 2: 'DOUBLE KILL', 3: 'TRIPLE KILL', 5: 'RAMPAGE', 7: 'UNSTOPPABLE', 10: 'GODLIKE GMI' };
+          if (STREAK[k.streak]) {
+            announceNow(STREAK[k.streak], '#facc15');
+            sfx.play('streak');
+          } else announceNow(`ELIMINATED ${ev.vn}${ev.hs ? ' · HEADSHOT' : ''}`, ev.hs ? '#facc15' : '#ffffff');
+        }
+      }
+    };
+    const die = (f, killerId, killerName, hs) => {
+      f.dead = true;
+      f.hp = 0;
+      f.deaths += 1;
+      f.streak = 0;
+      f.respawnT = 3.5;
+      const ev = { vid: f.id, vn: f.name, kid: killerId, kn: killerName, hs: hs ? 1 : 0 };
+      handleDeath(ev);
+      send({ t: 'x', id: myId, ...ev });
+      if (f.isMe) {
+        me.deathBy = { name: killerName || 'gravity', hs, id: killerId };
+        el.style.filter = 'grayscale(1) contrast(1.15)';
+        sfx.play('ko');
+        ctl.current.firing = false;
+      }
+      if (f.mesh) puff(f.pos.clone().setY(f.pos.y + 1.2), f.color, 18, 7);
+    };
+    const applyDamage = (f, fromId, fromName, dmg, hs) => {
+      if (!f || f.dead || match.over || match.countdown > 0) return;
+      f.hp -= dmg;
+      f.lastHitBy = { id: fromId, name: fromName };
+      if (f.isMe) {
+        hurtFx(dmg);
+        sfx.play('hurt', 0.7);
+        const src = fighters.find(x => x.id === fromId);
+        if (src) me.hurtFrom = Math.atan2(src.pos.x - me.pos.x, src.pos.z - me.pos.z);
+      }
+      if (f.hp <= 0) die(f, fromId, fromName, hs);
+    };
+    const damage = (target, attacker, dmg, hs) => {
+      if (target.isMe || target.isBot) applyDamage(target, attacker.id, attacker.name, dmg, hs);
+      else send({ t: 'h', id: myId, to: target.id, from: attacker.id, fn: attacker.name, d: Math.round(dmg), hs: hs ? 1 : 0 });
+      if (target.mesh) puff(target.pos.clone().setY(target.pos.y + (hs ? 2.1 : 1.1)), target.color, hs ? 10 : 5, 4);
+    };
+
+    const fwd = new THREE.Vector3();
+    const fireMe = () => {
+      const w = me.weapons[me.slot];
+      const def = SHOOT_WEAPONS[w.key];
+      if (me.reloadT > 0 || me.shotCd > 0) return;
+      if (w.mag <= 0) {
+        sfx.play('empty');
+        me.shotCd = 0.25;
+        startReload();
+        return;
+      }
+      me.shotCd = def.rate;
+      w.mag -= 1;
+      sfx.play(def.snd, 1);
+      me.recoil += def.recoil;
+      me.kick = 1;
+      flash.visible = true;
+      flash.material.rotation = Math.random() * 6.28;
+      me.flashT = 0.045;
+      const moving = Math.hypot(me.vel.x, me.vel.z) > 1 || !me.onGround;
+      const spread = def.spread * (1 - me.adsT * 0.6) + (moving ? def.moveSpread : 0);
+      const origin = camera.getWorldPosition(new THREE.Vector3());
+      const muzzle = gunModel.userData.muzzle.getWorldPosition(new THREE.Vector3());
+      camera.getWorldDirection(fwd);
+      let hitAny = false, headAny = false;
+      for (let i = 0; i < def.pellets; i++) {
+        const d = fwd.clone();
+        d.x += (Math.random() - 0.5) * 2 * spread;
+        d.y += (Math.random() - 0.5) * 2 * spread;
+        d.z += (Math.random() - 0.5) * 2 * spread;
+        d.normalize();
+        const res = traceShot(origin, d, me, IS_TOUCH ? 1.25 : 1);
+        spawnTracer(muzzle, res.point);
+        queueTracer(muzzle, res.point);
+        if (res.fighter) {
+          damage(res.fighter, me, def.dmg * (res.head ? 2 : 1), res.head);
+          hitAny = true;
+          headAny = headAny || res.head;
+        } else if (res.wall && res.normal) {
+          inkSplat(res.point, res.normal, w.key === 'shotgun' ? 0.45 : 0.75);
+          if (i === 0) puff(res.point, '#3a2f2a', 3, 2);
+        }
+      }
+      if (hitAny) {
+        showHit(headAny, false);
+        sfx.play(headAny ? 'headshot' : 'hitmark');
+      }
+      if (w.mag === 0) startReload();
+    };
+    const startReload = () => {
+      const w = me.weapons[me.slot];
+      const def = SHOOT_WEAPONS[w.key];
+      if (me.reloadT > 0 || w.mag >= def.mag || w.reserve <= 0) return;
+      me.reloadT = def.reload;
+      sfx.play('reload');
+    };
+    const botShoot = (b, t) => {
+      const fx0 = Math.sin(b.face), fz0 = Math.cos(b.face);
+      const muzzle = new THREE.Vector3(b.pos.x + fx0 * 0.9 + fz0 * 0.35, b.pos.y + 1.45, b.pos.z + fz0 * 0.9 - fx0 * 0.35);
+      const d0 = Math.hypot(t.pos.x - b.pos.x, t.pos.z - b.pos.z);
+      const movingT = Math.hypot(t.vel.x, t.vel.z) > 2;
+      const err = (0.35 + d0 * 0.028) * (movingT ? 1.35 : 1) * b.skill;
+      const aim = new THREE.Vector3(t.pos.x + (Math.random() - 0.5) * err * 2, t.pos.y + 1.3 + (Math.random() - 0.5) * err * 2, t.pos.z + (Math.random() - 0.5) * err * 2);
+      const dir = aim.sub(muzzle).normalize();
+      const res = traceShot(muzzle, dir, b);
+      spawnTracer(muzzle, res.point);
+      queueTracer(muzzle, res.point);
+      const vol = Math.max(0, 1 - me.pos.distanceTo(b.pos) / 70);
+      sfx.play('shot_rifle', vol * 0.5);
+      if (res.fighter) damage(res.fighter, b, 11 * (res.head ? 1.6 : 1), res.head);
+      else if (res.wall && res.normal) inkSplat(res.point, res.normal, 0.6);
+    };
+
+    // ---------- bots ----------
+    const spawnBots = count => {
+      for (let i = 0; i < count; i++) {
+        const klass = PANDA_CLASSES[Math.floor(Math.random() * PANDA_CLASSES.length)];
+        const b = createFighter(`${myId}_b${i}`, RIVAL_NAMES[i % RIVAL_NAMES.length], klass, { isBot: true });
+        b.skill = 0.85 + Math.random() * 0.5;
+        const [x, z] = pickSpawn(b);
+        b.pos.set(x, 0, z);
+      }
+    };
+    const randomGoal = () => {
+      const s = map.spawns[Math.floor(Math.random() * map.spawns.length)];
+      const p = map.pickupSpots[Math.floor(Math.random() * map.pickupSpots.length)];
+      const src = Math.random() < 0.5 ? s : p;
+      return new THREE.Vector3(src[0] + (Math.random() - 0.5) * 6, 0, src[1] + (Math.random() - 0.5) * 6);
+    };
+    const eyeOf = f => new THREE.Vector3(f.pos.x, f.pos.y + 2.0, f.pos.z);
+    const chestOf = f => new THREE.Vector3(f.pos.x, f.pos.y + 1.3, f.pos.z);
+    const updateBot = (b, dt, frozen) => {
+      if (b.dead) {
+        b.respawnT -= dt;
+        b.mesh.rotation.x += (-Math.PI / 2 - b.mesh.rotation.x) * Math.min(1, dt * 6);
+        if (b.respawnT <= 0) {
+          const [x, z] = pickSpawn(b);
+          b.pos.set(x, 0, z);
+          b.vel.set(0, 0, 0);
+          b.hp = 100;
+          b.dead = false;
+          b.target = null;
+          b.mesh.rotation.x = 0;
+        }
+        return;
+      }
+      b.thinkT -= dt;
+      if (b.thinkT <= 0) {
+        b.thinkT = 0.25 + Math.random() * 0.25;
+        let best = null, bd = 1e9;
+        const eye = eyeOf(b);
+        for (const f of fighters) {
+          if (f === b || f.dead) continue;
+          const d = f.pos.distanceTo(b.pos);
+          if (d < 75 && d < bd && hasLOS(eye, chestOf(f))) { bd = d; best = f; }
+        }
+        if (best !== b.target) {
+          b.target = best;
+          b.react = 0.4 + Math.random() * 0.4;
+        }
+        if (Math.random() < 0.25) b.strafe = -b.strafe;
+        if (!best && (!b.goal || b.goal.distanceTo(b.pos) < 3 || b.stuckT > 1.2)) {
+          b.goal = randomGoal();
+          b.stuckT = 0;
+        }
+      }
+      let dx = 0, dz = 0, speed = 6.5;
+      const t = b.target;
+      if (t && !t.dead) {
+        const tx = t.pos.x - b.pos.x, tz = t.pos.z - b.pos.z, d = Math.hypot(tx, tz) || 1;
+        const ux = tx / d, uz = tz / d;
+        const want = d > 30 ? 0.9 : d < 10 ? -0.5 : 0.1;
+        dx = ux * want - uz * b.strafe * 0.8;
+        dz = uz * want + ux * b.strafe * 0.8;
+        b.face = Math.atan2(tx, tz);
+        speed = 7;
+        b.react -= dt;
+        b.fireCd -= dt;
+        if (!frozen && b.react <= 0 && b.fireCd <= 0) {
+          if (b.burst > 0) {
+            b.burst -= 1;
+            b.fireCd = 0.14;
+          } else {
+            b.burst = 2 + Math.floor(Math.random() * 3);
+            b.fireCd = 0.55 + Math.random() * 0.6;
+          }
+          botShoot(b, t);
+        }
+        if (b.onGround && Math.random() < 0.004) b.vel.y = 10;
+      } else if (b.goal) {
+        const gx = b.goal.x - b.pos.x, gz = b.goal.z - b.pos.z, d = Math.hypot(gx, gz) || 1;
+        dx = gx / d;
+        dz = gz / d;
+        b.face = Math.atan2(dx, dz);
+      }
+      if (frozen) { dx = 0; dz = 0; }
+      const l = Math.hypot(dx, dz);
+      if (l > 1) { dx /= l; dz /= l; }
+      b.vel.x += (dx * speed - b.vel.x) * Math.min(1, dt * 8);
+      b.vel.z += (dz * speed - b.vel.z) * Math.min(1, dt * 8);
+      b.vel.y -= 26 * dt;
+      const ox = b.pos.x, oz = b.pos.z;
+      b.onGround = moveBody(b.pos, b.vel, 0.7, dt);
+      const moved = Math.hypot(b.pos.x - ox, b.pos.z - oz);
+      if (l > 0.3 && moved < speed * dt * 0.3) b.stuckT += dt;
+      else b.stuckT = Math.max(0, b.stuckT - dt);
+      if (b.stuckT > 0.6 && b.onGround) b.vel.y = 10;
+    };
+
+    // ---------- pickups ----------
+    const pickups = map.pickupSpots.map(([px, pz, kind]) => {
+      const [x, z] = freeSpot(px, pz);
+      const def = SHOOT_PICKUPS[kind];
+      const grp = new THREE.Group();
+      const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeEmojiTexture(def.icon), transparent: true }));
+      icon.scale.set(1.3, 1.3, 1);
+      icon.position.y = 1.4;
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.75, 1.0, 28), new THREE.MeshBasicMaterial({ color: def.color, side: THREE.DoubleSide, transparent: true, opacity: 0.9 }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.05;
+      const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.75, 0.3, 16), new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.5 }));
+      ped.position.y = 0.15;
+      grp.add(icon, ring, ped);
+      grp.position.set(x, 0, z);
+      scene.add(grp);
+      return { x, z, kind, grp, icon, t: 0, ph: Math.random() * 6 };
+    });
+
+    // ---------- input ----------
+    const keys = {};
+    const onKeyDown = e => {
+      if (e.code === 'Tab') {
+        e.preventDefault();
+        setShowBoard(true);
+      }
+      if (e.repeat) return;
+      keys[e.code] = true;
+      const c = ctl.current;
+      if (e.code === 'Space') { e.preventDefault(); c.jump = true; }
+      if (e.code === 'KeyR') c.reload = true;
+      if (e.code === 'KeyQ') c.swap = true;
+      if (e.code === 'Digit1') c.slot = 0;
+      if (e.code === 'Digit2') c.slot = 1;
+      if (e.code === 'KeyM') {
+        const m = !sfx.isMuted();
+        sfx.setMuted(m);
+        setMutedS(m);
+      }
+    };
+    const onKeyUp = e => {
+      keys[e.code] = false;
+      if (e.code === 'Tab') setShowBoard(false);
+    };
+    const locked = () => document.pointerLockElement === renderer.domElement;
+    const onMouseMove = e => {
+      if (!locked() || me.dead) return;
+      const sens = 0.0022 / (1 + (SHOOT_WEAPONS[me.weapons[me.slot].key].zoom - 1) * me.adsT);
+      me.yaw -= e.movementX * sens;
+      me.pitch = Math.max(-1.45, Math.min(1.45, me.pitch - e.movementY * sens));
+    };
+    const onMouseDown = e => {
+      if (!locked()) return;
+      if (e.button === 0) ctl.current.firing = true;
+      if (e.button === 2) ctl.current.ads = true;
+    };
+    const onMouseUp = e => {
+      if (e.button === 0) { ctl.current.firing = false; me.semiHeld = false; }
+      if (e.button === 2) ctl.current.ads = false;
+    };
+    const noMenu = e => e.preventDefault();
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mouseup', onMouseUp);
+    el.addEventListener('contextmenu', noMenu);
+    const blockTouch = ev => {
+      if (ev.target && ev.target.closest && ev.target.closest('[data-scroll]')) return;
+      ev.preventDefault();
+    };
+    document.addEventListener('touchmove', blockTouch, { passive: false });
+
+    // ---------- match ----------
+    const match = { left: SHOOT_SECONDS, countdown: 3.2, over: false };
+    ['3', '2', '1'].forEach((n, i) => setTimeout(() => { announceNow(n, '#ffffff'); sfx.play('pop', 1, 0.8); }, 100 + i * 1000));
+    setTimeout(() => { announceNow('SHOOT!', '#4ade80'); sfx.play('streak'); }, 3100);
+    const endMatch = () => {
+      if (match.over) return;
+      match.over = true;
+      ctl.current.firing = false;
+      if (document.pointerLockElement) document.exitPointerLock();
+      const board = [...fighters].map(f => ({ id: f.id, name: f.name, color: f.color, isMe: f.isMe, kills: f.kills, deaths: f.deaths })).sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
+      const rank = board.findIndex(r => r.isMe) + 1;
+      announceNow(rank === 1 ? 'VICTORY 🏆' : 'MATCH OVER', rank === 1 ? '#facc15' : '#ffffff');
+      sfx.play(rank === 1 ? 'streak' : 'ko');
+      setTimeout(() => setResults({ board, rank }), 1400);
+    };
+
+    // ---------- MQTT ----------
+    const upsertRemote = (id, nm, c) => {
+      let f = fighters.find(x => x.id === id);
+      if (!f) {
+        const klass = PANDA_CLASSES.find(k => k.id === c) || PANDA_CLASSES[0];
+        f = createFighter(id, nm, klass, { remote: true });
+        f.tx = f.pos.x;
+        f.tz = f.pos.z;
+      }
+      net.seen[id] = performance.now();
+      return f;
+    };
+    const applyRemote = (f, d) => {
+      f.tx = d.x; f.ty = d.y; f.tz = d.z; f.tface = d.f;
+      f.hp = d.hp; f.dead = !!d.dd; f.kills = d.k || 0; f.deaths = d.dt || 0;
+    };
+    const onMsg = (tp, payload) => {
+      let d;
+      try { d = JSON.parse(payload.toString()); } catch (e) { return; }
+      if (!d || d.id === myId) return;
+      if (d.t === 's') {
+        const isNew = !net.peers[d.id];
+        net.peers[d.id] = performance.now();
+        const f = upsertRemote(d.id, d.n, d.c);
+        applyRemote(f, d);
+        if (isNew) pushFeed(`🟢 ${d.n} joined`, '#38bdf8');
+        if (d.id === net.hostId) {
+          (d.b || []).forEach(bs => applyRemote(upsertRemote(bs.i, bs.n, bs.c), bs));
+          if (typeof d.left === 'number' && Math.abs(match.left - d.left) > 1.5) match.left = d.left;
+        }
+        (d.tr || []).forEach(t => {
+          const a = new THREE.Vector3(t[0], t[1], t[2]), b = new THREE.Vector3(t[3], t[4], t[5]);
+          spawnTracer(a, b);
+          const vol = Math.max(0, 1 - me.pos.distanceTo(a) / 70);
+          if (vol > 0.05) sfx.play('shot_rifle', vol * 0.45);
+        });
+      } else if (d.t === 'h') {
+        const target = fighters.find(x => x.id === d.to && (x.isMe || x.isBot));
+        applyDamage(target, d.from, d.fn, d.d, d.hs);
+      } else if (d.t === 'x') {
+        handleDeath(d);
+      }
+    };
+    const startNet = () => {
+      if (!window.mqtt) return;
+      try {
+        const client = window.mqtt.connect('wss://broker.emqx.io:8084/mqtt', { clientId: `ngmis_${myId}`, clean: true, connectTimeout: 5000 });
+        net.client = client;
+        client.on('connect', () => { net.status = 'LIVE'; client.subscribe(topic); });
+        client.on('error', () => { net.status = 'OFFLINE'; });
+        client.on('message', onMsg);
+      } catch (e) { net.status = 'OFFLINE'; }
+    };
+    let mqttTag = null;
+    if (window.mqtt) startNet();
+    else {
+      mqttTag = document.createElement('script');
+      mqttTag.src = 'https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js';
+      mqttTag.async = true;
+      mqttTag.onload = startNet;
+      mqttTag.onerror = () => { net.status = 'OFFLINE'; };
+      document.body.appendChild(mqttTag);
+    }
+    if (fillBots) spawnBots(7);
+
+    // ---------- post ----------
+    const post = cinematic ? createPost(renderer, scene, camera) : null;
+    if (post) {
+      post.comp.uniforms.exposure.value = 1.05;
+      post.comp.uniforms.bloomStrength.value = 0.25;
+    }
+    const onResize = () => {
+      camera.aspect = W() / H();
+      camera.updateProjectionMatrix();
+      renderer.setSize(W(), H());
+      if (post) post.setSize();
+    };
+    window.addEventListener('resize', onResize);
+
+    sfx.startMusic();
+    sfx.onTrack(n => pushFeed(`🎵 ${n}`, '#c084fc'));
+
+    // ---------- main loop ----------
+    let raf, prev = performance.now(), lastNet = 0, lastHud = 0, bob = 0;
+    const loop = now => {
+      raf = requestAnimationFrame(loop);
+      const dt = Math.max(0, Math.min(0.05, (now - prev) / 1000));
+      prev = now;
+      if (match.countdown > 0) match.countdown -= dt;
+      else if (!match.over) {
+        match.left -= dt;
+        if (match.left <= 0 || fighters.some(f => f.kills >= KILL_TARGET)) endMatch();
+      }
+      const frozen = match.countdown > 0 || match.over;
+      const c = ctl.current;
+
+      // ----- me -----
+      if (c.lookDX || c.lookDY) {
+        const sens = 0.0055 / (1 + (SHOOT_WEAPONS[me.weapons[me.slot].key].zoom - 1) * me.adsT);
+        me.yaw -= c.lookDX * sens;
+        me.pitch = Math.max(-1.45, Math.min(1.45, me.pitch - c.lookDY * sens));
+        c.lookDX = 0;
+        c.lookDY = 0;
+      }
+      if (me.dead) {
+        me.respawnT -= dt;
+        if (me.respawnT <= 0 && !match.over) spawnMe();
+      } else {
+        let fwdIn = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - c.mz;
+        let strIn = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + c.mx;
+        if (frozen) { fwdIn = 0; strIn = 0; }
+        const sy = Math.sin(me.yaw), cy = Math.cos(me.yaw);
+        let wx = -sy * fwdIn + cy * strIn, wz = -cy * fwdIn - sy * strIn;
+        const wl = Math.hypot(wx, wz);
+        if (wl > 1) { wx /= wl; wz /= wl; }
+        const sprint = (keys.ShiftLeft || keys.ShiftRight || (IS_TOUCH && wl > 0.95)) && fwdIn > 0 && me.adsT < 0.3;
+        const speed = me.adsT > 0.5 ? 5 : sprint ? 12 : 8.5;
+        const accel = me.onGround ? 12 : 3;
+        me.vel.x += (wx * speed - me.vel.x) * Math.min(1, dt * accel);
+        me.vel.z += (wz * speed - me.vel.z) * Math.min(1, dt * accel);
+        if (c.jump && me.onGround && !frozen) me.vel.y = 10.5;
+        me.vel.y -= 26 * dt;
+        me.onGround = moveBody(me.pos, me.vel, 0.6, dt);
+        bob += Math.hypot(me.vel.x, me.vel.z) * dt * (me.onGround ? 1 : 0);
+
+        // weapon state
+        if (c.slot !== undefined) {
+          if (c.slot !== me.slot && me.weapons[c.slot]) { me.slot = c.slot; me.reloadT = 0; equipModel(me.weapons[me.slot].key); sfx.play('reload', 0.5); }
+          c.slot = undefined;
+        }
+        if (c.swap) { me.slot = 1 - me.slot; me.reloadT = 0; equipModel(me.weapons[me.slot].key); sfx.play('reload', 0.5); }
+        if (c.reload) startReload();
+        const w = me.weapons[me.slot];
+        const def = SHOOT_WEAPONS[w.key];
+        if (me.shotCd > 0) me.shotCd -= dt;
+        if (me.reloadT > 0) {
+          me.reloadT -= dt;
+          if (me.reloadT <= 0) {
+            const take = Math.min(def.mag - w.mag, w.reserve);
+            w.mag += take;
+            if (w.reserve !== Infinity) w.reserve -= take;
+          }
+        }
+        if (c.firing && !frozen) {
+          if (def.auto || IS_TOUCH) fireMe();
+          else if (!me.semiHeld) { fireMe(); me.semiHeld = true; }
+        }
+        me.adsT += ((c.ads && me.reloadT <= 0 ? 1 : 0) - me.adsT) * Math.min(1, dt * 10);
+
+        // pickups
+        pickups.forEach(p => {
+          if (p.t > 0) {
+            p.t -= dt;
+            if (p.t <= 0) p.grp.visible = true;
+            return;
+          }
+          p.icon.position.y = 1.4 + Math.sin(now * 0.004 + p.ph) * 0.18;
+          p.grp.rotation.y += dt;
+          if (Math.hypot(me.pos.x - p.x, me.pos.z - p.z) < 2.2 && me.pos.y < 2) {
+            const pd = SHOOT_PICKUPS[p.kind];
+            if (p.kind === 'burger') {
+              if (me.hp >= 100) return;
+              me.hp = Math.min(100, me.hp + 50);
+            } else if (p.kind === 'ammo') {
+              me.weapons.forEach(wp => { wp.reserve = SHOOT_WEAPONS[wp.key].reserve; });
+            } else {
+              me.weapons[0] = { key: p.kind, mag: SHOOT_WEAPONS[p.kind].mag, reserve: SHOOT_WEAPONS[p.kind].reserve };
+              me.slot = 0;
+              me.reloadT = 0;
+              equipModel(p.kind);
+            }
+            p.t = 15;
+            p.grp.visible = false;
+            announceNow(`${pd.icon} ${pd.label}`, pd.color);
+            sfx.play('powerup');
+          }
+        });
+      }
+      c.jump = false;
+      c.reload = false;
+      c.swap = false;
+
+      // ----- bots (host) / remotes -----
+      fighters.forEach(f => {
+        if (f.isBot && net.isHost) updateBot(f, dt, frozen);
+        else if (f.remote && f.tx !== undefined) {
+          f.pos.x += (f.tx - f.pos.x) * Math.min(1, dt * 12);
+          f.pos.y += ((f.ty || 0) - f.pos.y) * Math.min(1, dt * 12);
+          f.pos.z += (f.tz - f.pos.z) * Math.min(1, dt * 12);
+          if (f.tface !== undefined) f.face = f.tface;
+          f.mesh.rotation.x += ((f.dead ? -Math.PI / 2 : 0) - f.mesh.rotation.x) * Math.min(1, dt * 6);
+        }
+        if (f.mesh) {
+          const moving = Math.hypot(f.vel.x, f.vel.z) > 1 && !f.dead;
+          f.mesh.position.set(f.pos.x, f.pos.y + (moving ? Math.abs(Math.sin(now * 0.012 + f.pos.x)) * 0.12 : 0), f.pos.z);
+          f.mesh.rotation.y = f.face;
+          f.tag.sprite.visible = !f.dead;
+          const hpR = Math.max(0, Math.round(f.hp));
+          if (hpR !== f.tag.hp) {
+            f.tag.hp = hpR;
+            drawShooterTag(f.tag.canvas, f.name, hpR, f.color);
+            f.tag.tex.needsUpdate = true;
+          }
+        }
+      });
+
+      // ----- fx -----
+      tracers.forEach(t => {
+        if (t.life > 0) {
+          t.life -= dt;
+          t.mat.opacity = Math.max(0, t.life / 0.07) * 0.85;
+          if (t.life <= 0) t.m.visible = false;
+        }
+      });
+      for (let i = parts.length - 1; i >= 0; i--) {
+        const p = parts[i];
+        p.vy -= 18 * dt;
+        p.m.position.x += p.vx * dt;
+        p.m.position.y += p.vy * dt;
+        p.m.position.z += p.vz * dt;
+        p.life -= dt;
+        p.mat.opacity = Math.max(0, p.life * 2);
+        if (p.life <= 0 || p.m.position.y < 0) {
+          scene.remove(p.m);
+          p.mat.dispose();
+          parts.splice(i, 1);
+        }
+      }
+      map.clouds.forEach((cl, i) => { cl.position.x += dt * (0.6 + (i % 3) * 0.3); if (cl.position.x > 170) cl.position.x = -170; });
+      if (me.flashT > 0) { me.flashT -= dt; if (me.flashT <= 0) flash.visible = false; }
+
+      // ----- camera + viewmodel -----
+      me.recoil *= Math.exp(-dt * 9);
+      me.kick = (me.kick || 0) * Math.exp(-dt * 18);
+      if (me.dead) {
+        const k = me.deathBy && fighters.find(f => f.id === me.deathBy.id);
+        camera.position.set(me.pos.x, me.pos.y + 4.5, me.pos.z + 3);
+        camera.lookAt(k ? k.pos.x : me.pos.x, k ? k.pos.y + 1.5 : 0, k ? k.pos.z : me.pos.z);
+        vm.visible = false;
+      } else {
+        const by = me.onGround ? Math.sin(bob * 1.6) * 0.06 : 0;
+        camera.position.set(me.pos.x, me.pos.y + 2.25 + by, me.pos.z);
+        camera.rotation.order = 'YXZ';
+        camera.rotation.set(me.pitch + me.recoil, me.yaw, 0);
+        const def = SHOOT_WEAPONS[me.weapons[me.slot].key];
+        const zoom = 1 + (def.zoom - 1) * me.adsT;
+        const fov = BASE_FOV / zoom;
+        if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
+        const scoped = me.weapons[me.slot].key === 'sniper' && me.adsT > 0.8;
+        vm.visible = !scoped;
+        const sightY = (gunModel ? gunModel.userData.sightY : 0.16) * 0.72;
+        const hipX = 0.27, hipY = -0.25, hipZ = -0.5;
+        const adsX = 0, adsY = -sightY, adsZ = -0.36;
+        const reloadDip = me.reloadT > 0 ? Math.sin(Math.min(1, me.reloadT / def.reload) * Math.PI) * 0.25 : 0;
+        vm.position.set(
+          hipX + (adsX - hipX) * me.adsT + Math.sin(bob * 0.8) * 0.012 * (1 - me.adsT),
+          hipY + (adsY - hipY) * me.adsT - reloadDip + Math.abs(Math.cos(bob * 0.8)) * 0.012 * (1 - me.adsT),
+          hipZ + (adsZ - hipZ) * me.adsT + me.kick * 0.07
+        );
+        vm.rotation.set(me.kick * 0.12 + reloadDip * 1.2, 0, 0);
+      }
+
+      if (post) post.render(now * 0.001);
+      else renderer.render(scene, camera);
+
+      // ----- network -----
+      if (now - lastNet > 66) {
+        lastNet = now;
+        const r2 = v => Math.round(v * 100) / 100;
+        const pkt = { t: 's', id: myId, n: name, c: cls.id, x: r2(me.pos.x), y: r2(me.pos.y), z: r2(me.pos.z), f: r2(me.yaw + Math.PI), hp: Math.round(me.hp), dd: me.dead ? 1 : 0, k: me.kills, dt: me.deaths, tr: net.pendingTr };
+        if (net.isHost) {
+          pkt.left = Math.round(match.left * 10) / 10;
+          pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.cls.id, x: r2(b.pos.x), y: r2(b.pos.y), z: r2(b.pos.z), f: r2(b.face), hp: Math.round(b.hp), dd: b.dead ? 1 : 0, k: b.kills, dt: b.deaths }));
+        }
+        send(pkt);
+        net.pendingTr = [];
+      }
+
+      // ----- HUD + housekeeping (10 Hz) -----
+      if (now - lastHud > 100) {
+        lastHud = now;
+        Object.keys(net.peers).forEach(id => {
+          if (now - net.peers[id] > 5000) { delete net.peers[id]; pushFeed('🔴 a player left', '#94a3b8'); }
+        });
+        [...fighters].forEach(f => { if (f.remote && now - (net.seen[f.id] || 0) > 5000) removeFighter(f); });
+        const hostId = [myId, ...Object.keys(net.peers)].sort()[0];
+        net.hostId = hostId;
+        const amHost = hostId === myId;
+        if (amHost !== net.isHost) {
+          net.isHost = amHost;
+          if (!amHost) fighters.filter(f => f.isBot).forEach(removeFighter);
+        }
+        if (net.isHost && fillBots && !fighters.some(f => f.isBot)) spawnBots(Math.max(0, 7 - Object.keys(net.peers).length));
+
+        camera.getWorldDirection(fwd);
+        const aimRes = me.dead ? null : traceShot(camera.getWorldPosition(new THREE.Vector3()), fwd, me);
+        const w = me.weapons[me.slot];
+        const def = SHOOT_WEAPONS[w.key];
+        const board = [...fighters].map(f => ({ id: f.id, name: f.name, color: f.color, isMe: f.isMe, kills: f.kills, deaths: f.deaths, bot: f.isBot })).sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
+        setHud({
+          hp: Math.max(0, Math.round(me.hp)),
+          mag: w.mag,
+          reserve: w.reserve,
+          wname: def.name,
+          wkey: w.key,
+          reloading: me.reloadT > 0 ? 1 - me.reloadT / def.reload : 0,
+          kills: me.kills,
+          deaths: me.deaths,
+          left: Math.max(0, Math.ceil(match.left)),
+          feed: feed.slice(),
+          dead: me.dead ? { by: me.deathBy ? me.deathBy.name : '', hs: me.deathBy && me.deathBy.hs, t: Math.max(0, Math.ceil(me.respawnT)) } : null,
+          board,
+          aim: aimRes && aimRes.fighter ? { name: aimRes.fighter.name, hp: Math.max(0, Math.round(aimRes.fighter.hp)), color: aimRes.fighter.color } : null,
+          scope: w.key === 'sniper' && me.adsT > 0.8 && !me.dead,
+          locked: IS_TOUCH || locked(),
+          peers: 1 + Object.keys(net.peers).length,
+          net: net.status
+        });
+      }
+    };
+    raf = requestAnimationFrame(loop);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      sfx.stopMusic();
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('resize', onResize);
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('mouseup', onMouseUp);
+      document.removeEventListener('touchmove', blockTouch);
+      if (document.pointerLockElement) document.exitPointerLock();
+      try { if (net.client) net.client.end(true); } catch (e) {}
+      if (post) post.dispose();
+      renderer.dispose();
+      if (renderer.forceContextLoss) renderer.forceContextLoss();
+      el.innerHTML = '';
+      el.style.filter = '';
+    };
+  }, []);
+
+  const c = ctl.current;
+  const fmt = s => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const leader = hud.board[0];
+  const resetJoy = () => {
+    c.joyPtr = null;
+    c.mx = 0;
+    c.mz = 0;
+    if (joyKnobRef.current) joyKnobRef.current.style.transform = 'translate(-50%, -50%)';
+    if (joyBaseRef.current) { joyBaseRef.current.style.left = ''; joyBaseRef.current.style.top = ''; }
+  };
+
+  return (
+    <div className="game-layer absolute inset-0 z-30 bg-[#9ed0f2] text-white select-none overflow-hidden">
+      <div ref={mountRef} className="absolute inset-0" />
+
+      {/* crosshair + hit marker */}
+      {!hud.scope && !hud.dead && (
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+          <div className="relative w-6 h-6">
+            <span className="absolute left-1/2 top-0 w-[2px] h-[7px] -translate-x-1/2 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.75)]" />
+            <span className="absolute left-1/2 bottom-0 w-[2px] h-[7px] -translate-x-1/2 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.75)]" />
+            <span className="absolute top-1/2 left-0 h-[2px] w-[7px] -translate-y-1/2 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.75)]" />
+            <span className="absolute top-1/2 right-0 h-[2px] w-[7px] -translate-y-1/2 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.75)]" />
+          </div>
+        </div>
+      )}
+      <div ref={hitRef} className="absolute left-1/2 top-1/2 pointer-events-none font-black text-3xl leading-none" style={{ opacity: 0, transform: 'translate(-50%,-50%)', textShadow: '0 0 3px #000' }}>✕</div>
+      {hud.scope && (
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at center, transparent 0, transparent 32vmin, rgba(0,0,0,0.96) 32.4vmin)' }}>
+          <div className="absolute left-1/2 top-0 bottom-0 w-px bg-black/80" />
+          <div className="absolute top-1/2 left-0 right-0 h-px bg-black/80" />
+          <div className="absolute left-1/2 top-1/2 w-2 h-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-red-500" />
+        </div>
+      )}
+      <div ref={hurtRef} className="absolute inset-0 pointer-events-none" style={{ opacity: 0, background: 'radial-gradient(circle at center, transparent 45%, rgba(220,20,20,0.75) 100%)' }} />
+
+      {hud.aim && !hud.dead && (
+        <div className="absolute left-1/2 top-[56%] -translate-x-1/2 pointer-events-none text-center">
+          <div className="text-[12px] font-black" style={{ color: hud.aim.color, textShadow: '0 1px 2px #000' }}>{hud.aim.name}</div>
+          <div className="w-24 h-1.5 bg-black/50 rounded mt-0.5 overflow-hidden"><div className="h-full bg-rose-500" style={{ width: `${hud.aim.hp}%` }} /></div>
+        </div>
+      )}
+
+      {/* top centre: timer */}
+      <div className="absolute left-1/2 -translate-x-1/2 top-0 safe-top flex flex-col items-center gap-1 pointer-events-none">
+        <div className={`font-game text-lg md:text-2xl px-3 py-0.5 rounded-lg bg-white/90 text-slate-900 shadow ${hud.left <= 30 ? 'text-rose-600 animate-pulse' : ''}`}>{fmt(hud.left)}</div>
+        <div className="text-[9px] md:text-[10px] font-black px-2 py-0.5 rounded bg-slate-900/70">FIRST TO {KILL_TARGET} · {leader ? `${leader.name} ${leader.kills}` : ''}</div>
+      </div>
+
+      {/* top left */}
+      <div className="absolute left-0 top-0 safe-top safe-x pointer-events-auto">
+        <div className="flex items-center gap-2 bg-slate-950/75 rounded-xl px-2.5 py-1.5">
+          <div className="leading-none"><span className="text-[9px] text-slate-400 font-bold block">K / D</span><span className="font-game text-base text-emerald-300">{hud.kills}<span className="text-slate-500">/</span><span className="text-rose-300">{hud.deaths}</span></span></div>
+          <span className="hidden md:inline text-[10px] font-bold text-cyan-300">● {hud.net} ({hud.peers})</span>
+          <button onClick={() => { const m = !muted; sfx.setMuted(m); setMutedS(m); }} className="touch-btn w-8 h-8 rounded-lg bg-slate-800 text-sm cursor-pointer">{muted ? '🔇' : '🔊'}</button>
+          <button onClick={onExit} className="touch-btn h-8 px-2 rounded-lg bg-slate-800 text-[11px] font-black cursor-pointer">✕<span className="hidden md:inline"> LOBBY</span></button>
+        </div>
+      </div>
+
+      {/* top right: mini scoreboard + feed */}
+      <div className="absolute right-0 top-0 safe-top safe-x pointer-events-none flex flex-col items-end gap-1.5">
+        <div className="bg-white/90 text-slate-900 rounded-lg p-1.5 w-[130px] md:w-[200px] shadow">
+          {hud.board.slice(0, IS_SMALL() ? 3 : 5).map((r, i) => (
+            <div key={r.id} className={`flex items-center justify-between text-[10px] md:text-[11px] px-1 rounded ${r.isMe ? 'bg-emerald-200 font-black' : 'font-semibold'}`}>
+              <span className="truncate"><span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: r.color }} />{i + 1}. {r.name}</span>
+              <span className="font-mono shrink-0">{r.kills}/{r.deaths}</span>
+            </div>
+          ))}
+        </div>
+        <div className={`${IS_TOUCH ? 'hidden md:flex' : 'flex'} flex-col items-end gap-1`}>
+          {hud.feed.map(f => (
+            <div key={f.id} className="text-[11px] font-bold px-2 py-0.5 rounded bg-slate-950/70" style={{ color: f.color }}>{f.msg}</div>
+          ))}
+        </div>
+      </div>
+
+      {/* bottom left: HP */}
+      <div className={`absolute left-0 safe-x pointer-events-none ${IS_TOUCH ? 'top-[64px]' : 'bottom-0 safe-bottom'}`}>
+        <div className="flex items-center gap-2 bg-white/90 rounded-lg px-2 py-1 shadow">
+          <span className="font-game text-slate-900 text-lg md:text-xl w-10 text-right">{hud.hp}</span>
+          <div className="w-24 md:w-40 h-3 bg-slate-300 rounded overflow-hidden"><div className={`h-full ${hud.hp > 50 ? 'bg-emerald-500' : hud.hp > 25 ? 'bg-amber-400' : 'bg-rose-500'}`} style={{ width: `${hud.hp}%` }} /></div>
+        </div>
+      </div>
+
+      {/* bottom right: ammo */}
+      <div className={`absolute right-0 safe-x pointer-events-none text-right ${IS_TOUCH ? 'top-[92px] md:top-[150px]' : 'bottom-0 safe-bottom'}`}>
+        <div className="inline-block bg-sky-300/95 text-slate-900 rounded-lg px-3 py-1 shadow">
+          <div className="font-game text-xl md:text-3xl leading-none">{hud.mag}<span className="text-sm md:text-base text-slate-700"> / {hud.reserve === Infinity ? '∞' : hud.reserve}</span></div>
+          <div className="text-[9px] md:text-[10px] font-black">{hud.wname}</div>
+          {hud.reloading > 0 && <div className="h-1 mt-0.5 bg-slate-700/30 rounded overflow-hidden"><div className="h-full bg-slate-900" style={{ width: `${hud.reloading * 100}%` }} /></div>}
+        </div>
+      </div>
+
+      {/* death screen */}
+      {hud.dead && !results && (
+        <div className="absolute left-1/2 top-[58%] -translate-x-1/2 pointer-events-none text-center">
+          <div className="bg-rose-600 text-white px-5 py-2 rounded-lg shadow-xl border-2 border-white/80">
+            <div className="font-game text-base md:text-lg">ELIMINATED BY {hud.dead.by}{hud.dead.hs ? ' 🎯' : ''}</div>
+            <div className="text-[11px] font-bold opacity-90">Respawning in {hud.dead.t}s</div>
+          </div>
+        </div>
+      )}
+
+      {announce && (
+        <div key={announce.id} className="absolute inset-x-0 top-[22%] flex justify-center pointer-events-none px-4 text-center">
+          <div className="font-game text-3xl md:text-6xl animate-bounce" style={{ color: announce.color, textShadow: '0 4px 0 #000, 0 0 24px rgba(0,0,0,0.5)' }}>{announce.text}</div>
+        </div>
+      )}
+
+      {/* desktop: click to lock the mouse */}
+      {!IS_TOUCH && !hud.locked && !results && (
+        <div className="absolute inset-0 bg-slate-950/60 flex items-center justify-center pointer-events-auto" onClick={() => { sfx.unlock(); if (lockRef.current) lockRef.current.requestPointerLock(); }}>
+          <div className="glass border border-slate-600 rounded-3xl p-6 text-center max-w-md cursor-pointer">
+            <div className="font-game text-3xl text-white">CLICK TO PLAY</div>
+            <div className="text-slate-300 text-sm mt-1">Free-for-all · first to {KILL_TARGET} eliminations · 3 minutes</div>
+            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-left text-[12px] mt-4 text-slate-200">
+              <span className="flex gap-1"><span className="keycap">W</span><span className="keycap">A</span><span className="keycap">S</span><span className="keycap">D</span></span><span>Move · <span className="keycap">SHIFT</span> sprint</span>
+              <span className="keycap">MOUSE</span><span>Aim · left click shoot · right click ADS</span>
+              <span className="keycap">SPACE</span><span>Jump (onto crates & containers)</span>
+              <span className="keycap">R</span><span>Reload</span>
+              <span className="flex gap-1"><span className="keycap">1</span><span className="keycap">2</span><span className="keycap">Q</span></span><span>Switch weapon</span>
+              <span className="keycap">TAB</span><span>Scoreboard · <span className="keycap">ESC</span> free the mouse</span>
+            </div>
+            <div className="text-[11px] text-slate-400 mt-3">Grab 💥 shotgun · ⚡ SMG · 🎯 sniper · 🍔 health · 📦 ammo around town</div>
+          </div>
+        </div>
+      )}
+
+      {/* scoreboard */}
+      {showBoard && !results && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="glass border border-slate-600 rounded-2xl p-4 w-[360px]">
+            <div className="font-game text-white mb-2">SCOREBOARD</div>
+            {hud.board.map((r, i) => (
+              <div key={r.id} className={`flex justify-between text-sm px-2 py-1 rounded ${r.isMe ? 'bg-emerald-500/25' : ''}`}>
+                <span><span className="inline-block w-2.5 h-2.5 rounded-full mr-2" style={{ background: r.color }} />{i + 1}. {r.name}{r.bot ? ' 🤖' : ''}</span>
+                <span className="font-mono">{r.kills} / {r.deaths}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* touch controls */}
+      {IS_TOUCH && !results && (
+        <>
+          <div
+            className="absolute left-0 bottom-0 w-[45%] h-[60%] pointer-events-auto"
+            onPointerDown={e => {
+              if (c.joyPtr !== null) return;
+              c.joyPtr = e.pointerId;
+              try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+              c.jox = e.clientX;
+              c.joy = e.clientY;
+              const r = e.currentTarget.getBoundingClientRect();
+              if (joyBaseRef.current) { joyBaseRef.current.style.left = `${e.clientX - r.left}px`; joyBaseRef.current.style.top = `${e.clientY - r.top}px`; }
+            }}
+            onPointerMove={e => {
+              if (c.joyPtr !== e.pointerId) return;
+              let dx = e.clientX - c.jox, dy = e.clientY - c.joy;
+              const len = Math.hypot(dx, dy), R = 50;
+              if (len > R) { dx = (dx / len) * R; dy = (dy / len) * R; }
+              c.mx = dx / R;
+              c.mz = dy / R;
+              if (joyKnobRef.current) joyKnobRef.current.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+            }}
+            onPointerUp={e => { if (c.joyPtr === e.pointerId) resetJoy(); }}
+            onPointerCancel={resetJoy}
+          >
+            <div ref={joyBaseRef} className="absolute w-[110px] h-[110px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/40 bg-slate-900/30" style={{ left: '84px', top: 'calc(100% - 96px)' }}>
+              <div ref={joyKnobRef} className="absolute left-1/2 top-1/2 w-12 h-12 rounded-full bg-white/80 border-2 border-white" style={{ transform: 'translate(-50%, -50%)' }} />
+            </div>
+          </div>
+          <div
+            className="absolute right-0 top-0 w-[55%] h-full pointer-events-auto"
+            onPointerDown={e => {
+              if (c.lookPtr !== null) return;
+              c.lookPtr = e.pointerId;
+              try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
+              c.lx = e.clientX;
+              c.ly = e.clientY;
+            }}
+            onPointerMove={e => {
+              if (c.lookPtr !== e.pointerId) return;
+              c.lookDX += e.clientX - c.lx;
+              c.lookDY += e.clientY - c.ly;
+              c.lx = e.clientX;
+              c.ly = e.clientY;
+            }}
+            onPointerUp={e => { if (c.lookPtr === e.pointerId) c.lookPtr = null; }}
+            onPointerCancel={() => { c.lookPtr = null; }}
+          />
+          <div className="absolute right-0 bottom-0 safe-bottom safe-x pointer-events-none">
+            <div className="relative w-[210px] h-[200px]">
+              <button
+                className="touch-btn pointer-events-auto absolute right-2 bottom-2 w-[92px] h-[92px] rounded-full bg-rose-500/90 border-4 border-white/80 font-game text-sm text-white shadow-xl"
+                onPointerDown={e => { e.stopPropagation(); c.firing = true; c.firePtr = e.pointerId; c.fx = e.clientX; c.fy = e.clientY; try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {} }}
+                onPointerMove={e => { if (c.firePtr !== e.pointerId) return; c.lookDX += e.clientX - c.fx; c.lookDY += e.clientY - c.fy; c.fx = e.clientX; c.fy = e.clientY; }}
+                onPointerUp={() => { c.firing = false; c.firePtr = null; }}
+                onPointerCancel={() => { c.firing = false; c.firePtr = null; }}
+              >FIRE</button>
+              {[
+                ['ADS', 'right-[108px] bottom-[6px]', () => { c.ads = !c.ads; }],
+                ['JUMP', 'right-[100px] bottom-[78px]', () => { c.jump = true; }],
+                ['R', 'right-[28px] bottom-[112px]', () => { c.reload = true; }],
+                ['⇄', 'right-[150px] bottom-[130px]', () => { c.swap = true; }]
+              ].map(([label, pos, fn]) => (
+                <button key={label} className={`touch-btn pointer-events-auto absolute ${pos} w-[58px] h-[58px] rounded-full bg-slate-900/70 border-2 border-white/60 font-black text-xs text-white`} onPointerDown={e => { e.stopPropagation(); fn(); }}>{label}</button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+
+      {results && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/75 p-4">
+          <div data-scroll="1" className="w-full max-w-md max-h-[92%] overflow-y-auto glass border border-slate-700 rounded-3xl p-5 text-center">
+            <div className="font-game text-4xl" style={{ color: results.rank === 1 ? '#facc15' : '#ffffff' }}>{results.rank === 1 ? '🏆 VICTORY' : `#${results.rank} PLACE`}</div>
+            <div className="text-slate-400 text-sm">Ranked by eliminations</div>
+            <div className="mt-3 space-y-1 text-left">
+              {results.board.slice(0, 8).map((r, i) => (
+                <div key={r.id} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl ${r.isMe ? 'bg-emerald-500/20 border border-emerald-400/60' : 'bg-slate-900/70'}`}>
+                  <span className="font-game w-5 text-slate-400">{i + 1}</span>
+                  <span className="w-3 h-3 rounded-full" style={{ background: r.color }} />
+                  <span className="flex-1 font-bold truncate">{r.name}{r.isMe ? ' (you)' : ''}</span>
+                  <span className="font-black text-amber-300">{r.kills}K</span>
+                  <span className="font-black text-rose-300 w-10 text-right">{r.deaths}D</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 mt-4">
+              <button onClick={onAgain} className="play-btn flex-1 py-3 rounded-2xl font-game text-lg text-slate-950 cursor-pointer">PLAY AGAIN</button>
+              <button onClick={onExit} className="px-5 py-3 rounded-2xl bg-slate-800 font-bold cursor-pointer">LOBBY</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 function App() {
   const [screen, setScreen] = useState('lobby');
   const [playerName, setPlayerName] = useState(() => `Panda_${Math.floor(100 + Math.random() * 899)}`);
@@ -1360,6 +2966,7 @@ function App() {
   const [myDmg, setMyDmg] = useState(0);
   const [myDeaths, setMyDeaths] = useState(0);
   const [gfx, setGfx] = useState(IS_TOUCH ? 'fast' : 'cinematic');
+  const [mode, setMode] = useState('beatdown');
   const [muted, setMuted] = useState(false);
   const [announce, setAnnounce] = useState(null);
   const [buffHud, setBuffHud] = useState([]);
@@ -2452,7 +4059,7 @@ function App() {
 
     const animate = (now) => {
       animationFrameId = requestAnimationFrame(animate);
-      const rawDt = Math.min((now - prevTime) / 1000, 0.1);
+      const rawDt = Math.max(0, Math.min((now - prevTime) / 1000, 0.1));
       prevTime = now;
       let dt = rawDt;
       if (fx.hitStop > 0) {
@@ -3315,14 +4922,45 @@ function App() {
             <div className="min-h-full flex flex-col items-center px-4 pt-6 pb-32 md:py-10">
               <header className="text-center select-none">
                 <div className="kicker text-[11px] md:text-xs font-black text-emerald-300">NGMI PANDAS</div>
-                <h1 className="game-title text-[15vw] sm:text-7xl md:text-8xl mt-2">BEATDOWN</h1>
+                <h1 className="game-title text-[15vw] sm:text-7xl md:text-8xl mt-2">{mode === 'shootout' ? 'SHOOTOUT' : 'BEATDOWN'}</h1>
                 <p className="tagline text-slate-200 text-sm md:text-lg mt-4 font-semibold">
-                  Gang up. Pump their <span className="text-amber-300 font-black">%</span>. Ring them out.
+                  {mode === 'shootout' ? (
+                    <>Grab a gun. Splat your rivals. <span className="text-amber-300 font-black">First to {KILL_TARGET}</span> wins.</>
+                  ) : (
+                    <>Gang up. Pump their <span className="text-amber-300 font-black">%</span>. Ring them out.</>
+                  )}
                 </p>
               </header>
 
               <div className="w-full max-w-6xl mt-8 grid gap-5 lg:grid-cols-[1fr_330px] items-start">
                 <section className="space-y-4">
+                  <div className="flex items-center gap-3">
+                    <span className="font-game text-sm text-white">CHOOSE YOUR GAME</span>
+                    <span className="flex-1 h-px bg-gradient-to-r from-slate-500/60 to-transparent" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { id: 'beatdown', icon: '🥊', title: 'BEATDOWN', sub: 'Gang brawl on the moon · ring them out', grad: 'from-emerald-500/30 to-cyan-500/10', ring: '#34d399' },
+                      { id: 'shootout', icon: '🔫', title: 'SHOOTOUT', sub: 'First-person free-for-all · guns in a cartoon town', grad: 'from-rose-500/30 to-amber-400/10', ring: '#fb7185' }
+                    ].map(g => (
+                      <button
+                        key={g.id}
+                        onClick={() => setMode(g.id)}
+                        className={`card relative text-left rounded-2xl border-2 p-3 md:p-4 bg-gradient-to-br ${g.grad} glass cursor-pointer ${mode === g.id ? 'selected' : 'border-slate-800 hover:border-slate-600'}`}
+                        style={mode === g.id ? { borderColor: g.ring, boxShadow: `0 0 0 1px ${g.ring}, 0 14px 30px -12px ${g.ring}` } : undefined}
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-3xl md:text-4xl">{g.icon}</span>
+                          <div>
+                            <div className="font-game text-base md:text-xl text-white leading-none">{g.title}</div>
+                            <div className="text-[10px] md:text-[12px] text-slate-300 mt-1 leading-snug">{g.sub}</div>
+                          </div>
+                        </div>
+                        {mode === g.id && <span className="absolute right-2 top-2 text-[9px] font-black px-1.5 py-0.5 rounded bg-white text-slate-900">SELECTED</span>}
+                      </button>
+                    ))}
+                  </div>
+
                   <div className="flex items-center gap-3">
                     <span className="font-game text-sm text-white">CHOOSE YOUR PANDA</span>
                     <span className="flex-1 h-px bg-gradient-to-r from-slate-500/60 to-transparent" />
@@ -3413,7 +5051,7 @@ function App() {
                     onClick={() => {
                       sfx.unlock();
                       setResults(null);
-                      setScreen('playing');
+                      setScreen(mode === 'shootout' ? 'shootout' : 'playing');
                     }}
                     className="play-btn hidden md:block w-full py-4 rounded-2xl font-game text-2xl text-slate-950 cursor-pointer"
                   >
@@ -3463,7 +5101,21 @@ function App() {
                     👈 Left thumb anywhere: drag to move<br />👉 Right buttons: Jump · Smash · Gang · Swarm
                   </div>
 
-                  <div className="hidden md:block border-t border-slate-700/70 pt-3">
+                  {mode === 'shootout' && (
+                    <div className="hidden md:block border-t border-slate-700/70 pt-3">
+                      <div className="text-[10px] font-black tracking-widest text-slate-400 mb-2">SHOOTOUT CONTROLS</div>
+                      <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 items-center text-[12px] text-slate-200">
+                        <span className="flex gap-1"><span className="keycap">W</span><span className="keycap">A</span><span className="keycap">S</span><span className="keycap">D</span></span><span>Move · Shift sprint</span>
+                        <span><span className="keycap">MOUSE</span></span><span>Aim · click shoot · right-click ADS</span>
+                        <span><span className="keycap">SPACE</span></span><span>Jump</span>
+                        <span><span className="keycap">R</span></span><span>Reload</span>
+                        <span className="flex gap-1"><span className="keycap">1</span><span className="keycap">2</span></span><span>Switch weapon</span>
+                        <span><span className="keycap">TAB</span></span><span>Scoreboard</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className={`${mode === 'shootout' ? 'hidden' : 'hidden md:block'} border-t border-slate-700/70 pt-3`}>
                     <div className="text-[10px] font-black tracking-widest text-slate-400 mb-2">CONTROLS</div>
                     <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 items-center text-[12px] text-slate-200">
                       <span className="flex gap-1"><span className="keycap">W</span><span className="keycap">A</span><span className="keycap">S</span><span className="keycap">D</span></span><span>Move</span>
@@ -3475,7 +5127,7 @@ function App() {
                     </div>
                   </div>
 
-                  <div className="border-t border-slate-700/70 pt-3 space-y-1.5 text-[12px] text-slate-300">
+                  <div className={`${mode === 'shootout' ? 'hidden' : ''} border-t border-slate-700/70 pt-3 space-y-1.5 text-[12px] text-slate-300`}>
                     <div><span className="font-black text-amber-300">① </span>Hits raise their <b className="text-white">%</b>. Higher % = they fly further.</div>
                     <div><span className="font-black text-pink-300">② </span>Bounce rivals off the pink <b className="text-white">bumpers</b>.</div>
                     <div><span className="font-black text-cyan-300">③ </span>Grab 🍔 💎 🚀 🎁 power-ups. Most K.O.s in 3 minutes wins.</div>
@@ -3490,7 +5142,7 @@ function App() {
               onClick={() => {
                 sfx.unlock();
                 setResults(null);
-                setScreen('playing');
+                setScreen(mode === 'shootout' ? 'shootout' : 'playing');
               }}
               className="play-btn w-full py-4 rounded-2xl font-game text-2xl text-slate-950 cursor-pointer"
             >
@@ -3502,6 +5154,19 @@ function App() {
 
       {screen === 'playing' && (
         <div ref={flashRef} className="absolute inset-0 z-30 pointer-events-none bg-white" style={{ opacity: 0 }} />
+      )}
+
+      {screen === 'shootout' && (
+        <ShootoutGame
+          key={`so_${matchId}`}
+          cls={selectedClass}
+          name={playerName}
+          room={roomCode}
+          fillBots={fillWithBots}
+          gfx={gfx}
+          onExit={() => setScreen('lobby')}
+          onAgain={() => setMatchId(m => m + 1)}
+        />
       )}
 
       {screen === 'playing' && results && (
