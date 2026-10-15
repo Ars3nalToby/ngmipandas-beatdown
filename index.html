@@ -119,6 +119,11 @@
     .play-btn.alt { background: linear-gradient(180deg, #ffb3c1 0%, #fb7185 50%, #e11d48 100%); box-shadow: 0 8px 0 #9f1239, 0 14px 30px rgba(251,113,133,0.4); animation: playPulseAlt 1.8s ease-in-out infinite; }
     .play-btn.alt:active { box-shadow: 0 2px 0 #9f1239, 0 6px 14px rgba(251,113,133,0.3); }
     @keyframes playPulseAlt { 0%,100% { box-shadow: 0 8px 0 #9f1239, 0 14px 30px rgba(251,113,133,0.3); } 50% { box-shadow: 0 8px 0 #9f1239, 0 14px 46px rgba(251,113,133,0.65); } }
+    .comic-panel { animation: comicIn 0.38s cubic-bezier(.2,1.4,.4,1) both; }
+    .comic-art { animation: comicArt 0.7s cubic-bezier(.2,1.2,.4,1) both; filter: drop-shadow(0 18px 24px rgba(0,0,0,0.6)); }
+    @keyframes comicIn { from { opacity: 0; transform: translateY(26px) rotate(-1.5deg) scale(0.96); } to { opacity: 1; transform: none; } }
+    @keyframes comicArt { from { opacity: 0; transform: scale(1.18) translateY(10px); } to { opacity: 1; transform: none; } }
+    .story-banner { animation: fadeUp 0.55s ease-out 0.3s both; }
     .intro { background: radial-gradient(circle at 50% 50%, #0b1a33 0%, #050816 70%); animation: introOut 0.45s ease-in 0.95s forwards; }
     .intro-logo { animation: introSlam 0.65s cubic-bezier(.2,1.7,.4,1) both; }
     .intro-ring { position: absolute; left: 50%; top: 50%; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 3px solid #34d399; animation: introRing 0.9s ease-out 0.25s both; }
@@ -1715,9 +1720,129 @@ const TICKER = [
   ['$NGMI ▲ 420.69%', '#34d399'], ['🚀 GME TO THE MOON', '#facc15'], ['💀 PaperHands_99 got RUGGED off the moon', '#fb7185'],
   ['👑 Golden AK spotted in Cartoon Town', '#fbbf24'], ['🏰 Fort HODL is under siege', '#60a5fa'], ['☄️ 4-kill streak = MOON STRIKE', '#f87171'],
   ['💎 DIAMOND HANDS ONLY', '#a5f3fc'], ['📉 $PAPER ▼ 69%', '#f87171'], ['🐼 EST. 2022 ON SOLANA', '#c4b5fd'],
-  ['🎉 Level up to unlock crowns, halos & jetpacks', '#86efac'], ['💃 Press V to dance & heal', '#f0abfc'], ['🥊 Gang up. Pump their %. Ring them out.', '#6ee7b7']
+  ['🎉 Level up to unlock crowns, halos & jetpacks', '#86efac'], ['📖 STORY MODE: hunt down PaperHands', '#fde68a'], ['🧻 Wanted: PaperHands, for the Rug of 2022', '#fca5a5'], ['💃 Press V to dance & heal', '#f0abfc'], ['🥊 Gang up. Pump their %. Ring them out.', '#6ee7b7']
 ];
 let introShown = false;
+
+// ================= STORY MODE =================
+const PANDA_QUOTES = {
+  vr_up_only: 'Charts only go one way if you never take the headset off.',
+  street_gm: 'Lost it all in 2022. Kept the fries. Kept the faith.',
+  astro_gmi: 'Minted at the top. Still here. That’s the flex.',
+  dark_gmi: 'PaperHands owes me 400 SOL. I’m collecting in person.',
+  astro_5833: 'Flipped a table when the rug got pulled. Still flipping.',
+  astro_1778: 'You won’t see me coming. Neither did the rug.',
+  astro_8817: 'Diamond hands. Gold suit. Zero chill.',
+  astro_3424: 'Burned every bridge on the way to the Moon. Worth it.',
+  astro_149: 'Look at my visor. That’s you, losing.',
+  astro_997: 'Floating since ’22. The dip never scared me.'
+};
+const STORY_PROLOGUE = [
+  { kicker: 'SOLANA · 2022', emoji: '🐼✨', color: '#34d399', text: '10,000 pandas minted in one night. Floor price: the Moon. Everyone was GMI: Gonna Make It.' },
+  { kicker: 'THE RUG', emoji: '🧻💨', color: '#fb7185', text: 'Then the dev, a panda called PaperHands, pulled the liquidity and vanished. Charts went red. The Discord went silent.' },
+  { kicker: 'THE SPLIT', emoji: '💎 · 🧻', color: '#a5b4fc', text: 'The ones who held became the Diamond Hands. The ones who got wrecked got a new name: NGMI, Not Gonna Make It.' },
+  { kicker: 'NOW', art: 'beatdown', color: '#facc15', text: 'But some NGMI Pandas refused to quit. They followed PaperHands’ trail… all the way to the Moon.' }
+];
+const STORY_EPILOGUE = [
+  { kicker: 'SEASON 1 · COMPLETE', emoji: '🏆🐼', color: '#facc15', text: 'NGMI? Not anymore. Season 2 is being written. Keep your bags. Keep your hands diamond.' }
+];
+const CHAPTERS = [
+  {
+    n: 1, title: 'THE RUG', emoji: '🧻', color: '#34d399', mode: 'beatdown', where: 'Beatdown',
+    goal: 'Ring out 3 rivals in one Beatdown match', check: s => s.game === 'beatdown' && s.kills >= 3, progress: s => `${s.kills || 0}/3 K.O.s`,
+    intro: [{ kicker: 'CHAPTER 1 · MOON ARENA', art: 'beatdown', color: '#34d399', text: 'Stranded on the Moon. Broke. Angry. Up here, scores get settled the old way: in the ring.', goal: 'Ring out 3 rivals in one Beatdown match' }],
+    outro: [{ kicker: 'CHAPTER 1 · CLEARED', emoji: '🗺️', color: '#34d399', text: 'A K.O.’d panda spills it: “PaperHands went back to Earth. WAGMI Town. Everybody knows.”' }]
+  },
+  {
+    n: 2, title: 'WAGMI TOWN', emoji: '🏙️', color: '#fb7185', mode: 'shootout', variant: 'ffa', where: 'Shootout · Free-for-all',
+    goal: 'Get 8 kills in one Shootout match', check: s => s.game === 'shootout' && s.kills >= 8, progress: s => `${s.kills || 0}/8 kills`,
+    intro: [{ kicker: 'CHAPTER 2 · WAGMI TOWN', art: 'shootout', color: '#fb7185', text: 'WAGMI Town used to be home. Now PaperHands’ bots run the streets. Grab an AK. Clean house.', goal: 'Get 8 kills in one Shootout match' }],
+    outro: [{ kicker: 'CHAPTER 2 · CLEARED', emoji: '📜', color: '#fb7185', text: 'A bot drops a crumpled map. The stolen liquidity is locked in the Moon Vault, deep inside Fort HODL.' }]
+  },
+  {
+    n: 3, title: 'DIAMOND HANDS', emoji: '💎', color: '#38bdf8', mode: 'shootout', variant: 'ffa', where: 'Shootout · Free-for-all',
+    goal: 'Get a 3-kill streak (TRIPLE KILL)', check: s => s.game === 'shootout' && s.bestStreak >= 3, progress: s => `best streak ${s.bestStreak || 0}/3`,
+    intro: [{ kicker: 'CHAPTER 3 · THE TEST', emoji: '💎🤝', color: '#38bdf8', text: 'Fort HODL won’t fall to rookies. The Diamond Hands guard the gate, and they only respect one thing: a streak.', goal: 'Get a 3-kill streak without dying' }],
+    outro: [{ kicker: 'CHAPTER 3 · CLEARED', emoji: '🤝', color: '#38bdf8', text: '“Alright, NGMI,” the Diamond Hands nod. “Raid the fort. We’ll leave the gate open.”' }]
+  },
+  {
+    n: 4, title: 'SIEGE OF FORT HODL', emoji: '🏰', color: '#f59e0b', mode: 'shootout', variant: 'siege', team: 'atk', where: 'Shootout · Siege (attack)',
+    goal: 'Win Siege as the attacking team', check: s => s.game === 'shootout' && s.variant === 'siege' && s.won && s.team === 'atk', progress: s => (s.won ? 'won, but not as attackers' : 'the fort held'),
+    intro: [{ kicker: 'CHAPTER 4 · FORT HODL', emoji: '🏰⚔️', color: '#f59e0b', text: 'The gate is open. Take the Server Farm, then crack the Moon Vault before the clock runs out.', goal: 'Win Siege as the attackers' }],
+    outro: [{ kicker: 'CHAPTER 4 · CLEARED', emoji: '🕳️', color: '#f59e0b', text: 'The vault swings open… EMPTY. Just a sticky note: “gm. see you on the Moon. PaperHands.”' }]
+  },
+  {
+    n: 5, title: 'THE LAST RING', emoji: '🌕', color: '#facc15', mode: 'beatdown', where: 'Beatdown',
+    goal: 'Finish #1 in a Beatdown match', check: s => s.game === 'beatdown' && s.won, progress: s => (s.rank ? `finished #${s.rank}` : 'not #1'),
+    intro: [{ kicker: 'CHAPTER 5 · FINALE', emoji: '🌕🥊', color: '#facc15', text: 'One last ring. PaperHands and his whales are waiting on the Moon. Finish on top and the liquidity comes home.', goal: 'Finish #1 in a Beatdown match' }],
+    outro: [{ kicker: 'CHAPTER 5 · CLEARED', emoji: '🏆', color: '#facc15', text: 'PaperHands is rung out. The liquidity flows back. Every panda that held on… made it. GMI.' }]
+  }
+];
+const k_label = (done, ci) => (ci < done ? `REPLAY CHAPTER ${ci + 1}` : `PLAY CHAPTER ${ci + 1}`);
+function storyEval(idx, st) {
+  if (idx === null || idx === undefined) return null;
+  const ch = CHAPTERS[idx];
+  if (!ch) return null;
+  const passed = !!ch.check(st);
+  let first = false;
+  if (passed) {
+    const pr = loadProfile();
+    if ((pr.story || 0) <= idx) {
+      first = true;
+      saveProfile({ ...pr, story: idx + 1 });
+    }
+  }
+  return { idx, passed, first, progress: ch.progress(st) };
+}
+function StoryComic({ panels, onDone, doneLabel = 'CLOSE', onClose }) {
+  const [i, setI] = useState(0);
+  const p = panels[Math.min(i, panels.length - 1)];
+  const last = i >= panels.length - 1;
+  const arts = getGameArt();
+  const snaps = getPreviewSnapshots();
+  const img = p.art ? arts[p.art] || snaps[p.art] : null;
+  const col = p.color || '#34d399';
+  const next = () => (last ? onDone() : setI(i + 1));
+  return (
+    <div className="fixed inset-0 z-[80] bg-slate-950/92 flex items-center justify-center p-4 safe-top safe-bottom" onClick={next}>
+      <div key={i} className="comic-panel w-[min(94vw,560px)] rounded-3xl overflow-hidden border-2 cursor-pointer" style={{ borderColor: col, boxShadow: `0 30px 80px -24px ${col}aa` }}>
+        <div className="relative h-52 md:h-72 flex items-center justify-center overflow-hidden" style={{ background: `radial-gradient(circle at 50% 65%, ${col}55, #050816 72%)` }}>
+          <div className="rays" style={{ '--acc': `${col}26` }} />
+          {img ? <img src={img} alt="" draggable={false} className="comic-art relative h-full w-auto object-contain" /> : <div className="comic-art relative text-7xl md:text-8xl select-none">{p.emoji}</div>}
+          <div className="absolute left-3 top-3 text-[10px] font-black tracking-[0.3em] px-2 py-1 rounded bg-black/65" style={{ color: col }}>{p.kicker}</div>
+        </div>
+        <div className="bg-[#0b1020] px-5 py-4 text-left">
+          <p className="text-white text-[15px] md:text-lg font-semibold leading-snug">{p.text}</p>
+          {p.goal && <div className="mt-3 rounded-xl border border-amber-300/60 bg-amber-300/10 px-3 py-2 text-amber-200 text-sm font-black">🎯 MISSION: {p.goal}</div>}
+          <div className="flex items-center justify-between mt-4 gap-3">
+            <div className="flex gap-1">{panels.map((_, k) => <span key={k} className={`h-1.5 rounded-full transition-all ${k === i ? 'w-5 bg-white' : 'w-1.5 bg-white/30'}`} />)}</div>
+            <button onClick={e => { e.stopPropagation(); next(); }} className={`${last ? 'play-btn text-slate-950' : 'bg-slate-800 text-white'} px-4 py-2.5 rounded-xl font-game text-sm cursor-pointer`}>{last ? doneLabel : 'NEXT ›'}</button>
+          </div>
+        </div>
+      </div>
+      {onClose && <button onClick={e => { e.stopPropagation(); onClose(); }} className="absolute right-4 top-4 w-10 h-10 rounded-xl bg-slate-800 text-white font-black cursor-pointer">✕</button>}
+    </div>
+  );
+}
+function StoryResult({ story }) {
+  const [read, setRead] = useState(false);
+  if (!story) return null;
+  const ch = CHAPTERS[story.idx];
+  const nxt = CHAPTERS[story.idx + 1];
+  return (
+    <div className="mt-3 rounded-2xl border-2 p-3 text-left" style={{ borderColor: story.passed ? ch.color : '#475569', background: story.passed ? `${ch.color}1c` : 'rgba(15,23,42,0.7)' }}>
+      <div className="text-[10px] font-black tracking-[0.25em]" style={{ color: ch.color }}>📖 CHAPTER {ch.n} · {ch.title}</div>
+      <div className="font-game text-lg text-white mt-0.5">{story.passed ? 'MISSION COMPLETE ✅' : 'MISSION FAILED'}</div>
+      <div className="text-[12px] text-slate-300 mt-0.5">
+        {story.passed ? (nxt ? `Chapter ${nxt.n} unlocked: ${nxt.title}` : 'Season 1 complete 🏆') : `🎯 ${ch.goal} · ${story.progress}. Hit PLAY AGAIN to retry.`}
+      </div>
+      {story.passed && (
+        <button onClick={() => setRead(true)} className="mt-2 w-full py-2.5 rounded-xl bg-white text-slate-950 font-black text-sm cursor-pointer animate-pulse">📖 What happened next ›</button>
+      )}
+      {read && <StoryComic panels={nxt ? ch.outro : [...ch.outro, ...STORY_EPILOGUE]} doneLabel="OK" onDone={() => setRead(false)} />}
+    </div>
+  );
+}
 
 function Showcase({ config, cosmetic }) {
   const ref = useRef(null);
@@ -2921,7 +3046,7 @@ function buildSiegeMap(scene, cinematic) {
   return { colliders, solids, spawns, pickupSpots, clouds: [], pads: [], objectives, dropSpots, sunset: true, anim: { searchlights, barrels, ledMat, wheel, flags } };
 }
 
-function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant = 'ffa', team = 'auto' }) {
+function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant = 'ffa', team = 'auto', story = null }) {
   const sensRef = useRef(loadProfile().sens || 1);
   const touchSensRef = useRef(loadProfile().touchSens || 1);
   const autoFireRef = useRef(loadProfile().autoFire !== false);
@@ -3480,6 +3605,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           showHit(ev.hs, true);
           sfx.play('ko', 0.8);
           buzz([30, 40, 60]);
+          if (/paperhands/i.test(ev.vn || '')) setTimeout(() => announceNow('🧻 YOU RUGGED THE RUGGER!', '#fb7185'), 900);
           const STREAK = { 2: 'DOUBLE KILL', 3: 'TRIPLE KILL', 5: 'RAMPAGE', 7: 'UNSTOPPABLE', 10: 'GODLIKE GMI' };
           if (k.streak >= 2 && clipRef.current) clipRef.current.highlight(STREAK[k.streak] || `${k.streak}-KILL STREAK`);
           if (STREAK[k.streak]) {
@@ -4091,7 +4217,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
       const didWin = siege ? winner === me.team : rank === 1;
       const xpRes = awardXp({ kills: me.kills, deaths: me.deaths, won: didWin, headshots: me.headshots || 0, bestStreak: me.maxStreak || 0 });
-      setTimeout(() => setResults({ board, rank, winner, myTeam: me.team, xp: xpRes }), 1400);
+      const storyRes = storyEval(story, { game: 'shootout', variant: siege ? 'siege' : 'ffa', kills: me.kills, bestStreak: me.maxStreak || 0, won: didWin, team: me.team, rank });
+      setTimeout(() => setResults({ board, rank, winner, myTeam: me.team, xp: xpRes, story: storyRes }), 1400);
     };
 
     // ---------- MQTT ----------
@@ -4921,6 +5048,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         ) : (
           <div className="text-[9px] md:text-[10px] font-black px-2 py-0.5 rounded bg-slate-900/70">FIRST TO {KILL_TARGET} · {leader ? `${leader.name} ${leader.kills}` : ''}</div>
         )}
+        {story !== null && CHAPTERS[story] && (
+          <div className="text-[9px] md:text-[10px] font-black px-2 py-0.5 rounded-full border max-w-[70vw] truncate" style={{ background: 'rgba(2,6,23,0.8)', borderColor: CHAPTERS[story].color, color: CHAPTERS[story].color }}>📖 CH.{CHAPTERS[story].n} · {CHAPTERS[story].goal}</div>
+        )}
         {(hud.moon > 0 || hud.bull > 0) && (
           <div className="text-[10px] md:text-xs font-black px-2.5 py-0.5 rounded-full bg-indigo-600/90 animate-pulse">
             {hud.moon > 0 ? `🌕 LOW GRAVITY ${hud.moon}s ` : ''}{hud.bull > 0 ? `🐂 BULL RUN ${hud.bull}s` : ''}
@@ -5264,6 +5394,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 </div>
               ))}
             </div>
+            <StoryResult story={results.story} />
             <ClipShelf clips={clips} />
             <XpPanel xp={results.xp} />
             <div className="flex gap-3 mt-4">
@@ -5292,7 +5423,7 @@ const COSMETICS = [
   { id: 'diamond', name: 'Diamond Aura', icon: '💎', lvl: 10 }
 ];
 const xpForLevel = l => 400 + l * 250;
-const defaultProfile = () => ({ xp: 0, level: 1, kills: 0, deaths: 0, wins: 0, matches: 0, bestStreak: 0, headshots: 0, cosmetic: 'none', sens: 1, botLevel: 'normal', voice: true, autoFire: true, touchSens: 1, clips: true });
+const defaultProfile = () => ({ xp: 0, level: 1, kills: 0, deaths: 0, wins: 0, matches: 0, bestStreak: 0, headshots: 0, cosmetic: 'none', sens: 1, botLevel: 'normal', voice: true, autoFire: true, touchSens: 1, clips: true, story: 0 });
 function loadProfile() {
   try {
     const p = JSON.parse(localStorage.getItem(PROFILE_KEY));
@@ -5463,6 +5594,10 @@ function App() {
   const [gfx, setGfx] = useState(IS_TOUCH ? 'fast' : 'cinematic');
   const [mode, setMode] = useState('beatdown');
   const [gameArtImgs] = useState(() => getGameArt());
+  const [storyRun, setStoryRun] = useState(null);
+  const storyRunRef = useRef(null);
+  const [chSel, setChSel] = useState(null);
+  const [comic, setComic] = useState(null);
   const bdClipRef = useRef(null);
   const bdT0Ref = useRef(Date.now());
   const allClipsApp = useClips();
@@ -5498,6 +5633,7 @@ function App() {
   };
   useEffect(() => {
     window.__ngmiLobby = screen === 'lobby';
+    if (screen === 'lobby') setChSel(null);
     if (screen === 'lobby') {
       setProfile(loadProfile());
       releaseOrientation();
@@ -6534,6 +6670,7 @@ function App() {
         flash(0.35);
         fx.postFlash = 0.25;
         sfx.play('ko');
+        if (/paperhands/i.test(victimName || '')) setTimeout(() => announceNow('🧻 YOU RUGGED THE RUGGER!', '#fb7185'), 900);
         const STREAKS = { 2: ['DOUBLE K.O.!', '#38bdf8'], 3: ['TRIPLE K.O.!!', '#a855f7'], 4: ['RAMPAGE!!!', '#f97316'], 5: ['UNSTOPPABLE GMI!!!', '#facc15'] };
         const st = STREAKS[Math.min(killer.streak, 5)];
         if (killer.streak >= 2 && bdClipRef.current) bdClipRef.current.highlight(st ? st[0].replace(/!+$/, '') : 'MULTI K.O.');
@@ -6664,7 +6801,8 @@ function App() {
           sfx.play(myRank === 1 ? 'streak' : 'ko');
           const xpRes = awardXp({ kills: localFighter.kos, deaths: localFighter.deaths || 0, won: myRank === 1, bestStreak: localFighter.maxStreak || 0 });
           sayLine(myRank === 1 ? 'Victory' : 'Time');
-          setTimeout(() => setResults({ board, myRank, kos: localFighter.kos, ...stats, xp: xpRes }), 1600);
+          const storyRes = storyEval(storyRunRef.current, { game: 'beatdown', kills: localFighter.kos, bestStreak: localFighter.maxStreak || 0, won: myRank === 1, rank: myRank });
+          setTimeout(() => setResults({ board, myRank, kos: localFighter.kos, ...stats, xp: xpRes, story: storyRes }), 1600);
         }
       }
       if (frozen) {
@@ -7528,6 +7666,53 @@ function App() {
 
               <div className="w-full max-w-6xl mt-8 grid gap-5 lg:grid-cols-[1fr_330px] items-start">
                 <section className="space-y-4">
+                  {(() => {
+                    const done = Math.min(profile.story || 0, CHAPTERS.length);
+                    const ci = chSel !== null ? chSel : Math.min(done, CHAPTERS.length - 1);
+                    const ch = CHAPTERS[ci];
+                    const launch = () => {
+                      sfx.unlock();
+                      setStoryRun(ci);
+                      storyRunRef.current = ci;
+                      if (ch.mode === 'shootout') {
+                        setMode('shootout');
+                        setSoVariant(ch.variant);
+                        setSoTeam(ch.team || 'auto');
+                      } else setMode('beatdown');
+                      setResults(null);
+                      enterMobileFullscreen(ch.mode === 'shootout');
+                      setScreen(ch.mode === 'shootout' ? 'shootout' : 'playing');
+                    };
+                    const brief = () => {
+                      sfx.unlock();
+                      setComic({ panels: done === 0 && ci === 0 ? [...STORY_PROLOGUE, ...ch.intro] : ch.intro, doneLabel: '▶ START MISSION', onDone: () => { setComic(null); launch(); } });
+                    };
+                    const readAll = () => setComic({ panels: [...STORY_PROLOGUE, ...CHAPTERS.slice(0, done).flatMap(c => [...c.intro, ...c.outro]), ...(done >= CHAPTERS.length ? STORY_EPILOGUE : [])], doneLabel: 'CLOSE', onDone: () => setComic(null) });
+                    return (
+                      <div className="story-banner relative overflow-hidden rounded-2xl border-2 p-3 md:p-4" style={{ borderColor: `${ch.color}aa`, background: `linear-gradient(135deg, ${ch.color}2a, rgba(11,16,32,0.92) 62%)`, boxShadow: `0 18px 40px -20px ${ch.color}` }}>
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="text-[10px] font-black tracking-[0.22em]" style={{ color: ch.color }}>📖 STORY MODE · {done >= CHAPTERS.length && chSel === null ? 'SEASON 1 COMPLETE 🏆' : `CHAPTER ${ch.n} OF ${CHAPTERS.length}`}</div>
+                            <div className="font-game text-xl md:text-2xl text-white leading-tight mt-1">{ch.title}</div>
+                            <div className="text-[11px] md:text-[12px] text-slate-300 mt-1 leading-snug">{ch.where} · 🎯 {ch.goal}</div>
+                          </div>
+                          <div className="text-4xl md:text-5xl shrink-0">{ch.emoji}</div>
+                        </div>
+                        <div className="flex gap-1.5 mt-2.5">
+                          {CHAPTERS.map((c, k) => (
+                            <button key={c.n} disabled={k > done} onClick={() => setChSel(k)} title={k > done ? 'Locked' : c.title} className={`flex-1 py-2 ${k > done ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                              <span className={`block h-1.5 rounded-full ${k < done ? 'bg-emerald-400' : k === done ? 'bg-white/70' : 'bg-white/15'} ${k === ci ? 'ring-2 ring-white ring-offset-2 ring-offset-transparent' : ''}`} />
+                            </button>
+                          ))}
+                        </div>
+                        <div className="grid grid-cols-[1fr_auto] gap-2 mt-1.5">
+                          <button onClick={brief} className="play-btn py-2.5 rounded-xl font-game text-base text-slate-950 cursor-pointer">▶ {k_label(done, ci)}</button>
+                          <button onClick={readAll} className="px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-black cursor-pointer">📖 STORY</button>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <div className="flex items-center gap-3">
                     <span className="font-game text-sm text-white">CHOOSE YOUR GAME</span>
                     <span className="flex-1 h-px bg-gradient-to-r from-slate-500/60 to-transparent" />
@@ -7616,6 +7801,7 @@ function App() {
                       </div>
                       <div className="p-4">
                         <h3 className="font-game text-lg leading-tight text-white">{selectedClass.name}</h3>
+                        {PANDA_QUOTES[selectedClass.id] && <p className="text-[13px] italic font-semibold leading-snug mt-1" style={{ color: selectedClass.accent }}>“{PANDA_QUOTES[selectedClass.id]}”</p>}
                         <p className="text-[12px] text-slate-400 leading-snug mt-1">{selectedClass.desc}</p>
                         <div className="space-y-1.5 mt-3">
                           {[['POWER', selectedClass.power, '#fbbf24'], ['SPEED', selectedClass.speed, '#34d399'], ['WEIGHT', selectedClass.mass, '#38bdf8']].map(([label, v, col]) => (
@@ -7733,6 +7919,8 @@ function App() {
                     onClick={() => {
                       sfx.unlock();
                       setResults(null);
+                      setStoryRun(null);
+                      storyRunRef.current = null;
                       enterMobileFullscreen(mode === 'shootout');
                 setScreen(mode === 'shootout' ? 'shootout' : 'playing');
                     }}
@@ -7849,7 +8037,9 @@ function App() {
               onClick={() => {
                 sfx.unlock();
                 setResults(null);
-                enterMobileFullscreen(mode === 'shootout');
+                setStoryRun(null);
+                      storyRunRef.current = null;
+                      enterMobileFullscreen(mode === 'shootout');
                 setScreen(mode === 'shootout' ? 'shootout' : 'playing');
               }}
               className={`play-btn ${mode === 'shootout' ? 'alt' : ''} w-full max-w-xl mx-auto block py-4 [@media(max-height:500px)]:py-2.5 rounded-2xl font-game text-xl text-slate-950 cursor-pointer`}
@@ -7871,6 +8061,7 @@ function App() {
       )}
 
       {showClipsApp && <ClipGallery onClose={() => setShowClipsApp(false)} />}
+      {comic && <StoryComic panels={comic.panels} doneLabel={comic.doneLabel} onDone={comic.onDone} onClose={() => setComic(null)} />}
       {screen === 'playing' && bdClipToast && (
         <div className="absolute left-1/2 top-[calc(env(safe-area-inset-top)+96px)] -translate-x-1/2 z-40 pointer-events-none text-[11px] font-black px-3 py-1 rounded-full bg-slate-950/85 border border-emerald-400/60 text-emerald-300 whitespace-nowrap">{bdClipToast}</div>
       )}
@@ -7890,6 +8081,7 @@ function App() {
           gfx={gfx}
           onExit={() => setScreen('lobby')}
           onAgain={() => setMatchId(m => m + 1)}
+          story={storyRun}
         />
       )}
 
@@ -7916,6 +8108,7 @@ function App() {
               <div className="bg-slate-900/80 rounded-xl py-2"><div className="font-game text-xl text-pink-300">{Math.round(results.biggestHit)}</div><div className="text-[10px] text-slate-400 font-bold">BIGGEST HIT</div></div>
               <div className="bg-slate-900/80 rounded-xl py-2"><div className="font-game text-xl text-sky-300">{results.falls}</div><div className="text-[10px] text-slate-400 font-bold">TIMES YOU FELL</div></div>
             </div>
+            <StoryResult story={results.story} />
             <ClipShelf clips={bdClips} />
             <XpPanel xp={results.xp} />
             <div className="flex gap-3 mt-5">
@@ -8016,6 +8209,9 @@ function App() {
             <div className="max-w-full px-2.5 md:px-4 py-1 rounded-full glass border border-cyan-500/40 text-cyan-300 text-[9px] md:text-xs font-extrabold tracking-wide text-center leading-tight">
               {arenaEventText}
             </div>
+            {storyRun !== null && CHAPTERS[storyRun] && (
+              <div className="px-2.5 py-0.5 rounded-full border text-[9px] md:text-[11px] font-black text-center" style={{ background: 'rgba(2,6,23,0.8)', borderColor: CHAPTERS[storyRun].color, color: CHAPTERS[storyRun].color }}>📖 CH.{CHAPTERS[storyRun].n} · {CHAPTERS[storyRun].goal}</div>
+            )}
             {activeBeatdownAlert && !IS_TOUCH && (
               <div className="hidden md:block px-5 py-2 rounded-xl bg-rose-600/90 border-2 border-amber-300 text-white text-sm font-black uppercase tracking-wider animate-bounce shadow-[0_0_25px_rgba(225,29,72,0.8)]">
                 🔥 {activeBeatdownAlert}
