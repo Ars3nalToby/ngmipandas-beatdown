@@ -5,6 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#050816" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="NGMI Pandas" />
+  <link rel="manifest" href="/manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" href="/icon-192.png" />
   <title>NGMI Pandas: 3D Gang Beatdown</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- React & ReactDOM -->
@@ -24,7 +30,13 @@
     .safe-top { padding-top: max(10px, env(safe-area-inset-top)); }
     .safe-bottom { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
     .safe-x { padding-left: max(10px, env(safe-area-inset-left)); padding-right: max(10px, env(safe-area-inset-right)); }
-    .touch-btn { transition: transform 0.06s; }
+    button, a, input, label { touch-action: manipulation; }
+    .touch-btn { transition: transform 0.06s; -webkit-user-select: none; user-select: none; }
+    @media (orientation: portrait) and (max-width: 600px) {
+      .bd-event { position: fixed !important; top: calc(env(safe-area-inset-top) + 138px) !important; left: 50% !important; width: 86vw !important; max-width: 86vw !important; }
+    }
+    .rotate-hint { animation: fadeUp 0.4s ease-out both, rotHint 1.6s ease-in-out 0.4s 3; }
+    @keyframes rotHint { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-5deg); } }
     .touch-btn:active { transform: scale(0.9); }
     .preview-bob { animation: bob 2.4s ease-in-out infinite; }
     @keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
@@ -748,6 +760,34 @@ function makeCrown() {
 const MATCH_SECONDS = 180;
 const IS_TOUCH = typeof window !== 'undefined' && ((window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || 'ontouchstart' in window);
 const IS_SMALL = () => window.innerWidth < 768 || window.innerHeight < 500;
+const IS_IOS = typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1));
+const IS_STANDALONE = typeof window !== 'undefined' && ((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || (window.matchMedia && window.matchMedia('(display-mode: fullscreen)').matches) || navigator.standalone === true);
+// light haptics (Android; iOS Safari ignores vibrate)
+const buzz = ms => {
+  try { if (IS_TOUCH && navigator.vibrate) navigator.vibrate(ms); } catch (e) {}
+};
+// phones: go full-screen on PLAY (Android), lock landscape for the shooter
+const enterMobileFullscreen = landscape => {
+  if (!IS_TOUCH) return;
+  const lock = () => {
+    try { if (landscape && screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); } catch (e) {}
+  };
+  try {
+    const el = document.documentElement;
+    const rq = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (rq && !(document.fullscreenElement || document.webkitFullscreenElement)) {
+      const pr = rq.call(el, { navigationUI: 'hide' });
+      if (pr && pr.then) pr.then(lock).catch(() => {});
+    } else lock();
+  } catch (e) {}
+};
+const releaseOrientation = () => {
+  try { if (screen.orientation && screen.orientation.unlock) screen.orientation.unlock(); } catch (e) {}
+};
+if (typeof document !== 'undefined') {
+  // iOS Safari ignores user-scalable=no: block pinch-zoom ourselves (double-tap is handled by touch-action)
+  document.addEventListener('gesturestart', e => e.preventDefault(), { passive: false });
+}
 const CD_MAX = { call: 5.5, smash: 4, swarm: 7 };
 
 const POWERUPS = [
@@ -2529,6 +2569,19 @@ function buildSiegeMap(scene, cinematic) {
 
 function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant = 'ffa', team = 'auto' }) {
   const sensRef = useRef(loadProfile().sens || 1);
+  const touchSensRef = useRef(loadProfile().touchSens || 1);
+  const autoFireRef = useRef(loadProfile().autoFire !== false);
+  const [touchMenu, setTouchMenu] = useState(false);
+  const [touchSensUi, setTouchSensUi] = useState(touchSensRef.current);
+  const [autoFireUi, setAutoFireUi] = useState(autoFireRef.current);
+  const [rotHint, setRotHint] = useState(() => IS_TOUCH && window.innerHeight > window.innerWidth);
+  useEffect(() => {
+    if (!rotHint) return undefined;
+    const t = setTimeout(() => setRotHint(false), 6500);
+    const onR = () => { if (window.innerWidth > window.innerHeight) setRotHint(false); };
+    window.addEventListener('resize', onR);
+    return () => { clearTimeout(t); window.removeEventListener('resize', onR); };
+  }, []);
   const [sensUi, setSensUi] = useState(sensRef.current);
   const mountRef = useRef(null);
   const hitRef = useRef(null);
@@ -2561,7 +2614,12 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     lockRef.current = renderer.domElement;
 
     const scene = new THREE.Scene();
-    const BASE_FOV = 78;
+    let BASE_FOV = 78;
+    const fitFov = () => {
+      const a = W() / H();
+      BASE_FOV = a >= 1 ? 78 : Math.min(102, (2 * Math.atan(Math.tan((74 * Math.PI) / 360) / a) * 180) / Math.PI);
+    };
+    fitFov();
     const camera = new THREE.PerspectiveCamera(BASE_FOV, W() / H(), 0.05, 600);
     scene.add(camera);
 
@@ -3038,7 +3096,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           me.maxStreak = Math.max(me.maxStreak || 0, k.streak + 1);
           if ((k.streak + 1) % 4 === 0 && !me.strikeReady) {
             me.strikeReady = true;
-            setTimeout(() => { announceNow('☄️ MOON STRIKE READY · PRESS G', '#f87171'); sayLine('Moon strike ready'); }, 900);
+            setTimeout(() => { announceNow(IS_TOUCH ? '☄️ MOON STRIKE READY · TAP ☄️' : '☄️ MOON STRIKE READY · PRESS G', '#f87171'); sayLine('Moon strike ready'); }, 900);
           }
         }
         k.streak += 1;
@@ -3046,6 +3104,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (k.isMe) {
           showHit(ev.hs, true);
           sfx.play('ko', 0.8);
+          buzz([30, 40, 60]);
           const STREAK = { 2: 'DOUBLE KILL', 3: 'TRIPLE KILL', 5: 'RAMPAGE', 7: 'UNSTOPPABLE', 10: 'GODLIKE GMI' };
           if (STREAK[k.streak]) {
             announceNow(STREAK[k.streak], '#facc15');
@@ -3082,6 +3141,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         sfx.play('hurt', 0.7);
         const src = fighters.find(x => x.id === fromId);
         if (src) me.hurtFrom = Math.atan2(src.pos.x - me.pos.x, src.pos.z - me.pos.z);
+        buzz(22);
         me.hurtAt = performance.now();
       }
       if (f.hp <= 0) die(f, fromId, fromName, hs);
@@ -3766,7 +3826,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       post.comp.uniforms.bloomStrength.value = 0.25;
     }
     const onResize = () => {
+      fitFov();
       camera.aspect = W() / H();
+      camera.fov = BASE_FOV;
       camera.updateProjectionMatrix();
       renderer.setSize(W(), H());
       if (post) post.setSize();
@@ -3909,7 +3971,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
 
       // ----- me -----
       if (c.lookDX || c.lookDY) {
-        const sens = 0.0055 * sensRef.current / (1 + (SHOOT_WEAPONS[me.weapons[me.slot].key].zoom - 1) * me.adsT);
+        const sens = 0.0055 * (IS_TOUCH ? touchSensRef.current : sensRef.current) / (1 + (SHOOT_WEAPONS[me.weapons[me.slot].key].zoom - 1) * me.adsT);
         me.yaw -= c.lookDX * sens;
         me.pitch = Math.max(-1.45, Math.min(1.45, me.pitch - c.lookDY * sens));
         c.lookDX = 0;
@@ -3998,7 +4060,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             w.mag = def.mag;
           }
         }
-        if (c.firing && !frozen) {
+        const autoShoot = IS_TOUCH && autoFireRef.current && me.autoAim && !me.dancing && !me.dead && me.reloadT <= 0;
+        if ((c.firing || autoShoot) && !frozen) {
           if (def.auto || IS_TOUCH) fireMe();
           else if (!me.semiHeld) { fireMe(); me.semiHeld = true; }
         }
@@ -4281,8 +4344,14 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         const scoped = me.weapons[me.slot].key === 'sniper' && me.adsT > 0.8;
         vm.visible = !scoped;
         const sightY = gunModel ? gunModel.userData.sightY * gunModel.userData.vmScale : 0.12;
-        const [hipX, hipY, hipZ] = def.hip || [0.27, -0.25, -0.5];
-        const adsX = 0, adsY = -sightY, adsZ = -0.36;
+        const [hipX0, hipY0, hipZ0] = def.hip || [0.27, -0.25, -0.5];
+        const prt = camera.aspect < 1;
+        const vs = prt ? 0.66 : 1;
+        vm.scale.setScalar(vs);
+        const hipX = prt ? hipX0 * 0.55 : hipX0;
+        const hipY = prt ? hipY0 * 0.8 : hipY0;
+        const hipZ = hipZ0;
+        const adsX = 0, adsY = -sightY * vs, adsZ = -0.36;
         const reloadDip = me.reloadT > 0 ? Math.sin(Math.min(1, me.reloadT / def.reload) * Math.PI) * 0.25 : 0;
         vm.position.set(
           hipX + (adsX - hipX) * me.adsT + Math.sin(bob * 0.8) * 0.012 * (1 - me.adsT),
@@ -4340,7 +4409,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (net.isHost && fillBots && !fighters.some(f => f.isBot)) spawnBots(Math.max(0, 7 - Object.keys(net.peers).length));
 
         camera.getWorldDirection(fwd);
-        const aimRes = me.dead ? null : traceShot(camera.getWorldPosition(new THREE.Vector3()), fwd, me);
+        const aimRes = me.dead ? null : traceShot(camera.getWorldPosition(new THREE.Vector3()), fwd, me, IS_TOUCH ? 1.2 : 1);
+        me.autoAim = !!(aimRes && aimRes.fighter && !aimRes.fighter.dead);
         const w = me.weapons[me.slot];
         const def = SHOOT_WEAPONS[w.key];
         const board = [...fighters].map(f => ({ id: f.id, name: f.name, color: f.color, isMe: f.isMe, kills: f.kills, deaths: f.deaths, bot: f.isBot })).sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
@@ -4485,7 +4555,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           <div className="leading-none"><span className="text-[9px] text-slate-400 font-bold block">K / D</span><span className="font-game text-base text-emerald-300">{hud.kills}<span className="text-slate-500">/</span><span className="text-rose-300">{hud.deaths}</span></span></div>
           <span className="hidden md:inline text-[10px] font-bold text-cyan-300">● {hud.net} ({hud.peers})</span>
           <button onClick={() => { const m = !muted; sfx.setMuted(m); setMutedS(m); }} className="touch-btn w-8 h-8 rounded-lg bg-slate-800 text-sm cursor-pointer">{muted ? '🔇' : '🔊'}</button>
-          <button onClick={onExit} className="touch-btn h-8 px-2 rounded-lg bg-slate-800 text-[11px] font-black cursor-pointer">✕<span className="hidden md:inline"> LOBBY</span></button>
+          {IS_TOUCH ? (
+            <button onClick={() => setTouchMenu(true)} className="touch-btn w-8 h-8 rounded-lg bg-slate-800 text-sm cursor-pointer">⚙️</button>
+          ) : (
+            <button onClick={onExit} className="touch-btn h-8 px-2 rounded-lg bg-slate-800 text-[11px] font-black cursor-pointer">✕<span className="hidden md:inline"> LOBBY</span></button>
+          )}
         </div>
       </div>
 
@@ -4515,10 +4589,14 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       </div>
 
       {/* bottom right: ammo */}
-      <div className={`absolute right-0 safe-x pointer-events-none text-right ${IS_TOUCH ? 'top-[92px] md:top-[150px]' : 'bottom-0 safe-bottom'}`}>
+      <div className={`absolute right-0 safe-x pointer-events-none text-right ${IS_TOUCH ? 'top-[calc(env(safe-area-inset-top)+86px)]' : 'bottom-0 safe-bottom'}`}>
         <div className="flex flex-wrap justify-end gap-1 mb-1 max-w-[260px] ml-auto">
           {hud.weapons.map((wp, i) => (
-            <div key={i} className={`px-1.5 py-0.5 rounded-md text-[9px] md:text-[10px] font-black shadow ${wp.active ? (wp.key === 'golden' ? 'bg-yellow-300 text-slate-900' : 'bg-white text-slate-900') : 'bg-slate-900/70 text-slate-300'}`}>
+            <div
+              key={i}
+              onPointerDown={IS_TOUCH ? e => { e.stopPropagation(); c.slot = i; } : undefined}
+              className={`${IS_TOUCH ? 'pointer-events-auto px-2 py-1 text-[10px]' : 'px-1.5 py-0.5 text-[9px] md:text-[10px]'} rounded-md font-black shadow ${wp.active ? (wp.key === 'golden' ? 'bg-yellow-300 text-slate-900' : 'bg-white text-slate-900') : 'bg-slate-900/70 text-slate-300'}`}
+            >
               <span className="opacity-50 mr-0.5">{i + 1}</span>{wp.icon} {wp.short}
             </div>
           ))}
@@ -4647,6 +4725,57 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         </div>
       )}
 
+      {/* touch: rotate hint + settings sheet */}
+      {IS_TOUCH && rotHint && !results && (
+        <div className="absolute inset-x-0 top-[28%] flex justify-center pointer-events-none px-6">
+          <div className="rotate-hint text-center px-4 py-2.5 rounded-2xl bg-slate-950/85 border border-white/20 text-white">
+            <div className="text-3xl">📱↻</div>
+            <div className="text-[12px] font-black mt-1">Turn your phone sideways for a wider view</div>
+          </div>
+        </div>
+      )}
+      {IS_TOUCH && autoFireUi && hud.aim && !hud.dead && !results && (
+        <div className="absolute left-1/2 top-[42%] -translate-x-1/2 pointer-events-none text-[9px] font-black px-2 py-0.5 rounded-full bg-rose-500/80 text-white">AUTO-FIRE</div>
+      )}
+      {IS_TOUCH && touchMenu && !results && (
+        <div className="absolute inset-0 z-40 bg-slate-950/75 flex items-center justify-center pointer-events-auto p-4" onPointerDown={e => { if (e.target === e.currentTarget) setTouchMenu(false); }}>
+          <div className="glass border border-slate-600 rounded-3xl p-5 w-[min(92vw,380px)] max-h-[92vh] overflow-y-auto">
+            <div className="font-game text-2xl text-white text-center">SETTINGS</div>
+            <div className="text-[11px] text-slate-400 text-center mt-0.5">{hud.peers > 1 ? 'Online match keeps running' : 'Bots keep playing while this is open'}</div>
+            <div className="mt-4">
+              <div className="flex justify-between text-xs font-bold text-slate-200"><span>Look sensitivity</span><span>{touchSensUi.toFixed(1)}×</span></div>
+              <input
+                type="range" min="0.4" max="2.5" step="0.1" value={touchSensUi}
+                onChange={e => {
+                  const v = Number(e.target.value);
+                  touchSensRef.current = v;
+                  setTouchSensUi(v);
+                  saveProfile({ ...loadProfile(), touchSens: v });
+                }}
+                className="w-full accent-emerald-400 h-8"
+              />
+            </div>
+            <button
+              onClick={() => {
+                const v = !autoFireRef.current;
+                autoFireRef.current = v;
+                setAutoFireUi(v);
+                saveProfile({ ...loadProfile(), autoFire: v });
+              }}
+              className="w-full mt-3 flex items-center justify-between px-3 py-3 rounded-xl bg-slate-900/80 border border-slate-700 cursor-pointer"
+            >
+              <span className="text-left"><span className="block text-sm font-black text-white">🎯 Auto-fire</span><span className="block text-[11px] text-slate-400">Shoots when your crosshair is on an enemy</span></span>
+              <span className={`w-12 h-7 rounded-full relative transition ${autoFireUi ? 'bg-emerald-400' : 'bg-slate-600'}`}><span className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-all ${autoFireUi ? 'left-6' : 'left-1'}`} /></span>
+            </button>
+            <div className="grid grid-cols-2 gap-2 mt-4">
+              <button onClick={() => { const m = !muted; sfx.setMuted(m); setMutedS(m); }} className="py-3 rounded-xl bg-slate-800 font-black text-sm cursor-pointer">{muted ? '🔇 Sound off' : '🔊 Sound on'}</button>
+              <button onClick={onExit} className="py-3 rounded-xl bg-rose-600 font-black text-sm cursor-pointer">🏠 Lobby</button>
+            </div>
+            <button onClick={() => setTouchMenu(false)} className="play-btn w-full mt-3 py-3 rounded-2xl font-game text-lg text-slate-950 cursor-pointer">▶ BACK TO GAME</button>
+          </div>
+        </div>
+      )}
+
       {/* touch controls */}
       {IS_TOUCH && !results && (
         <>
@@ -4711,9 +4840,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 ['R', 'right-[28px] bottom-[112px]', () => { c.reload = true; }],
                 ['⇄', 'right-[150px] bottom-[130px]', () => { c.cycle = 1; }],
                 ['💃', 'right-[168px] bottom-[64px]', () => { c.dance = true; }],
-                ...(hud.strike ? [['☄️', 'right-[176px] bottom-[136px]', () => { c.strike = true; }]] : [])
+                ...(hud.strike ? [['☄️', 'right-[36px] bottom-[180px]', () => { c.strike = true; }]] : [])
               ].map(([label, pos, fn]) => (
-                <button key={label} className={`touch-btn pointer-events-auto absolute ${pos} w-[58px] h-[58px] rounded-full bg-slate-900/70 border-2 border-white/60 font-black text-xs text-white`} onPointerDown={e => { e.stopPropagation(); fn(); }}>{label}</button>
+                <button key={label} className={`touch-btn pointer-events-auto absolute ${pos} w-[58px] h-[58px] rounded-full border-2 font-black text-xs text-white ${label === '☄️' ? 'bg-rose-600/90 border-amber-300 text-xl animate-pulse' : 'bg-slate-900/70 border-white/60'}`} onPointerDown={e => { e.stopPropagation(); fn(); }}>{label}</button>
               ))}
             </div>
           </div>
@@ -4772,7 +4901,7 @@ const COSMETICS = [
   { id: 'diamond', name: 'Diamond Aura', icon: '💎', lvl: 10 }
 ];
 const xpForLevel = l => 400 + l * 250;
-const defaultProfile = () => ({ xp: 0, level: 1, kills: 0, deaths: 0, wins: 0, matches: 0, bestStreak: 0, headshots: 0, cosmetic: 'none', sens: 1, botLevel: 'normal', voice: true });
+const defaultProfile = () => ({ xp: 0, level: 1, kills: 0, deaths: 0, wins: 0, matches: 0, bestStreak: 0, headshots: 0, cosmetic: 'none', sens: 1, botLevel: 'normal', voice: true, autoFire: true, touchSens: 1 });
 function loadProfile() {
   try {
     const p = JSON.parse(localStorage.getItem(PROFILE_KEY));
@@ -4942,6 +5071,10 @@ function App() {
   const [gfx, setGfx] = useState(IS_TOUCH ? 'fast' : 'cinematic');
   const [mode, setMode] = useState('beatdown');
   const [gameArtImgs] = useState(() => getGameArt());
+  const [loreOpen, setLoreOpen] = useState(false);
+  const [a2hs, setA2hs] = useState(() => {
+    try { return IS_IOS && !IS_STANDALONE && localStorage.getItem('ngmi_a2hs_off') !== '1'; } catch (e) { return IS_IOS && !IS_STANDALONE; }
+  });
   const [intro, setIntro] = useState(() => !introShown);
   const tiltRef = useRef(null);
   useEffect(() => {
@@ -4966,7 +5099,10 @@ function App() {
     setProfile(np);
   };
   useEffect(() => {
-    if (screen === 'lobby') setProfile(loadProfile());
+    if (screen === 'lobby') {
+      setProfile(loadProfile());
+      releaseOrientation();
+    }
   }, [screen]);
   const [soVariant, setSoVariant] = useState('ffa');
   const [soTeam, setSoTeam] = useState('auto');
@@ -5004,6 +5140,11 @@ function App() {
   const handleCopyInvite = () => {
     const baseUrl = window.location.origin + window.location.pathname;
     const shareText = `🐼 Join our NGMI PANDAS 3D Gang Beatdown!\nRoom Code: ${roomCode}\nPlay Live: ${baseUrl}?room=${roomCode}`;
+    const url = `${baseUrl}?room=${roomCode}`;
+    if (IS_TOUCH && navigator.share) {
+      navigator.share({ title: 'NGMI Pandas', text: `🐼 Join my NGMI Pandas room ${roomCode}!`, url }).catch(() => {});
+      return;
+    }
     navigator.clipboard?.writeText(shareText);
     setCopiedNotice(true);
     setTimeout(() => setCopiedNotice(false), 2500);
@@ -6946,7 +7087,7 @@ function App() {
                 ))}
               </div>
             </div>
-            <div className="min-h-full flex flex-col items-center px-4 pt-6 pb-32 md:py-10">
+            <div className={`min-h-full flex flex-col items-center px-4 pt-6 ${IS_TOUCH ? 'pb-32' : 'pb-32 md:py-10'}`}>
               <header key={intro ? 'intro' : 'live'} className="text-center select-none">
                 <div className={`kicker text-[11px] md:text-xs font-black ${mode === 'shootout' ? 'text-rose-300' : 'text-emerald-300'}`}>NGMI PANDAS · SEASON 1</div>
                 <h1 className={`game-title ${mode === 'shootout' ? 'alt' : ''} text-[15vw] sm:text-7xl md:text-8xl mt-2`}>{mode === 'shootout' ? 'SHOOTOUT' : 'BEATDOWN'}</h1>
@@ -7104,7 +7245,7 @@ function App() {
 
                   <div className="glass rounded-2xl border border-slate-800 px-4 py-3 text-[12px] text-slate-300 leading-relaxed">
                     <span className="font-game text-[11px] text-emerald-300">THE COLLECTION · EST. 2022 ON SOLANA</span>
-                    <p className="mt-1">
+                    <p className={`mt-1 ${IS_TOUCH && !loreOpen ? 'line-clamp-2' : ''}`} onClick={() => setLoreOpen(true)}>
                       NGMI Pandas started as a Solana NFT collection built by a crew of software-engineer friends who met investing in GameStop, back when GME stepped into NFT marketplaces. It went live and traded on Magic Eden. These astronauts are pulled straight from that collection.
                     </p>
                     <p className="mt-1 text-slate-400">
@@ -7114,6 +7255,13 @@ function App() {
                 </section>
 
                 <aside className="side-panel glass border border-slate-700/70 rounded-3xl p-5 space-y-4">
+                  {a2hs && (
+                    <div className="relative rounded-2xl border border-sky-400/40 bg-sky-500/10 p-3 pr-9 text-[12px] text-slate-200 leading-snug">
+                      <div className="font-black text-sky-300 text-[11px] tracking-widest mb-0.5">📲 PLAY FULL-SCREEN</div>
+                      Tap <b>Share</b> <span className="inline-block px-1 rounded bg-slate-800">⬆️</span> then <b>Add to Home Screen</b>. NGMI Pandas opens like an app — no browser bars.
+                      <button onClick={() => { setA2hs(false); try { localStorage.setItem('ngmi_a2hs_off', '1'); } catch (e) {} }} className="absolute right-2 top-2 w-6 h-6 rounded-full bg-slate-800 text-[11px] cursor-pointer">✕</button>
+                    </div>
+                  )}
                   <div className="rounded-2xl bg-gradient-to-br from-emerald-500/15 to-cyan-500/10 border border-emerald-400/30 p-3">
                     <div className="flex items-center gap-3">
                       <div className="w-11 h-11 rounded-xl bg-emerald-400 text-slate-950 font-game flex flex-col items-center justify-center leading-none shrink-0">
@@ -7163,9 +7311,10 @@ function App() {
                     onClick={() => {
                       sfx.unlock();
                       setResults(null);
-                      setScreen(mode === 'shootout' ? 'shootout' : 'playing');
+                      enterMobileFullscreen(mode === 'shootout');
+                setScreen(mode === 'shootout' ? 'shootout' : 'playing');
                     }}
-                    className={`play-btn ${mode === 'shootout' ? 'alt' : ''} hidden md:block w-full py-4 rounded-2xl font-game text-2xl text-slate-950 cursor-pointer`}
+                    className={`play-btn ${mode === 'shootout' ? 'alt' : ''} ${IS_TOUCH ? 'hidden' : 'hidden md:block'} w-full py-4 rounded-2xl font-game text-2xl text-slate-950 cursor-pointer`}
                   >
                     ▶ PLAY {mode === 'shootout' ? 'SHOOTOUT' : 'BEATDOWN'}
                   </button>
@@ -7226,7 +7375,7 @@ function App() {
                         onClick={handleCopyInvite}
                         className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-black whitespace-nowrap cursor-pointer"
                       >
-                        {copiedNotice ? '✓ COPIED' : 'COPY LINK'}
+                        {copiedNotice ? '✓ COPIED' : IS_TOUCH && typeof navigator !== 'undefined' && navigator.share ? '📤 INVITE' : 'COPY LINK'}
                       </button>
                     </div>
                   </div>
@@ -7273,14 +7422,15 @@ function App() {
             </div>
           </div>
 
-          <div className="md:hidden absolute inset-x-0 bottom-0 z-10 px-4 pt-6 safe-bottom bg-gradient-to-t from-[#050816] via-[#050816]/90 to-transparent">
+          <div className={`${IS_TOUCH ? '' : 'md:hidden'} absolute inset-x-0 bottom-0 z-10 px-4 pt-6 safe-bottom safe-x bg-gradient-to-t from-[#050816] via-[#050816]/90 to-transparent`}>
             <button
               onClick={() => {
                 sfx.unlock();
                 setResults(null);
+                enterMobileFullscreen(mode === 'shootout');
                 setScreen(mode === 'shootout' ? 'shootout' : 'playing');
               }}
-              className={`play-btn ${mode === 'shootout' ? 'alt' : ''} w-full py-4 rounded-2xl font-game text-xl text-slate-950 cursor-pointer`}
+              className={`play-btn ${mode === 'shootout' ? 'alt' : ''} w-full max-w-xl mx-auto block py-4 [@media(max-height:500px)]:py-2.5 rounded-2xl font-game text-xl text-slate-950 cursor-pointer`}
             >
               ▶ PLAY {mode === 'shootout' ? 'SHOOTOUT' : 'BEATDOWN'}
             </button>
@@ -7422,7 +7572,7 @@ function App() {
           </div>
 
           {/* ---------- top-centre: timer + event ---------- */}
-          <div className="absolute left-1/2 -translate-x-1/2 top-0 safe-top flex flex-col items-center gap-1.5 w-[38vw] max-w-[170px] md:max-w-none md:w-auto">
+          <div className="bd-event absolute left-1/2 -translate-x-1/2 top-0 safe-top flex flex-col items-center gap-1.5 w-[38vw] max-w-[170px] md:max-w-none md:w-auto pointer-events-none">
             <div className={`hidden md:block font-game text-xl md:text-3xl px-3 md:px-4 py-0.5 rounded-xl glass border ${matchTime <= 30 ? 'border-orange-400 text-orange-300 animate-pulse' : 'border-slate-700 text-white'}`}>
               {Math.floor(matchTime / 60)}:{String(matchTime % 60).padStart(2, '0')}
             </div>
