@@ -257,7 +257,7 @@ function makeSuitTexture(suit) {
 // AUDIO: every sound is synthesised live with WebAudio (no files to load)
 // ============================================================================
 const sfx = (() => {
-  let ctx = null, master = null, sfxBus = null, musicBus = null, noiseBuf = null;
+  let ctx = null, master = null, sfxBus = null, musicBus = null, noiseBuf = null, recDest = null;
   let muted = false, lastHit = 0, musicTimer = null, nextStepTime = 0, step = 0, intensity = 0;
 
   const ensure = () => {
@@ -529,6 +529,15 @@ const sfx = (() => {
 
   return {
     unlock() { ensure(); },
+    stream() {
+      ensure();
+      if (!ctx || !ctx.createMediaStreamDestination) return null;
+      if (!recDest) {
+        recDest = ctx.createMediaStreamDestination();
+        master.connect(recDest);
+      }
+      return recDest.stream;
+    },
     play,
     setMuted(m) {
       muted = m;
@@ -1300,6 +1309,205 @@ function getPreviewSnapshots() {
     if (r.forceContextLoss) r.forceContextLoss();
   }
   return previewSnapshots;
+}
+
+// ---------- HIGHLIGHT CLIPS ----------
+// Two overlapping MediaRecorders keep the last 30-60 s of gameplay. A multi-kill (or the 🎬 button)
+// finalises the older one, so every clip is a standalone 30-60 s video that ends just after the action.
+const CLIP_OK = typeof window !== 'undefined' && !!window.MediaRecorder && typeof HTMLCanvasElement !== 'undefined' && !!HTMLCanvasElement.prototype.captureStream;
+const pickClipMime = () => {
+  const list = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+  return list.find(m => { try { return MediaRecorder.isTypeSupported(m); } catch (e) { return false; } }) || '';
+};
+function createClipper({ src, onClip, crosshair = false, stat = null }) {
+  if (!CLIP_OK || !src) return null;
+  const mime = pickClipMime();
+  const cv = document.createElement('canvas');
+  const g = cv.getContext('2d');
+  const longSide = IS_TOUCH ? 960 : 1280;
+  const size = () => {
+    const w = src.width || 1280, h = src.height || 720;
+    const k = Math.min(1, longSide / Math.max(w, h));
+    cv.width = Math.max(2, Math.round((w * k) / 2) * 2);
+    cv.height = Math.max(2, Math.round((h * k) / 2) * 2);
+  };
+  size();
+  let stream;
+  try { stream = cv.captureStream(30); } catch (e) { return null; }
+  try {
+    const aud = sfx.stream();
+    if (aud) aud.getAudioTracks().forEach(t => stream.addTrack(t));
+  } catch (e) {}
+  const recs = [];
+  let alive = true, pending = null, lastFrame = 0, callout = null;
+  const startRec = () => {
+    if (!alive) return;
+    let mr;
+    try {
+      mr = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: IS_TOUCH ? 2200000 : 4000000 } : { videoBitsPerSecond: 3000000 });
+    } catch (e) { return; }
+    const r = { mr, chunks: [], t0: performance.now(), keep: false, t1: 0, label: '' };
+    mr.ondataavailable = e => { if (e.data && e.data.size) r.chunks.push(e.data); };
+    mr.onstop = () => {
+      if (r.keep && r.chunks.length) {
+        const type = ((mr.mimeType || mime || 'video/webm').split(';')[0]) || 'video/webm';
+        const blob = new Blob(r.chunks, { type });
+        onClip({ blob, url: URL.createObjectURL(blob), secs: Math.max(1, Math.round((r.t1 - r.t0) / 1000)), ext: type.includes('mp4') ? 'mp4' : 'webm', label: r.label || 'HIGHLIGHT' });
+      }
+      r.chunks = [];
+    };
+    try { mr.start(1000); } catch (e) { return; }
+    recs.push(r);
+  };
+  startRec();
+  const rotate = setInterval(() => {
+    const now = performance.now();
+    recs.forEach(r => { if (!r.keep && r.mr.state === 'recording' && now - r.t0 >= 60000) { try { r.mr.stop(); } catch (e) {} } });
+    for (let i = recs.length - 1; i >= 0; i--) if (recs[i].mr.state === 'inactive') recs.splice(i, 1);
+    const newest = recs[recs.length - 1];
+    if (!newest || now - newest.t0 >= 30000) startRec();
+  }, 1000);
+  const finalize = label => {
+    pending = null;
+    if (!alive) return;
+    const now = performance.now();
+    const r = recs.filter(x => !x.keep && x.mr.state === 'recording').sort((a, b) => a.t0 - b.t0)[0];
+    if (!r) return;
+    r.keep = true;
+    r.t1 = now;
+    r.label = label;
+    try { r.mr.stop(); } catch (e) {}
+    const i = recs.indexOf(r);
+    if (i >= 0) recs.splice(i, 1);
+    const newest = recs[recs.length - 1];
+    if (!newest || now - newest.t0 > 15000) startRec();
+  };
+  // debounce: keeps rolling while kills keep coming (max ~10 s) so the whole streak is in the clip
+  const highlight = (label, delay = 3500) => {
+    const now = performance.now();
+    if (pending) {
+      clearTimeout(pending.t);
+      pending.label = label;
+      if (now - pending.first > 10000) { finalize(label); return; }
+    } else pending = { first: now, label };
+    pending.t = setTimeout(() => finalize(pending ? pending.label : label), delay);
+  };
+  const outline = (txt, x, y, fill, lw) => {
+    g.lineWidth = lw;
+    g.strokeStyle = 'rgba(0,0,0,0.85)';
+    g.strokeText(txt, x, y);
+    g.fillStyle = fill;
+    g.fillText(txt, x, y);
+  };
+  const frame = () => {
+    if (!alive) return;
+    const now = performance.now();
+    if (now - lastFrame < 30) return;
+    lastFrame = now;
+    if (Math.abs(src.width / src.height - cv.width / cv.height) > 0.02) size();
+    try { g.drawImage(src, 0, 0, cv.width, cv.height); } catch (e) { return; }
+    const W = cv.width, H = cv.height, k = Math.min(W, H) / 720;
+    g.lineJoin = 'round';
+    if (crosshair) {
+      g.strokeStyle = 'rgba(0,0,0,0.7)';
+      g.lineWidth = 4 * k;
+      const cx = W / 2, cy = H / 2, a = 9 * k, b = 3 * k;
+      const plus = () => { g.beginPath(); g.moveTo(cx - a - b, cy); g.lineTo(cx - b, cy); g.moveTo(cx + b, cy); g.lineTo(cx + a + b, cy); g.moveTo(cx, cy - a - b); g.lineTo(cx, cy - b); g.moveTo(cx, cy + b); g.lineTo(cx, cy + a + b); g.stroke(); };
+      plus();
+      g.strokeStyle = '#ffffff';
+      g.lineWidth = 2 * k;
+      plus();
+    }
+    g.textBaseline = 'top';
+    g.textAlign = 'left';
+    g.font = `900 ${Math.round(26 * k)}px Bungee, 'Arial Black', sans-serif`;
+    outline('🐼 NGMI PANDAS', 18 * k, 16 * k, '#34d399', 6 * k);
+    if (stat) {
+      g.font = `900 ${Math.round(18 * k)}px Rubik, 'Arial Black', sans-serif`;
+      outline(stat(), 20 * k, 52 * k, '#ffffff', 5 * k);
+    }
+    g.textAlign = 'right';
+    g.textBaseline = 'bottom';
+    g.font = `800 ${Math.round(16 * k)}px Rubik, Arial, sans-serif`;
+    outline('play free · ngmipandas-beatdown.vercel.app', W - 16 * k, H - 14 * k, 'rgba(255,255,255,0.92)', 4 * k);
+    if (callout && now < callout.until) {
+      const age = (now - callout.t0) / 1000;
+      const pop = age < 0.18 ? 0.6 + (age / 0.18) * 0.55 : age < 0.3 ? 1.15 - ((age - 0.18) / 0.12) * 0.15 : 1;
+      const fade = Math.min(1, (callout.until - now) / 300);
+      g.save();
+      g.globalAlpha = fade;
+      g.translate(W / 2, H * 0.26);
+      g.scale(pop, pop);
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.font = `900 ${Math.round(Math.min(64 * k, (W * 0.9) / Math.max(6, callout.text.length) * 1.5))}px Bungee, 'Arial Black', sans-serif`;
+      outline(callout.text, 0, 0, callout.color || '#facc15', 10 * k);
+      g.restore();
+    }
+  };
+  const destroy = () => {
+    alive = false;
+    clearInterval(rotate);
+    if (pending) clearTimeout(pending.t);
+    recs.forEach(r => { try { if (r.mr.state !== 'inactive') r.mr.stop(); } catch (e) {} });
+    try { stream.getVideoTracks().forEach(t => t.stop()); } catch (e) {}
+  };
+  return {
+    frame,
+    highlight,
+    flash: (text, color) => { callout = { text, color, t0: performance.now(), until: performance.now() + 1700 }; },
+    destroy
+  };
+}
+
+function ClipShelf({ clips, game }) {
+  if (!CLIP_OK) return null;
+  const download = (c, name) => {
+    const a = document.createElement('a');
+    a.href = c.url;
+    a.download = name || `ngmi-pandas-${game.toLowerCase()}-${c.secs}s.${c.ext}`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+  const share = c => {
+    const name = `ngmi-pandas-${game.toLowerCase()}-${c.secs}s.${c.ext}`;
+    let file = null;
+    try { file = new File([c.blob], name, { type: c.blob.type }); } catch (e) {}
+    const text = `My NGMI Pandas ${game} highlight 🐼🔥 Play free: https://ngmipandas-beatdown.vercel.app`;
+    if (file && navigator.canShare && navigator.share) {
+      let ok = false;
+      try { ok = navigator.canShare({ files: [file] }); } catch (e) {}
+      if (ok) {
+        navigator.share({ files: [file], title: 'NGMI Pandas highlight', text }).catch(err => { if (!err || err.name !== 'AbortError') download(c, name); });
+        return;
+      }
+    }
+    download(c, name);
+  };
+  if (!clips.length) {
+    return <div className="mt-4 text-[11px] text-slate-400 rounded-xl border border-dashed border-slate-700 px-3 py-2">🎬 Get a multi-kill — or tap 🎬 — and we save the last 30–60 s as a clip you can share.</div>;
+  }
+  return (
+    <div className="mt-4 text-left">
+      <div className="text-[10px] font-black tracking-widest text-slate-400 mb-2">🎬 YOUR HIGHLIGHTS · {clips.length}</div>
+      <div className="flex gap-2 overflow-x-auto pb-1 snap-x">
+        {clips.map(c => (
+          <div key={c.url} className="snap-start shrink-0 w-[230px] rounded-xl overflow-hidden border border-slate-700 bg-black">
+            <video src={c.url} className="w-full aspect-video bg-black" controls playsInline preload="metadata" />
+            <div className="p-2 bg-slate-950">
+              <div className="text-[11px] font-black text-white truncate">{c.label} · {c.secs}s</div>
+              <div className="grid grid-cols-2 gap-1.5 mt-1.5">
+                <button onClick={() => share(c)} className="py-2 rounded-lg bg-emerald-400 text-slate-950 text-[11px] font-black cursor-pointer">📤 SHARE</button>
+                <button onClick={() => download(c)} className="py-2 rounded-lg bg-slate-800 text-white text-[11px] font-black cursor-pointer">⬇️ SAVE</button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="text-[10px] text-slate-500 mt-1 leading-snug">On phones, SHARE opens Instagram, TikTok, WhatsApp… SAVE downloads the video.</div>
+    </div>
+  );
 }
 
 let gameArt = null;
@@ -2593,6 +2801,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
   const [hud, setHud] = useState({ prot: false, hurt: null, siege: false, team: null, obj: null, marker: null, weapons: [], moon: 0, bull: 0, started: false, hp: 100, mag: 30, reserve: Infinity, wname: 'AK-47', wkey: 'ak', reloading: 0, kills: 0, deaths: 0, left: SHOOT_SECONDS, feed: [], dead: null, board: [], aim: null, scope: false, locked: false, peers: 1, net: 'CONNECTING' });
   const [announce, setAnnounce] = useState(null);
   const [results, setResults] = useState(null);
+  const clipRef = useRef(null);
+  const [clips, setClips] = useState([]);
+  const [clipToast, setClipToast] = useState(null);
+  const clipsRef = useRef([]);
+  useEffect(() => () => clipsRef.current.forEach(cl => URL.revokeObjectURL(cl.url)), []);
   const [showBoard, setShowBoard] = useState(false);
   const [muted, setMutedS] = useState(sfx.isMuted());
 
@@ -2612,6 +2825,22 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     el.appendChild(renderer.domElement);
     lockRef.current = renderer.domElement;
+    let clipper = null;
+    if (prof.clips !== false) {
+      clipper = createClipper({
+        src: renderer.domElement,
+        crosshair: true,
+        stat: () => `K ${me.kills} · D ${me.deaths}`,
+        onClip: cl => {
+          clipsRef.current = [...clipsRef.current, cl];
+          if (clipsRef.current.length > 4) { URL.revokeObjectURL(clipsRef.current[0].url); clipsRef.current = clipsRef.current.slice(-4); }
+          setClips(clipsRef.current);
+          setClipToast(`🎬 Clip saved · ${cl.secs}s`);
+          setTimeout(() => setClipToast(null), 2600);
+        }
+      });
+    }
+    clipRef.current = clipper;
 
     const scene = new THREE.Scene();
     let BASE_FOV = 78;
@@ -2652,6 +2881,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
 
     // ---------- helpers ----------
     const announceNow = (text, color) => {
+      if (clipRef.current) clipRef.current.flash(text, color);
       setAnnounce({ text, color, id: Date.now() + Math.random() });
       setTimeout(() => setAnnounce(a => (a && a.text === text ? null : a)), 1700);
     };
@@ -3106,6 +3336,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           sfx.play('ko', 0.8);
           buzz([30, 40, 60]);
           const STREAK = { 2: 'DOUBLE KILL', 3: 'TRIPLE KILL', 5: 'RAMPAGE', 7: 'UNSTOPPABLE', 10: 'GODLIKE GMI' };
+          if (k.streak >= 2 && clipRef.current) clipRef.current.highlight(STREAK[k.streak] || `${k.streak}-KILL STREAK`);
           if (STREAK[k.streak]) {
             announceNow(STREAK[k.streak], '#facc15');
             sayLine(STREAK[k.streak].toLowerCase());
@@ -3562,6 +3793,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (e.code === 'Space') { e.preventDefault(); c.jump = true; }
       if (e.code === 'KeyR') c.reload = true;
       if (e.code === 'KeyV') c.dance = true;
+      if (e.code === 'KeyC' && clipRef.current) { clipRef.current.highlight('MY CLIP', 1200); setClipToast('🎬 Saving the last 30–60 s…'); }
       if (e.code === 'KeyG') c.strike = true;
       if (e.code === 'KeyQ') c.swap = true;
       if (/^Digit[1-5]$/.test(e.code)) c.slot = Number(e.code.slice(5)) - 1;
@@ -4376,6 +4608,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
       if (post) post.render(now * 0.001);
       else renderer.render(scene, camera);
+      if (clipRef.current) clipRef.current.frame();
 
       // ----- network -----
       if (now - lastNet > 66) {
@@ -4459,6 +4692,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
 
     return () => {
       cancelAnimationFrame(raf);
+      if (clipRef.current) { clipRef.current.destroy(); clipRef.current = null; }
       sfx.stopMusic();
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
@@ -4691,6 +4925,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               <span className="keycap">V</span><span>Dance 💃 · heals +15 HP/s up to 100</span>
               <span className="keycap">TAB</span><span>Scoreboard</span>
               <span className="keycap">G</span><span>Moon Strike (earned every 4-kill streak)</span>
+              <span className="keycap">C</span><span>🎬 Save a clip of the last 30–60 s (multi-kills save one automatically)</span>
             </div>
             <div className="mt-4 text-left">
               <div className="flex justify-between text-xs font-bold text-slate-300"><span>Mouse sensitivity</span><span>{sensUi.toFixed(1)}×</span></div>
@@ -4725,6 +4960,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         </div>
       )}
 
+      {clipToast && !results && (
+        <div className="absolute left-1/2 top-[calc(env(safe-area-inset-top)+64px)] -translate-x-1/2 pointer-events-none text-[11px] font-black px-3 py-1 rounded-full bg-slate-950/85 border border-emerald-400/60 text-emerald-300 whitespace-nowrap">{clipToast}</div>
+      )}
       {/* touch: rotate hint + settings sheet */}
       {IS_TOUCH && rotHint && !results && (
         <div className="absolute inset-x-0 top-[28%] flex justify-center pointer-events-none px-6">
@@ -4840,6 +5078,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 ['R', 'right-[28px] bottom-[112px]', () => { c.reload = true; }],
                 ['⇄', 'right-[150px] bottom-[130px]', () => { c.cycle = 1; }],
                 ['💃', 'right-[168px] bottom-[64px]', () => { c.dance = true; }],
+                ...(clipRef.current ? [['🎬', 'right-[176px] bottom-[196px]', () => { clipRef.current && clipRef.current.highlight('MY CLIP', 1200); setClipToast('🎬 Saving the last 30–60 s…'); }]] : []),
                 ...(hud.strike ? [['☄️', 'right-[36px] bottom-[180px]', () => { c.strike = true; }]] : [])
               ].map(([label, pos, fn]) => (
                 <button key={label} className={`touch-btn pointer-events-auto absolute ${pos} w-[58px] h-[58px] rounded-full border-2 font-black text-xs text-white ${label === '☄️' ? 'bg-rose-600/90 border-amber-300 text-xl animate-pulse' : 'bg-slate-900/70 border-white/60'}`} onPointerDown={e => { e.stopPropagation(); fn(); }}>{label}</button>
@@ -4875,6 +5114,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               ))}
             </div>
             <XpPanel xp={results.xp} />
+            <ClipShelf clips={clips} game="Shootout" />
             <div className="flex gap-3 mt-4">
               <button onClick={onAgain} className="play-btn flex-1 py-3 rounded-2xl font-game text-lg text-slate-950 cursor-pointer">PLAY AGAIN</button>
               <button onClick={onExit} className="px-5 py-3 rounded-2xl bg-slate-800 font-bold cursor-pointer">LOBBY</button>
@@ -4901,7 +5141,7 @@ const COSMETICS = [
   { id: 'diamond', name: 'Diamond Aura', icon: '💎', lvl: 10 }
 ];
 const xpForLevel = l => 400 + l * 250;
-const defaultProfile = () => ({ xp: 0, level: 1, kills: 0, deaths: 0, wins: 0, matches: 0, bestStreak: 0, headshots: 0, cosmetic: 'none', sens: 1, botLevel: 'normal', voice: true, autoFire: true, touchSens: 1 });
+const defaultProfile = () => ({ xp: 0, level: 1, kills: 0, deaths: 0, wins: 0, matches: 0, bestStreak: 0, headshots: 0, cosmetic: 'none', sens: 1, botLevel: 'normal', voice: true, autoFire: true, touchSens: 1, clips: true });
 function loadProfile() {
   try {
     const p = JSON.parse(localStorage.getItem(PROFILE_KEY));
@@ -5071,6 +5311,10 @@ function App() {
   const [gfx, setGfx] = useState(IS_TOUCH ? 'fast' : 'cinematic');
   const [mode, setMode] = useState('beatdown');
   const [gameArtImgs] = useState(() => getGameArt());
+  const bdClipRef = useRef(null);
+  const bdClipsRef = useRef([]);
+  const [bdClips, setBdClips] = useState([]);
+  const [bdClipToast, setBdClipToast] = useState(null);
   const [loreOpen, setLoreOpen] = useState(false);
   const [a2hs, setA2hs] = useState(() => {
     try { return IS_IOS && !IS_STANDALONE && localStorage.getItem('ngmi_a2hs_off') !== '1'; } catch (e) { return IS_IOS && !IS_STANDALONE; }
@@ -5194,6 +5438,19 @@ function App() {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
+    bdClipsRef.current.forEach(cl => URL.revokeObjectURL(cl.url));
+    bdClipsRef.current = [];
+    setBdClips([]);
+    bdClipRef.current = loadProfile().clips !== false ? createClipper({
+      src: renderer.domElement,
+      onClip: cl => {
+        bdClipsRef.current = [...bdClipsRef.current, cl];
+        if (bdClipsRef.current.length > 4) { URL.revokeObjectURL(bdClipsRef.current[0].url); bdClipsRef.current = bdClipsRef.current.slice(-4); }
+        setBdClips(bdClipsRef.current);
+        setBdClipToast(`🎬 Clip saved · ${cl.secs}s`);
+        setTimeout(() => setBdClipToast(null), 2600);
+      }
+    }) : null;
 
     scene.background = new THREE.Color(0x06070c);
     scene.fog = new THREE.FogExp2(0x0b0c14, 0.0115);
@@ -5675,6 +5932,7 @@ function App() {
       });
     };
     const announceNow = (text, color) => {
+      if (bdClipRef.current) bdClipRef.current.flash(text, color);
       setAnnounce({ text, color, id: Date.now() });
       setTimeout(() => setAnnounce(a => (a && a.text === text ? null : a)), 1900);
     };
@@ -6126,6 +6384,7 @@ function App() {
         sfx.play('ko');
         const STREAKS = { 2: ['DOUBLE K.O.!', '#38bdf8'], 3: ['TRIPLE K.O.!!', '#a855f7'], 4: ['RAMPAGE!!!', '#f97316'], 5: ['UNSTOPPABLE GMI!!!', '#facc15'] };
         const st = STREAKS[Math.min(killer.streak, 5)];
+        if (killer.streak >= 2 && bdClipRef.current) bdClipRef.current.highlight(st ? st[0].replace(/!+$/, '') : 'MULTI K.O.');
         if (st) {
           announceNow(st[0], st[1]);
           sayLine(st[0].replace(/[^A-Za-z .]/g, '').toLowerCase());
@@ -7025,6 +7284,7 @@ function App() {
       } else {
         renderer.render(scene, camera);
       }
+      if (bdClipRef.current) bdClipRef.current.frame();
       camera.position.x -= shakeX;
       camera.position.y -= shakeY;
     };
@@ -7045,6 +7305,7 @@ function App() {
 
     return () => {
       cancelAnimationFrame(animationFrameId);
+      if (bdClipRef.current) { bdClipRef.current.destroy(); bdClipRef.current = null; }
       sfx.stopMusic();
       window.removeEventListener('blur', clearKeys);
       document.removeEventListener('gesturestart', blockGesture);
@@ -7329,6 +7590,13 @@ function App() {
                   </div>
 
                   <div className="flex items-center justify-between gap-3 text-xs">
+                    <span className="font-bold text-slate-300">🎬 Auto highlight clips</span>
+                    <button onClick={() => updateProfile({ clips: profile.clips === false })} className={`relative w-11 h-6 rounded-full transition cursor-pointer ${profile.clips !== false ? 'bg-emerald-500' : 'bg-slate-700'}`}>
+                      <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${profile.clips !== false ? 'left-[22px]' : 'left-0.5'}`} />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 text-xs">
                     <span className="font-bold text-slate-300">Announcer voice</span>
                     <button onClick={() => updateProfile({ voice: !profile.voice })} className={`relative w-11 h-6 rounded-full transition cursor-pointer ${profile.voice ? 'bg-emerald-500' : 'bg-slate-700'}`}>
                       <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${profile.voice ? 'left-[22px]' : 'left-0.5'}`} />
@@ -7448,6 +7716,9 @@ function App() {
         </div>
       )}
 
+      {screen === 'playing' && bdClipToast && (
+        <div className="absolute left-1/2 top-[calc(env(safe-area-inset-top)+96px)] -translate-x-1/2 z-40 pointer-events-none text-[11px] font-black px-3 py-1 rounded-full bg-slate-950/85 border border-emerald-400/60 text-emerald-300 whitespace-nowrap">{bdClipToast}</div>
+      )}
       {screen === 'playing' && (
         <div ref={flashRef} className="absolute inset-0 z-30 pointer-events-none bg-white" style={{ opacity: 0 }} />
       )}
@@ -7491,6 +7762,7 @@ function App() {
               <div className="bg-slate-900/80 rounded-xl py-2"><div className="font-game text-xl text-sky-300">{results.falls}</div><div className="text-[10px] text-slate-400 font-bold">TIMES YOU FELL</div></div>
             </div>
             <XpPanel xp={results.xp} />
+            <ClipShelf clips={bdClips} game="Beatdown" />
             <div className="flex gap-3 mt-5">
               <button
                 onClick={() => {
@@ -7558,6 +7830,15 @@ function App() {
                 >
                   {muted ? '🔇' : '🔊'}
                 </button>
+                {CLIP_OK && profile.clips !== false && (
+                  <button
+                    onClick={() => { if (bdClipRef.current) { bdClipRef.current.highlight('MY CLIP', 1200); setBdClipToast('🎬 Saving the last 30–60 s…'); } }}
+                    className="touch-btn w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-[15px] cursor-pointer"
+                    title="Save a clip of the last 30-60 s"
+                  >
+                    🎬
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     setResults(null);
