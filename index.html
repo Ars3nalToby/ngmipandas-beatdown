@@ -1010,7 +1010,7 @@ function getPreviewSnapshots() {
   return previewSnapshots;
 }
 
-function Showcase({ config }) {
+function Showcase({ config, cosmetic }) {
   const ref = useRef(null);
   useEffect(() => {
     const el = ref.current;
@@ -1027,6 +1027,7 @@ function Showcase({ config }) {
     renderer.setSize(w, h);
     el.appendChild(renderer.domElement);
     const { scene, cam, hero } = makePreviewScene(config, w, h, true);
+    applyCosmetic(hero, cosmetic);
     let id;
     const loop = t => {
       id = requestAnimationFrame(loop);
@@ -1045,7 +1046,7 @@ function Showcase({ config }) {
       if (renderer.forceContextLoss) renderer.forceContextLoss();
       el.innerHTML = '';
     };
-  }, [config]);
+  }, [config, cosmetic]);
   return <div ref={ref} className="absolute inset-0" />;
 }
 
@@ -1402,7 +1403,7 @@ function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
   disc.position.y = 0.04;
   root.add(disc);
 
-  root.userData = { headGroup, leftArmGroup, rightArmGroup, ringSpark, auraMat };
+  root.userData = { headGroup, leftArmGroup, rightArmGroup, ringSpark, auraMat, isAstro };
   upgradePandaMaterials(root);
   return root;
 }
@@ -2212,6 +2213,8 @@ function buildSiegeMap(scene, cinematic) {
 }
 
 function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant = 'ffa', team = 'auto' }) {
+  const sensRef = useRef(loadProfile().sens || 1);
+  const [sensUi, setSensUi] = useState(sensRef.current);
   const mountRef = useRef(null);
   const hitRef = useRef(null);
   const hurtRef = useRef(null);
@@ -2229,6 +2232,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const el = mountRef.current;
     if (!el) return undefined;
     const cinematic = gfx === 'cinematic';
+    const prof = loadProfile();
+    const BOT = { easy: { err: 1.7, dmg: 0.65, react: 0.35 }, normal: { err: 1, dmg: 1, react: 0 }, hard: { err: 0.62, dmg: 1.3, react: -0.15 } }[prof.botLevel] || { err: 1, dmg: 1, react: 0 };
     GFX_CINEMATIC = cinematic;
     const W = () => el.clientWidth || window.innerWidth;
     const H = () => el.clientHeight || window.innerHeight;
@@ -2618,6 +2623,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     myMesh.scale.setScalar(1);
     myMesh.rotation.order = 'YXZ';
     myMesh.visible = false;
+    applyCosmetic(myMesh, prof.cosmetic);
     scene.add(myMesh);
     const myHolder = {};
     const pickSpawn = self => {
@@ -2712,6 +2718,14 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const k = fighters.find(f => f.id === ev.kid && (f.isMe || f.isBot));
       if (k && ev.kid !== ev.vid) {
         k.kills += 1;
+        if (k.isMe) {
+          me.headshots = (me.headshots || 0) + (ev.hs ? 1 : 0);
+          me.maxStreak = Math.max(me.maxStreak || 0, k.streak + 1);
+          if ((k.streak + 1) % 4 === 0 && !me.strikeReady) {
+            me.strikeReady = true;
+            setTimeout(() => { announceNow('☄️ MOON STRIKE READY · PRESS G', '#f87171'); sayLine('Moon strike ready'); }, 900);
+          }
+        }
         k.streak += 1;
         if (k.isBot) k.danceT = 1.8;
         if (k.isMe) {
@@ -2720,6 +2734,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           const STREAK = { 2: 'DOUBLE KILL', 3: 'TRIPLE KILL', 5: 'RAMPAGE', 7: 'UNSTOPPABLE', 10: 'GODLIKE GMI' };
           if (STREAK[k.streak]) {
             announceNow(STREAK[k.streak], '#facc15');
+            sayLine(STREAK[k.streak].toLowerCase());
             sfx.play('streak');
           } else announceNow(`ELIMINATED ${ev.vn}${ev.hs ? ' · HEADSHOT' : ''}`, ev.hs ? '#facc15' : '#ffffff');
         }
@@ -2907,6 +2922,26 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (owner && owner.isMe && f !== owner) dmgNumber(new THREE.Vector3(f.pos.x, f.pos.y + 2.6, f.pos.z), Math.round(dmg), false, true);
       });
     };
+    const strikes = [];
+    const callStrike = () => {
+      me.strikeReady = false;
+      camera.getWorldDirection(fwd);
+      const res = traceShot(camera.getWorldPosition(new THREE.Vector3()), fwd, me);
+      const tgt = res.point.clone();
+      tgt.y = 0;
+      const mp = me.pos, dd = Math.hypot(tgt.x - mp.x, tgt.z - mp.z);
+      if (dd > 70) { tgt.x = mp.x + (tgt.x - mp.x) * 70 / dd; tgt.z = mp.z + (tgt.z - mp.z) * 70 / dd; }
+      const ring = new THREE.Mesh(new THREE.RingGeometry(4.6, 5.3, 48), new THREE.MeshBasicMaterial({ color: 0xff3b3b, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, fog: false }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(tgt.x, 0.12, tgt.z);
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 90, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0xff3b3b, transparent: true, opacity: 0.35, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false }));
+      beam.position.set(tgt.x, 45, tgt.z);
+      scene.add(ring, beam);
+      strikes.push({ tgt, ring, beam, t: 1.6, fired: 0, next: 0 });
+      announceNow('☄️ MOON STRIKE INBOUND', '#f87171');
+      sayLine('Moon strike inbound');
+      sfx.play('powerup');
+    };
     const selectSlot = i => {
       if (i === me.slot || !me.weapons[i]) return;
       me.lastSlot = me.slot;
@@ -2934,7 +2969,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const muzzle = new THREE.Vector3(b.pos.x + fx0 * 0.9 + fz0 * 0.35, b.pos.y + 1.45, b.pos.z + fz0 * 0.9 - fx0 * 0.35);
       const d0 = Math.hypot(t.pos.x - b.pos.x, t.pos.z - b.pos.z);
       const movingT = Math.hypot(t.vel.x, t.vel.z) > 2;
-      const err = (0.35 + d0 * 0.028) * (movingT ? 1.35 : 1) * b.skill;
+      const err = (0.35 + d0 * 0.028) * (movingT ? 1.35 : 1) * b.skill * BOT.err;
       const aim = new THREE.Vector3(t.pos.x + (Math.random() - 0.5) * err * 2, t.pos.y + 1.3 + (Math.random() - 0.5) * err * 2, t.pos.z + (Math.random() - 0.5) * err * 2);
       const dir = aim.sub(muzzle).normalize();
       const res = traceShot(muzzle, dir, b);
@@ -2944,7 +2979,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       sfx.play('shot_ak', vol * 0.5);
       b.protT = 0;
       if (res.fighter) {
-        damage(res.fighter, b, (b.golden ? 20 : b.wkey === 'gatling' ? 6 : 11) * (res.head ? 1.6 : 1), res.head);
+        damage(res.fighter, b, (b.golden ? 20 : b.wkey === 'gatling' ? 6 : 11) * (res.head ? 1.6 : 1) * BOT.dmg, res.head);
         if (!res.fighter.isMe) hitFx(res.fighter, res.point, res.head);
       } else if (res.wall && res.normal) {
         inkSplat(res.point, res.normal, 0.6);
@@ -3032,7 +3067,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         }
         if (best !== b.target) {
           b.target = best;
-          b.react = 0.4 + Math.random() * 0.4;
+          b.react = Math.max(0.1, 0.4 + BOT.react + Math.random() * 0.4);
         }
         if (Math.random() < 0.25) b.strafe = -b.strafe;
         if (!best && (!b.goal || b.goal.distanceTo(b.pos) < 3 || b.stuckT > 1.2)) {
@@ -3152,6 +3187,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (e.code === 'Space') { e.preventDefault(); c.jump = true; }
       if (e.code === 'KeyR') c.reload = true;
       if (e.code === 'KeyV') c.dance = true;
+      if (e.code === 'KeyG') c.strike = true;
       if (e.code === 'KeyQ') c.swap = true;
       if (/^Digit[1-5]$/.test(e.code)) c.slot = Number(e.code.slice(5)) - 1;
       if (e.code === 'KeyM') {
@@ -3176,7 +3212,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     window.addEventListener('blur', releaseInputs);
     const onMouseMove = e => {
       if (!locked() || me.dead) return;
-      const sens = 0.0022 / (1 + (SHOOT_WEAPONS[me.weapons[me.slot].key].zoom - 1) * me.adsT);
+      const sens = 0.0022 * sensRef.current / (1 + (SHOOT_WEAPONS[me.weapons[me.slot].key].zoom - 1) * me.adsT);
       me.yaw -= e.movementX * sens;
       me.swayX = Math.max(-0.07, Math.min(0.07, (me.swayX || 0) + e.movementX * 0.0007));
       me.swayY = Math.max(-0.05, Math.min(0.05, (me.swayY || 0) + e.movementY * 0.0006));
@@ -3241,6 +3277,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       scene.add(beam);
       drops.push({ id: match.evIdx, grp, chute, strings, beam, x, z, landed: false });
       announceNow('👑 GOLDEN AK AIRDROP INCOMING', '#facc15');
+      sayLine('Golden airdrop incoming');
       pushFeed('📦 Golden AK airdrop! Follow the light', '#facc15');
       sfx.play('powerup');
     };
@@ -3275,6 +3312,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const objectiveTaken = idx => {
       const o = map.objectives[idx];
       announceNow(`${o.key} · ${o.name} CAPTURED`, SIEGE_TEAMS.atk.color);
+      sayLine(`Objective ${o.key} captured`);
       pushFeed(`⚔️ Raiders captured ${o.name}${idx === 0 ? ' · +75s' : ''}`, SIEGE_TEAMS.atk.color);
       sfx.play('streak');
       if (idx === 0) {
@@ -3291,13 +3329,17 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (!me.dead) me.dancing = true;
       const board = [...fighters].map(f => ({ id: f.id, name: f.name, color: f.color, isMe: f.isMe, kills: f.kills, deaths: f.deaths })).sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
       const rank = board.findIndex(r => r.isMe) + 1;
+      sayLine(rank === 1 ? 'Victory' : 'Match over');
       announceNow(rank === 1 ? 'VICTORY 🏆' : 'MATCH OVER', rank === 1 ? '#facc15' : '#ffffff');
       sfx.play(rank === 1 ? 'streak' : 'ko');
       if (siege) {
         const won = winner === me.team;
+        sayLine(won ? 'Victory' : 'Defeat');
         announceNow(won ? 'VICTORY 🏆' : 'DEFEAT', won ? '#facc15' : '#f87171');
       }
-      setTimeout(() => setResults({ board, rank, winner, myTeam: me.team }), 1400);
+      const didWin = siege ? winner === me.team : rank === 1;
+      const xpRes = awardXp({ kills: me.kills, deaths: me.deaths, won: didWin, headshots: me.headshots || 0, bestStreak: me.maxStreak || 0 });
+      setTimeout(() => setResults({ board, rank, winner, myTeam: me.team, xp: xpRes }), 1400);
     };
 
     // ---------- MQTT ----------
@@ -3317,6 +3359,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       f.hp = d.hp; f.dead = !!d.dd; f.kills = d.k || 0; f.deaths = d.dt || 0;
       f.dancing = !!d.dn;
       f.remoteProt = !!d.sp;
+      if (f.mesh && d.cos !== undefined && f.cosApplied !== d.cos) {
+        applyCosmetic(f.mesh, d.cos);
+        f.cosApplied = d.cos;
+      }
       if (d.w && f.mesh && SHOOT_WEAPONS[d.w]) swapGun(f, f.mesh, d.w);
     };
     const onMsg = (tp, payload) => {
@@ -3432,6 +3478,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           sfx.play('pop', 1, 0.8);
         }
         if (match.countdown <= 0) {
+          sayLine(siege ? (me.team === 'atk' ? 'Attack!' : 'Defend!') : 'Fight!');
           announceNow(siege ? (me.team === 'atk' ? '⚔️ ATTACK!' : '🛡️ DEFEND!') : 'SHOOT!', siege ? SIEGE_TEAMS[me.team].color : '#4ade80');
           sfx.play('streak');
         }
@@ -3547,7 +3594,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
 
       // ----- me -----
       if (c.lookDX || c.lookDY) {
-        const sens = 0.0055 / (1 + (SHOOT_WEAPONS[me.weapons[me.slot].key].zoom - 1) * me.adsT);
+        const sens = 0.0055 * sensRef.current / (1 + (SHOOT_WEAPONS[me.weapons[me.slot].key].zoom - 1) * me.adsT);
         me.yaw -= c.lookDX * sens;
         me.pitch = Math.max(-1.45, Math.min(1.45, me.pitch - c.lookDY * sens));
         c.lookDX = 0;
@@ -3667,9 +3714,35 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           }
         });
       }
+      if (c.strike && me.strikeReady && !me.dead && !frozen) callStrike();
+      c.strike = false;
       c.jump = false;
       c.reload = false;
       c.swap = false;
+      for (let i = strikes.length - 1; i >= 0; i--) {
+        const st = strikes[i];
+        st.t -= dt;
+        st.ring.material.opacity = 0.5 + Math.sin(now * 0.03) * 0.4;
+        st.ring.rotation.z += dt * 2;
+        if (st.t <= 0 && st.fired < 7) {
+          st.next -= dt;
+          if (st.next <= 0) {
+            st.next = 0.13;
+            st.fired += 1;
+            const origin = new THREE.Vector3(st.tgt.x + (Math.random() - 0.5) * 10, 42, st.tgt.z + (Math.random() - 0.5) * 10);
+            const aim = new THREE.Vector3(st.tgt.x + (Math.random() - 0.5) * 8, 0, st.tgt.z + (Math.random() - 0.5) * 8);
+            fireRocket(origin, aim.sub(origin).normalize(), me);
+          }
+        }
+        if (st.fired >= 7 && st.t < -2) {
+          scene.remove(st.ring, st.beam);
+          st.ring.geometry.dispose();
+          st.beam.geometry.dispose();
+          st.ring.material.dispose();
+          st.beam.material.dispose();
+          strikes.splice(i, 1);
+        }
+      }
 
       // ----- bots (host) / remotes -----
       fighters.forEach(f => {
@@ -3924,7 +3997,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (now - lastNet > 66) {
         lastNet = now;
         const r2 = v => Math.round(v * 100) / 100;
-        const pkt = { t: 's', id: myId, n: name, c: cls.id, x: r2(me.pos.x), y: r2(me.pos.y), z: r2(me.pos.z), f: r2(me.yaw + Math.PI), hp: Math.round(me.hp), dd: me.dead ? 1 : 0, k: me.kills, dt: me.deaths, tr: net.pendingTr, w: me.weapons[me.slot].key, dn: me.dancing ? 1 : 0, ex: net.pendingEx, tm: me.team, sp: me.protT > 0 ? 1 : 0 };
+        const pkt = { t: 's', id: myId, n: name, c: cls.id, x: r2(me.pos.x), y: r2(me.pos.y), z: r2(me.pos.z), f: r2(me.yaw + Math.PI), hp: Math.round(me.hp), dd: me.dead ? 1 : 0, k: me.kills, dt: me.deaths, tr: net.pendingTr, w: me.weapons[me.slot].key, dn: me.dancing ? 1 : 0, ex: net.pendingEx, tm: me.team, sp: me.protT > 0 ? 1 : 0, cos: prof.cosmetic };
         if (net.isHost) {
           pkt.left = Math.round(match.left * 10) / 10;
           pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.cls.id, x: r2(b.pos.x), y: r2(b.pos.y), z: r2(b.pos.z), f: r2(b.face), hp: Math.round(b.hp), dd: b.dead ? 1 : 0, k: b.kills, dt: b.deaths, dn: b.danceT > 0 ? 1 : 0, w: b.golden ? 'golden' : b.wkey || 'ak', sp: b.protT > 0 ? 1 : 0, tm: b.team }));
@@ -3986,6 +4059,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           moon: Math.max(0, Math.ceil(world.moonT)),
           bull: Math.max(0, Math.ceil(world.bullT)),
           prot: me.protT > 0 && !me.dead,
+          strike: !!me.strikeReady && !me.dead,
           hurt: me.hurtAt && now - me.hurtAt < 1200 && me.hurtFrom !== undefined && !me.dead ? { ang: (-(me.hurtFrom - me.yaw - Math.PI) * 180) / Math.PI, age: now - me.hurtAt } : null,
           started: everLocked,
           dancing: me.dancing,
@@ -4156,6 +4230,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       {hud.hp < 30 && !hud.dead && (
         <div className="absolute inset-0 pointer-events-none animate-pulse" style={{ background: 'radial-gradient(circle at center, transparent 45%, rgba(150,0,0,0.5) 100%)' }} />
       )}
+      {hud.strike && (
+        <div className="absolute left-1/2 bottom-[13%] -translate-x-1/2 pointer-events-none text-[11px] md:text-sm font-black px-3 py-1 rounded-full bg-rose-600/90 text-white animate-pulse border border-white/60">☄️ MOON STRIKE READY · {IS_TOUCH ? 'tap ☄️' : 'press G'}</div>
+      )}
       {hud.prot && (
         <div className="absolute left-1/2 top-[38%] -translate-x-1/2 pointer-events-none text-[11px] md:text-xs font-black px-3 py-1 rounded-full bg-cyan-500/80 text-slate-950">🛡️ SPAWN SHIELD · shooting ends it</div>
       )}
@@ -4220,6 +4297,20 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               <span className="keycap">R</span><span>Reload · ammo is endless</span>
               <span className="keycap">V</span><span>Dance 💃 · heals +15 HP/s up to 100</span>
               <span className="keycap">TAB</span><span>Scoreboard</span>
+              <span className="keycap">G</span><span>Moon Strike (earned every 4-kill streak)</span>
+            </div>
+            <div className="mt-4 text-left">
+              <div className="flex justify-between text-xs font-bold text-slate-300"><span>Mouse sensitivity</span><span>{sensUi.toFixed(1)}×</span></div>
+              <input
+                type="range" min="0.3" max="2.5" step="0.1" value={sensUi}
+                onChange={e => {
+                  const v = Number(e.target.value);
+                  sensRef.current = v;
+                  setSensUi(v);
+                  saveProfile({ ...loadProfile(), sens: v });
+                }}
+                className="w-full accent-emerald-400"
+              />
             </div>
             <div className="text-[11px] text-slate-400 mt-3">Press <span className="keycap">ESC</span> any time to pause and free your mouse</div>
           </div>
@@ -4304,7 +4395,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 ['JUMP', 'right-[100px] bottom-[78px]', () => { c.jump = true; }],
                 ['R', 'right-[28px] bottom-[112px]', () => { c.reload = true; }],
                 ['⇄', 'right-[150px] bottom-[130px]', () => { c.cycle = 1; }],
-                ['💃', 'right-[168px] bottom-[64px]', () => { c.dance = true; }]
+                ['💃', 'right-[168px] bottom-[64px]', () => { c.dance = true; }],
+                ...(hud.strike ? [['☄️', 'right-[176px] bottom-[136px]', () => { c.strike = true; }]] : [])
               ].map(([label, pos, fn]) => (
                 <button key={label} className={`touch-btn pointer-events-auto absolute ${pos} w-[58px] h-[58px] rounded-full bg-slate-900/70 border-2 border-white/60 font-black text-xs text-white`} onPointerDown={e => { e.stopPropagation(); fn(); }}>{label}</button>
               ))}
@@ -4338,6 +4430,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 </div>
               ))}
             </div>
+            <XpPanel xp={results.xp} />
             <div className="flex gap-3 mt-4">
               <button onClick={onAgain} className="play-btn flex-1 py-3 rounded-2xl font-game text-lg text-slate-950 cursor-pointer">PLAY AGAIN</button>
               <button onClick={onExit} className="px-5 py-3 rounded-2xl bg-slate-800 font-bold cursor-pointer">LOBBY</button>
@@ -4349,6 +4442,167 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
   );
 }
 
+
+// ============================================================================
+// PLAYER PROFILE — XP, levels, cosmetics, settings (saved in this browser)
+// ============================================================================
+const PROFILE_KEY = 'ngmi_profile_v1';
+const COSMETICS = [
+  { id: 'none', name: 'None', icon: '🚫', lvl: 1 },
+  { id: 'party', name: 'Party Hat', icon: '🎉', lvl: 2 },
+  { id: 'chain', name: 'Gold Chain', icon: '📿', lvl: 3 },
+  { id: 'halo', name: 'Angel Halo', icon: '😇', lvl: 4 },
+  { id: 'crown', name: 'Royal Crown', icon: '👑', lvl: 6 },
+  { id: 'jetpack', name: 'Moon Jetpack', icon: '🚀', lvl: 8 },
+  { id: 'diamond', name: 'Diamond Aura', icon: '💎', lvl: 10 }
+];
+const xpForLevel = l => 400 + l * 250;
+const defaultProfile = () => ({ xp: 0, level: 1, kills: 0, deaths: 0, wins: 0, matches: 0, bestStreak: 0, headshots: 0, cosmetic: 'none', sens: 1, botLevel: 'normal', voice: true });
+function loadProfile() {
+  try {
+    const p = JSON.parse(localStorage.getItem(PROFILE_KEY));
+    if (p && typeof p.xp === 'number') return { ...defaultProfile(), ...p };
+  } catch (e) {}
+  return defaultProfile();
+}
+function saveProfile(p) {
+  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch (e) {}
+}
+function awardXp({ kills = 0, deaths = 0, won = false, headshots = 0, bestStreak = 0 }) {
+  const p = loadProfile();
+  const before = p.level;
+  const parts = [['Match played', 150], [`Eliminations ×${kills}`, kills * 100]];
+  if (headshots) parts.push([`Headshots ×${headshots}`, headshots * 25]);
+  if (won) parts.push(['Victory', 500]);
+  const gained = parts.reduce((a, b) => a + b[1], 0);
+  p.xp += gained;
+  p.kills += kills;
+  p.deaths += deaths;
+  p.matches += 1;
+  if (won) p.wins += 1;
+  p.headshots += headshots;
+  p.bestStreak = Math.max(p.bestStreak, bestStreak);
+  while (p.xp >= xpForLevel(p.level)) {
+    p.xp -= xpForLevel(p.level);
+    p.level += 1;
+  }
+  saveProfile(p);
+  return { gained, parts, before, after: p.level, unlocked: COSMETICS.filter(c => c.lvl > before && c.lvl <= p.level), profile: p };
+}
+let voiceCache = null;
+function sayLine(text) {
+  try {
+    if (!window.speechSynthesis || sfx.isMuted() || !loadProfile().voice) return;
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 1.05;
+    u.pitch = 0.65;
+    u.volume = 0.95;
+    if (!voiceCache) {
+      const vs = window.speechSynthesis.getVoices();
+      voiceCache = vs.find(v => /en[-_](GB|US)/i.test(v.lang) && /male|daniel|alex|fred|george/i.test(v.name)) || vs.find(v => /^en/i.test(v.lang)) || null;
+    }
+    if (voiceCache) u.voice = voiceCache;
+    window.speechSynthesis.speak(u);
+  } catch (e) {}
+}
+function applyCosmetic(mesh, id) {
+  const ud = mesh && mesh.userData;
+  if (!ud || !ud.headGroup) return;
+  if (ud.cosmetic) {
+    if (ud.cosmetic.parent) ud.cosmetic.parent.remove(ud.cosmetic);
+    ud.cosmetic = null;
+  }
+  if (!id || id === 'none') return;
+  const g = new THREE.Group();
+  const top = ud.isAstro ? 1.02 : 0.78;
+  let parent = ud.headGroup;
+  const gold = new THREE.MeshStandardMaterial({ color: 0xd4a640, metalness: 1, roughness: 0.25, emissive: 0x3a2600, emissiveIntensity: 0.4 });
+  if (id === 'party') {
+    const hat = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.85, 18), new THREE.MeshStandardMaterial({ color: 0xec4899, roughness: 0.6 }));
+    hat.position.y = top + 0.38;
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.05, 8, 20), new THREE.MeshStandardMaterial({ color: 0xfacc15 }));
+    band.rotation.x = Math.PI / 2;
+    band.position.y = top + 0.08;
+    const pom = new THREE.Mesh(new THREE.SphereGeometry(0.11, 10, 8), new THREE.MeshStandardMaterial({ color: 0x67e8f9 }));
+    pom.position.y = top + 0.84;
+    g.add(hat, band, pom);
+    g.rotation.z = 0.22;
+  } else if (id === 'chain') {
+    parent = mesh;
+    const chain = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.055, 8, 30), gold);
+    chain.rotation.x = Math.PI / 2.4;
+    chain.position.set(0, 1.5, 0.12);
+    const coin = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.05, 20), gold);
+    coin.rotation.x = Math.PI / 2;
+    coin.position.set(0, 1.16, 0.66);
+    g.add(chain, coin);
+  } else if (id === 'halo') {
+    const halo = new THREE.Mesh(new THREE.TorusGeometry(0.5, 0.06, 10, 36), new THREE.MeshBasicMaterial({ color: 0xfff3b0 }));
+    halo.rotation.x = Math.PI / 2;
+    halo.position.y = top + 0.45;
+    halo.onBeforeRender = () => { halo.position.y = top + 0.45 + Math.sin(performance.now() * 0.004) * 0.06; };
+    g.add(halo);
+  } else if (id === 'crown') {
+    const cr = makeCrown();
+    cr.position.y = top + 0.05;
+    g.add(cr);
+  } else if (id === 'jetpack') {
+    parent = mesh;
+    const metal = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, metalness: 0.9, roughness: 0.3 });
+    [-0.26, 0.26].forEach(x => {
+      const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.85, 14), metal);
+      tank.position.set(x, 1.15, -0.75);
+      const tip = new THREE.Mesh(new THREE.ConeGeometry(0.17, 0.25, 14), new THREE.MeshStandardMaterial({ color: 0xef4444 }));
+      tip.position.set(x, 1.7, -0.75);
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.5, 10), new THREE.MeshBasicMaterial({ color: 0xffa94d, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
+      flame.rotation.x = Math.PI;
+      flame.position.set(x, 0.5, -0.75);
+      flame.onBeforeRender = () => { const k = 0.8 + Math.random() * 0.4; flame.scale.set(1, k, 1); };
+      g.add(tank, tip, flame);
+    });
+  } else if (id === 'diamond') {
+    parent = mesh;
+    const dm = new THREE.MeshStandardMaterial({ color: 0x7dd3fc, emissive: 0x38bdf8, emissiveIntensity: 0.9, metalness: 0.3, roughness: 0.1 });
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const d = new THREE.Mesh(new THREE.OctahedronGeometry(0.16, 0), dm);
+      d.position.set(Math.cos(a) * 1.15, 1.3, Math.sin(a) * 1.15);
+      g.add(d);
+    }
+    g.children[0].onBeforeRender = () => { g.rotation.y = performance.now() * 0.0015; };
+  }
+  parent.add(g);
+  ud.cosmetic = g;
+}
+
+function XpPanel({ xp }) {
+  if (!xp) return null;
+  const need = xpForLevel(xp.profile.level);
+  return (
+    <div className="mt-4 rounded-2xl bg-slate-900/80 border border-slate-700 p-3 text-left" style={{ animation: 'fadeUp 0.5s ease-out 0.3s both' }}>
+      <div className="flex items-center justify-between">
+        <span className="font-game text-emerald-300 text-lg">+{xp.gained} XP</span>
+        <span className="font-game text-white">LV {xp.after}</span>
+      </div>
+      <div className="h-2 mt-1.5 rounded bg-slate-700 overflow-hidden">
+        <div className="h-full bg-gradient-to-r from-emerald-400 to-cyan-400" style={{ width: `${Math.min(100, (xp.profile.xp / need) * 100)}%`, transition: 'width 1s ease-out' }} />
+      </div>
+      <div className="text-[10px] text-slate-400 mt-1">{xp.profile.xp} / {need} XP to level {xp.after + 1}</div>
+      <div className="mt-1.5 grid grid-cols-2 gap-x-3 text-[11px] text-slate-300">
+        {xp.parts.map(([label, v]) => (
+          <div key={label} className="flex justify-between"><span>{label}</span><span className="font-black text-emerald-300">+{v}</span></div>
+        ))}
+      </div>
+      {xp.after > xp.before && <div className="mt-2 font-game text-amber-300 animate-pulse">⬆️ LEVEL UP! {xp.before} → {xp.after}</div>}
+      {xp.unlocked.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {xp.unlocked.map(c => <span key={c.id} className="px-2 py-1 rounded-lg bg-amber-300 text-slate-900 text-xs font-black">{c.icon} {c.name} unlocked</span>)}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function App() {
   const [screen, setScreen] = useState('lobby');
@@ -4372,6 +4626,15 @@ function App() {
   const [myDeaths, setMyDeaths] = useState(0);
   const [gfx, setGfx] = useState(IS_TOUCH ? 'fast' : 'cinematic');
   const [mode, setMode] = useState('beatdown');
+  const [profile, setProfile] = useState(loadProfile);
+  const updateProfile = patch => {
+    const np = { ...loadProfile(), ...patch };
+    saveProfile(np);
+    setProfile(np);
+  };
+  useEffect(() => {
+    if (screen === 'lobby') setProfile(loadProfile());
+  }, [screen]);
   const [soVariant, setSoVariant] = useState('ffa');
   const [soTeam, setSoTeam] = useState('auto');
   const [muted, setMuted] = useState(false);
@@ -4416,6 +4679,9 @@ function App() {
   useEffect(() => {
     if (screen !== 'playing' || !mountRef.current) return;
     GFX_CINEMATIC = gfx === 'cinematic';
+    const prof = loadProfile();
+    const BOT_AGGRO = { easy: 0.18, normal: 0.35, hard: 0.6 }[prof.botLevel] || 0.35;
+    const BOT_SPEED = { easy: 0.85, normal: 1, hard: 1.12 }[prof.botLevel] || 1;
     setMyDeaths(0);
     setMyKos(0);
     setMyGangSize(5);
@@ -4814,6 +5080,7 @@ function App() {
       0
     );
     fighters.push(localFighter);
+    applyCosmetic(localFighter.mesh, prof.cosmetic);
 
     const removeFighter = f => {
       scene.remove(f.mesh);
@@ -4990,7 +5257,7 @@ function App() {
     const match = { left: MATCH_SECONDS, countdown: 3.3, over: false, finalRush: false };
     const stats = { bestCombo: 0, biggestHit: 0, falls: 0 };
     ['3', '2', '1'].forEach((n, i) => setTimeout(() => { announceNow(n, '#ffffff'); sfx.play('pop', 1, 0.8); }, 150 + i * 1000));
-    setTimeout(() => { announceNow('FIGHT!', '#00ffa3'); sfx.play('streak'); }, 3150);
+    setTimeout(() => { announceNow('FIGHT!', '#00ffa3'); sfx.play('streak'); sayLine('Fight!'); }, 3150);
     setMatchTime(MATCH_SECONDS);
 
     // ---------- RUG PULL: a slice of the floor collapses ----------
@@ -5259,6 +5526,10 @@ function App() {
       return f;
     };
     const applyRemoteState = (f, d) => {
+      if (d.cos !== undefined && f.cosApplied !== d.cos) {
+        applyCosmetic(f.mesh, d.cos);
+        f.cosApplied = d.cos;
+      }
       f.targetX = d.x;
       f.targetY = d.y || 0;
       f.targetZ = d.z;
@@ -5371,6 +5642,7 @@ function App() {
         announceNow(`🐋 ${killer.isLocal ? 'YOU' : killer.name} HUNTED THE WHALE!`, '#38bdf8');
       }
       killer.streak = (killer.streak || 0) + 1;
+      killer.maxStreak = Math.max(killer.maxStreak || 0, killer.streak);
       if (killer.isLocal) {
         setMyKos(killer.kos);
         fx.shake = 1.6;
@@ -5382,6 +5654,7 @@ function App() {
         const st = STREAKS[Math.min(killer.streak, 5)];
         if (st) {
           announceNow(st[0], st[1]);
+          sayLine(st[0].replace(/[^A-Za-z .]/g, '').toLowerCase());
           sfx.play('streak');
         }
       }
@@ -5491,6 +5764,7 @@ function App() {
         if (!matchRef.finalRush && match.left <= 30) {
           matchRef.finalRush = true;
           announceNow('FINAL 30s! KNOCKBACK x1.5', '#f97316');
+          sayLine('Final thirty seconds');
           sfx.setRush(true);
           setArenaEventText('🔥 FINAL RUSH: EVERY HIT KNOCKS 1.5x FURTHER!');
           sfx.play('streak');
@@ -5503,7 +5777,9 @@ function App() {
           const myRank = board.findIndex(b => b.isLocal) + 1;
           announceNow(myRank === 1 ? 'VICTORY! 🏆' : 'TIME!', myRank === 1 ? '#facc15' : '#ffffff');
           sfx.play(myRank === 1 ? 'streak' : 'ko');
-          setTimeout(() => setResults({ board, myRank, kos: localFighter.kos, ...stats }), 1600);
+          const xpRes = awardXp({ kills: localFighter.kos, deaths: localFighter.deaths || 0, won: myRank === 1, bestStreak: localFighter.maxStreak || 0 });
+          sayLine(myRank === 1 ? 'Victory' : 'Time');
+          setTimeout(() => setResults({ board, myRank, kos: localFighter.kos, ...stats, xp: xpRes }), 1600);
         }
       }
       if (frozen) {
@@ -5820,7 +6096,7 @@ function App() {
               f.aiDirX = dx / l;
               f.aiDirZ = dz / l;
 
-              if (minDist < 6.5 && Math.random() < 0.35 && f.stun <= 0) {
+              if (minDist < 6.5 && Math.random() < BOT_AGGRO && f.stun <= 0) {
                 f.punchAnim = 0.35;
                 triggerShockwave(f.mesh.position.x, f.mesh.position.z, f.gangColor, 6.5);
                 sfx.play('smash', volAt(f.mesh.position) * 0.45);
@@ -5836,7 +6112,7 @@ function App() {
             }
           }
           if (f.stun <= 0 && f.mesh.position.y <= 0.05) {
-            const botSpeed = 9.8 * f.pandaClass.speed * (f.buffs.speed > 0 ? 1.45 : 1);
+            const botSpeed = 9.8 * BOT_SPEED * f.pandaClass.speed * (f.buffs.speed > 0 ? 1.45 : 1);
             f.vx += ((f.aiDirX || 0) * botSpeed - f.vx) * 4 * dt;
             f.vz += ((f.aiDirZ || 0) * botSpeed - f.vz) * 4 * dt;
           }
@@ -6175,7 +6451,7 @@ function App() {
         lastNetBroadcast = now;
         const r2 = v => Math.round(v * 100) / 100;
         const lp = localFighter.mesh.position;
-        const pkt = { t: 's', id: myIdRef.current, name: playerName, c: selectedClass.id, x: r2(lp.x), y: r2(lp.y), z: r2(lp.z), d: Math.round(localFighter.dmg), m: localFighter.minions.length, k: localFighter.kos, dt: localFighter.deaths, st: localFighter.streak || 0, ev: netEvent };
+        const pkt = { t: 's', id: myIdRef.current, name: playerName, c: selectedClass.id, cos: prof.cosmetic, x: r2(lp.x), y: r2(lp.y), z: r2(lp.z), d: Math.round(localFighter.dmg), m: localFighter.minions.length, k: localFighter.kos, dt: localFighter.deaths, st: localFighter.streak || 0, ev: netEvent };
         if (net.isHost) {
           pkt.left = Math.round(match.left * 10) / 10;
           pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.pandaClass.id, x: r2(b.mesh.position.x), y: r2(b.mesh.position.y), z: r2(b.mesh.position.z), d: Math.round(b.dmg), m: b.minions.length, k: b.kos, dt: b.deaths, st: b.streak || 0 }));
@@ -6417,7 +6693,7 @@ function App() {
                           className="absolute left-1/2 top-[44%] -translate-x-1/2 -translate-y-1/2 w-[78%] max-w-[300px] aspect-square rounded-full"
                           style={{ background: 'radial-gradient(circle at 38% 35%, #6d8ff0 0%, #2b4fb8 45%, #142a6b 75%, #0b1740 100%)', boxShadow: '0 0 80px rgba(80,120,255,0.35)', opacity: 0.85 }}
                         />
-                        <Showcase config={selectedClass} />
+                        <Showcase config={selectedClass} cosmetic={profile.cosmetic} />
                         <span className="absolute left-3 top-3 text-[10px] font-black px-2 py-0.5 rounded-full uppercase" style={{ backgroundColor: `${selectedClass.accent}2e`, color: selectedClass.accent }}>
                           {selectedClass.badge}
                         </span>
@@ -6475,6 +6751,39 @@ function App() {
                 </section>
 
                 <aside className="side-panel glass border border-slate-700/70 rounded-3xl p-5 space-y-4">
+                  <div className="rounded-2xl bg-gradient-to-br from-emerald-500/15 to-cyan-500/10 border border-emerald-400/30 p-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-11 h-11 rounded-xl bg-emerald-400 text-slate-950 font-game flex flex-col items-center justify-center leading-none shrink-0">
+                        <span className="text-[8px]">LV</span>
+                        <span className="text-lg">{profile.level}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between text-[10px] font-black text-slate-300"><span>PANDA LEVEL</span><span>{profile.xp} / {xpForLevel(profile.level)} XP</span></div>
+                        <div className="h-1.5 mt-1 rounded bg-slate-800 overflow-hidden"><div className="h-full bg-gradient-to-r from-emerald-400 to-cyan-400" style={{ width: `${Math.min(100, (profile.xp / xpForLevel(profile.level)) * 100)}%` }} /></div>
+                        <div className="flex flex-wrap gap-x-3 mt-1.5 text-[10px] text-slate-400"><span>🏆 {profile.wins} wins</span><span>💀 {profile.kills}K / {profile.deaths}D</span><span>🎮 {profile.matches} games</span></div>
+                      </div>
+                    </div>
+                    <div className="text-[10px] font-black tracking-widest text-slate-400 mt-3 mb-1.5">COSMETIC · SHOWN TO EVERYONE</div>
+                    <div className="grid grid-cols-7 gap-1">
+                      {COSMETICS.map(cm => {
+                        const locked = profile.level < cm.lvl;
+                        const on = profile.cosmetic === cm.id;
+                        return (
+                          <button
+                            key={cm.id}
+                            disabled={locked}
+                            title={locked ? `Unlocks at level ${cm.lvl}` : cm.name}
+                            onClick={() => updateProfile({ cosmetic: cm.id })}
+                            className={`relative aspect-square rounded-lg text-base flex items-center justify-center border-2 ${on ? 'border-emerald-300 bg-emerald-400/20' : 'border-slate-800 bg-slate-900/70'} ${locked ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:border-slate-500'}`}
+                          >
+                            {locked ? '🔒' : cm.icon}
+                            {locked && <span className="absolute bottom-0 inset-x-0 text-[7px] font-black text-slate-300">LV{cm.lvl}</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   <div>
                     <label className="block text-[10px] font-black tracking-widest text-slate-400 mb-1.5">YOUR NAME</label>
                     <input
@@ -6497,6 +6806,29 @@ function App() {
                   >
                     ▶ PLAY
                   </button>
+
+                  <div className="flex items-center justify-between gap-3 text-xs">
+                    <span className="font-bold text-slate-300">Bot difficulty</span>
+                    <div className="flex rounded-xl overflow-hidden border border-slate-700">
+                      {[['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard']].map(([k, label]) => (
+                        <button key={k} onClick={() => updateProfile({ botLevel: k })} className={`px-2.5 py-1.5 font-black cursor-pointer ${profile.botLevel === k ? 'bg-rose-400 text-slate-950' : 'bg-slate-900 text-slate-300'}`}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 text-xs">
+                    <span className="font-bold text-slate-300">Announcer voice</span>
+                    <button onClick={() => updateProfile({ voice: !profile.voice })} className={`relative w-11 h-6 rounded-full transition cursor-pointer ${profile.voice ? 'bg-emerald-500' : 'bg-slate-700'}`}>
+                      <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${profile.voice ? 'left-[22px]' : 'left-0.5'}`} />
+                    </button>
+                  </div>
+
+                  {mode === 'shootout' && (
+                    <div className="text-xs">
+                      <div className="flex justify-between font-bold text-slate-300"><span>Mouse sensitivity</span><span>{profile.sens.toFixed(1)}×</span></div>
+                      <input type="range" min="0.3" max="2.5" step="0.1" value={profile.sens} onChange={e => updateProfile({ sens: Number(e.target.value) })} className="w-full accent-emerald-400" />
+                    </div>
+                  )}
 
                   <div className="flex items-center justify-between gap-3 text-xs">
                     <span className="font-bold text-slate-300">Graphics</span>
@@ -6635,6 +6967,7 @@ function App() {
               <div className="bg-slate-900/80 rounded-xl py-2"><div className="font-game text-xl text-pink-300">{Math.round(results.biggestHit)}</div><div className="text-[10px] text-slate-400 font-bold">BIGGEST HIT</div></div>
               <div className="bg-slate-900/80 rounded-xl py-2"><div className="font-game text-xl text-sky-300">{results.falls}</div><div className="text-[10px] text-slate-400 font-bold">TIMES YOU FELL</div></div>
             </div>
+            <XpPanel xp={results.xp} />
             <div className="flex gap-3 mt-5">
               <button
                 onClick={() => {
