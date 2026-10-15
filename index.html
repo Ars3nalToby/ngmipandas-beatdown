@@ -348,6 +348,17 @@ const sfx = (() => {
         hiss(1.0, 0.95 * vol, 'lowpass', 2600, 90);
         tone('square', 62, 30, 0.4, 0.28 * vol, null, null, 600);
         break;
+      case 'heart':
+        tone('sine', 62, 40, 0.12, 0.7 * vol);
+        tone('sine', 58, 36, 0.14, 0.55 * vol, null, now + 0.2);
+        break;
+      case 'land':
+        tone('sine', 120, 50, 0.12, 0.45 * vol);
+        hiss(0.1, 0.25 * vol, 'lowpass', 900, 200);
+        break;
+      case 'shield':
+        tone('triangle', 520, 1040, 0.25, 0.14 * vol);
+        break;
       case 'dance':
         tone('triangle', 660 * p, 0, 0.12, 0.16 * vol);
         tone('sine', 165 * p, 0, 0.12, 0.2 * vol);
@@ -1530,6 +1541,7 @@ function makeGunModel(key, view) {
     }
     g.add(barrels);
     g.userData.barrels = barrels;
+    g.userData.heatMat = tubeMat;
   } else if (key === 'rpg') {
     const tubeM = mat(0x1f2125, { metalness: 0.5, roughness: 0.45 }), woodM = mat(0x9a5b2a, { metalness: 0, roughness: 0.6 }), gripM = mat(0x3a2a1e, { metalness: 0, roughness: 0.8 }), greenM = mat(0x3f5a3a, { metalness: 0.3, roughness: 0.5 });
     const cyl = (r1, r2, len, z, m, y = 0) => {
@@ -2207,7 +2219,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
   const joyKnobRef = useRef(null);
   const ctl = useRef({ firing: false, ads: false, jump: false, reload: false, swap: false, mx: 0, mz: 0, joyPtr: null, jox: 0, joy: 0, lookPtr: null, lx: 0, ly: 0, firePtr: null, fx: 0, fy: 0, lookDX: 0, lookDY: 0 });
   const lockRef = useRef(null);
-  const [hud, setHud] = useState({ siege: false, team: null, obj: null, marker: null, weapons: [], moon: 0, bull: 0, started: false, hp: 100, mag: 30, reserve: Infinity, wname: 'AK-47', wkey: 'ak', reloading: 0, kills: 0, deaths: 0, left: SHOOT_SECONDS, feed: [], dead: null, board: [], aim: null, scope: false, locked: false, peers: 1, net: 'CONNECTING' });
+  const [hud, setHud] = useState({ prot: false, hurt: null, siege: false, team: null, obj: null, marker: null, weapons: [], moon: 0, bull: 0, started: false, hp: 100, mag: 30, reserve: Infinity, wname: 'AK-47', wkey: 'ak', reloading: 0, kills: 0, deaths: 0, left: SHOOT_SECONDS, feed: [], dead: null, board: [], aim: null, scope: false, locked: false, peers: 1, net: 'CONNECTING' });
   const [announce, setAnnounce] = useState(null);
   const [results, setResults] = useState(null);
   const [showBoard, setShowBoard] = useState(false);
@@ -2463,6 +2475,49 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const boomLight = new THREE.PointLight(0xff8a3c, 0, 45, 1.6);
     scene.add(boomLight);
 
+    // ---------- shell casings + muzzle light ----------
+    const shellGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.09, 6);
+    const shellMat = new THREE.MeshStandardMaterial({ color: 0xd4a640, metalness: 1, roughness: 0.3 });
+    const shellRedMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.5 });
+    const shells = Array.from({ length: 40 }, () => {
+      const m = new THREE.Mesh(shellGeo, shellMat);
+      m.visible = false;
+      scene.add(m);
+      return { m, v: new THREE.Vector3(), life: 0, bounced: 0 };
+    });
+    let shellIdx = 0;
+    const camRight = new THREE.Vector3(), camUp = new THREE.Vector3(), camFwd = new THREE.Vector3();
+    const ejectShell = red => {
+      const sh = shells[shellIdx++ % shells.length];
+      camRight.set(1, 0, 0).applyQuaternion(camera.quaternion);
+      camUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+      camFwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
+      sh.m.material = red ? shellRedMat : shellMat;
+      sh.m.position.copy(camera.position).addScaledVector(camRight, 0.22).addScaledVector(camUp, -0.12).addScaledVector(camFwd, 0.5);
+      sh.v.copy(camRight).multiplyScalar(2.5 + Math.random() * 1.5).addScaledVector(camUp, 2.2 + Math.random()).addScaledVector(camFwd, -0.4).add(me.vel);
+      sh.life = 1.6;
+      sh.bounced = 0;
+      sh.m.visible = true;
+      sh.m.rotation.set(Math.random() * 6, Math.random() * 6, 0);
+    };
+    const muzzleLight = new THREE.PointLight(0xffc070, 0, 16, 2);
+    muzzleLight.position.set(0.3, -0.15, -1.3);
+    camera.add(muzzleLight);
+
+    // ---------- ambient drifting dust ----------
+    const DUST_N = IS_TOUCH ? 160 : 360;
+    const dustBase = new Float32Array(DUST_N * 3);
+    for (let i = 0; i < DUST_N; i++) {
+      dustBase[i * 3] = (Math.random() - 0.5) * 60;
+      dustBase[i * 3 + 1] = Math.random() * 12;
+      dustBase[i * 3 + 2] = (Math.random() - 0.5) * 60;
+    }
+    const dustGeo = new THREE.BufferGeometry();
+    dustGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(DUST_N * 3), 3));
+    const dustPts = new THREE.Points(dustGeo, new THREE.PointsMaterial({ color: variant === 'siege' ? 0xffd2a0 : 0xffffff, size: 0.09, transparent: true, opacity: 0.6, depthWrite: false }));
+    dustPts.frustumCulled = false;
+    scene.add(dustPts);
+
     // ---------- viewmodel ----------
     const vm = new THREE.Group();
     camera.add(vm);
@@ -2517,6 +2572,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         mesh.userData.rightArmGroup.add(gun);
         f.gun = gun;
         f.gunKey = 'ak';
+        f.bubble = new THREE.Mesh(new THREE.SphereGeometry(1.7, 20, 14), new THREE.MeshBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.22, depthWrite: false }));
+        f.bubble.position.y = 1.3;
+        f.bubble.visible = false;
+        mesh.add(f.bubble);
         mesh.userData.leftArmGroup.rotation.x = -0.35;
         f.mesh = mesh;
         f.tag = makeTag(nm, color);
@@ -2596,6 +2655,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       me.pitch = 0;
       me.hp = 100;
       me.dead = false;
+      me.protT = 2.5;
       el.style.filter = '';
     };
     spawnMe();
@@ -2639,7 +2699,16 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       });
     };
     const handleDeath = ev => {
-      pushFeed(`${ev.kn || '☠'} ${ev.hs ? '🎯' : '🔫'} ${ev.vn}`, ev.kid === myId ? '#4ade80' : ev.vid === myId ? '#f87171' : '#ffffff');
+      const selfKill = !ev.kid || ev.kid === ev.vid;
+      pushFeed(selfKill ? `💥 ${ev.vn} self-destructed` : `${ev.kn} ${ev.hs ? '🎯' : '🔫'} ${ev.vn}`, ev.kid === myId && !selfKill ? '#4ade80' : ev.vid === myId ? '#f87171' : '#ffffff');
+      const vf = fighters.find(x => x.id === ev.vid);
+      if (vf && vf.mesh) {
+        const kp = new THREE.Vector3(vf.pos.x, vf.pos.y + 1.6, vf.pos.z);
+        const cols = [new THREE.Color(vf.color), new THREE.Color(0xffffff), new THREE.Color(0xfacc15)];
+        for (let i = 0; i < 24; i++) spawnFx({ pos: kp, size: 0.12 + Math.random() * 0.1, life: 0.9 + Math.random() * 0.6, color: cols[i % 3], vx: rnd() * 9, vy: 4 + Math.random() * 7, vz: rnd() * 9, g: 14, drag: 1 });
+        spawnFx({ pos: kp, size: 1.2, grow: 3, life: 0.3, color: new THREE.Color(vf.color), add: true, opacity: 0.8 });
+        spawnFx({ pos: kp.clone(), size: 1.0, grow: 2.5, life: 1.4, color: 0xffffff, smoke: true, opacity: 0.45, vy: 1.4, drag: 1 });
+      }
       const k = fighters.find(f => f.id === ev.kid && (f.isMe || f.isBot));
       if (k && ev.kid !== ev.vid) {
         k.kills += 1;
@@ -2672,10 +2741,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         sfx.play('ko');
         ctl.current.firing = false;
       }
-      if (f.mesh) puff(f.pos.clone().setY(f.pos.y + 1.2), f.color, 18, 7);
+
     };
     const applyDamage = (f, fromId, fromName, dmg, hs) => {
-      if (!f || f.dead || match.over || match.countdown > 0) return;
+      if (!f || f.dead || match.over || match.countdown > 0 || f.protT > 0) return;
       f.hp -= dmg;
       f.lastHitBy = { id: fromId, name: fromName };
       if (f.isMe) {
@@ -2683,6 +2752,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         sfx.play('hurt', 0.7);
         const src = fighters.find(x => x.id === fromId);
         if (src) me.hurtFrom = Math.atan2(src.pos.x - me.pos.x, src.pos.z - me.pos.z);
+        me.hurtAt = performance.now();
       }
       if (f.hp <= 0) die(f, fromId, fromName, hs);
     };
@@ -2708,6 +2778,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       w.mag -= 1;
       sfx.play(def.snd, 1);
       me.recoil += def.recoil;
+      me.protT = 0;
+      muzzleLight.intensity = def.rocket ? 7 : def.pellets > 1 ? 5 : 3.2;
+      if (!def.rocket && (w.key !== 'gatling' || Math.random() < 0.5)) ejectShell(w.key === 'shotgun');
       me.kick = 1;
       flash.visible = true;
       flash.material.rotation = Math.random() * 6.28;
@@ -2720,6 +2793,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (def.rocket) {
         const from = origin.clone().addScaledVector(fwd, 1.2).add(new THREE.Vector3(0, -0.15, 0));
         fireRocket(from, fwd.clone(), me);
+        for (let i = 0; i < 8; i++) {
+          spawnFx({ pos: origin.clone().addScaledVector(fwd, -1.2).add(new THREE.Vector3(0.3, -0.3, 0)), size: 0.6, grow: 2.6, life: 1.1 + Math.random() * 0.5, color: 0xd1d5db, smoke: true, opacity: 0.55, vx: -fwd.x * (5 + Math.random() * 4) + rnd() * 2, vy: rnd() * 1.5 + 0.5, vz: -fwd.z * (5 + Math.random() * 4) + rnd() * 2, drag: 2.2 });
+        }
         me.shake = Math.max(me.shake, 0.35);
         puff(muzzle, '#d1d5db', 6, 3);
         if (w.mag === 0) startReload();
@@ -2866,8 +2942,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       queueTracer(muzzle, res.point);
       const vol = Math.max(0, 1 - me.pos.distanceTo(b.pos) / 70);
       sfx.play('shot_ak', vol * 0.5);
+      b.protT = 0;
       if (res.fighter) {
-        damage(res.fighter, b, (b.golden ? 20 : 11) * (res.head ? 1.6 : 1), res.head);
+        damage(res.fighter, b, (b.golden ? 20 : b.wkey === 'gatling' ? 6 : 11) * (res.head ? 1.6 : 1), res.head);
         if (!res.fighter.isMe) hitFx(res.fighter, res.point, res.head);
       } else if (res.wall && res.normal) {
         inkSplat(res.point, res.normal, 0.6);
@@ -2882,6 +2959,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         const nAtk = fighters.filter(f => f.team === 'atk').length, nDef = fighters.filter(f => f.team === 'def').length;
         const b = createFighter(`${myId}_b${i}`, RIVAL_NAMES[i % RIVAL_NAMES.length], klass, { isBot: true, team: siege ? (nAtk <= nDef ? 'atk' : 'def') : null });
         b.skill = 0.85 + Math.random() * 0.5;
+        b.wkey = ['ak', 'ak', 'ak', 'gatling', 'rpg'][Math.floor(Math.random() * 5)];
+        swapGun(b, b.mesh, b.wkey);
         b.dropSeeker = Math.random() < 0.5;
         const [x, z] = pickSpawn(b);
         b.pos.set(x, 0, z);
@@ -2910,21 +2989,23 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (b.dead) {
         b.respawnT -= dt;
         b.mesh.rotation.x += (-Math.PI / 2 - b.mesh.rotation.x) * Math.min(1, dt * 6);
+        b.vel.x *= Math.exp(-dt * 2.5);
+        b.vel.z *= Math.exp(-dt * 2.5);
+        b.vel.y -= 26 * dt;
+        moveBody(b.pos, b.vel, 0.7, dt);
         if (b.respawnT <= 0) {
           const [x, z] = pickSpawn(b);
           b.pos.set(x, 0, z);
           b.vel.set(0, 0, 0);
           b.hp = 100;
           b.dead = false;
+          b.protT = 2.5;
           b.target = null;
           b.mesh.rotation.x = 0;
           if (b.golden) {
             b.golden = false;
-            b.mesh.userData.rightArmGroup.remove(b.gun);
-            b.gun = makeGunModel('ak', false);
-            b.gun.rotation.y = Math.PI;
-            b.gun.position.set(-0.05, 0.1, 0.55);
-            b.mesh.userData.rightArmGroup.add(b.gun);
+            b.gunKey = null;
+            swapGun(b, b.mesh, b.wkey || 'ak');
           }
         }
         return;
@@ -2974,14 +3055,28 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         b.react -= dt;
         b.fireCd -= dt;
         if (!frozen && b.react <= 0 && b.fireCd <= 0) {
-          if (b.burst > 0) {
-            b.burst -= 1;
-            b.fireCd = 0.14;
+          const tdist = Math.hypot(t.pos.x - b.pos.x, t.pos.z - b.pos.z);
+          if (b.wkey === 'rpg' && !b.golden) {
+            b.fireCd = 3.5 + Math.random() * 2;
+            if (tdist > 9) {
+              const fx0 = Math.sin(b.face), fz0 = Math.cos(b.face);
+              const mz = new THREE.Vector3(b.pos.x + fx0 * 1.2, b.pos.y + 1.7, b.pos.z + fz0 * 1.2);
+              const aim = new THREE.Vector3(t.pos.x + (Math.random() - 0.5) * 2, t.pos.y + 0.9, t.pos.z + (Math.random() - 0.5) * 2);
+              fireRocket(mz, aim.sub(mz).normalize(), b);
+              b.protT = 0;
+              sfx.play('shot_rpg', Math.max(0, 1 - me.pos.distanceTo(b.pos) / 70) * 0.6);
+            } else botShoot(b, t);
           } else {
-            b.burst = 2 + Math.floor(Math.random() * 3);
-            b.fireCd = 0.55 + Math.random() * 0.6;
+            const gat = b.wkey === 'gatling' && !b.golden;
+            if (b.burst > 0) {
+              b.burst -= 1;
+              b.fireCd = gat ? 0.06 : 0.14;
+            } else {
+              b.burst = gat ? 10 + Math.floor(Math.random() * 10) : 2 + Math.floor(Math.random() * 3);
+              b.fireCd = 0.55 + Math.random() * 0.6;
+            }
+            botShoot(b, t);
           }
-          botShoot(b, t);
         }
         if (b.onGround && Math.random() < 0.004) b.vel.y = 10;
       } else if (b.goal) {
@@ -2991,6 +3086,27 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         b.face = Math.atan2(dx, dz);
       }
       if (frozen) { dx = 0; dz = 0; }
+      if (dx || dz) {
+        const blocked = (ax, az) => colliders.some(c => c.top > b.pos.y + 0.6 && c.bottom < b.pos.y + 2 && ax > c.minX - 0.6 && ax < c.maxX + 0.6 && az > c.minZ - 0.6 && az < c.maxZ + 0.6);
+        const ll = Math.hypot(dx, dz) || 1;
+        const ux = dx / ll, uz = dz / ll;
+        if (blocked(b.pos.x + ux * 2.4, b.pos.z + uz * 2.4)) {
+          const side = b.avoid || (Math.random() < 0.5 ? 1 : -1);
+          let found = false;
+          for (const ang of [0.8, 1.5, 2.2]) {
+            const ca = Math.cos(ang * side), sa = Math.sin(ang * side);
+            const nx = ux * ca - uz * sa, nz = ux * sa + uz * ca;
+            if (!blocked(b.pos.x + nx * 2.4, b.pos.z + nz * 2.4)) {
+              dx = nx * ll;
+              dz = nz * ll;
+              b.avoid = side;
+              found = true;
+              break;
+            }
+          }
+          if (!found) b.avoid = -side;
+        } else b.avoid = 0;
+      }
       const l = Math.hypot(dx, dz);
       if (l > 1) { dx /= l; dz /= l; }
       b.vel.x += (dx * speed - b.vel.x) * Math.min(1, dt * 8);
@@ -3049,10 +3165,21 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (e.code === 'Tab') setShowBoard(false);
     };
     const locked = () => document.pointerLockElement === renderer.domElement;
+    const releaseInputs = () => {
+      Object.keys(keys).forEach(k => { keys[k] = false; });
+      ctl.current.firing = false;
+      ctl.current.ads = false;
+      me.semiHeld = false;
+    };
+    const onLockChange = () => { if (!locked()) releaseInputs(); };
+    document.addEventListener('pointerlockchange', onLockChange);
+    window.addEventListener('blur', releaseInputs);
     const onMouseMove = e => {
       if (!locked() || me.dead) return;
       const sens = 0.0022 / (1 + (SHOOT_WEAPONS[me.weapons[me.slot].key].zoom - 1) * me.adsT);
       me.yaw -= e.movementX * sens;
+      me.swayX = Math.max(-0.07, Math.min(0.07, (me.swayX || 0) + e.movementX * 0.0007));
+      me.swayY = Math.max(-0.05, Math.min(0.05, (me.swayY || 0) + e.movementY * 0.0006));
       me.pitch = Math.max(-1.45, Math.min(1.45, me.pitch - e.movementY * sens));
     };
     const onMouseDown = e => {
@@ -3096,7 +3223,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const drops = [];
     const spawnAirdrop = () => {
       const dropList = map.dropSpots || map.spawns;
-      const s0 = dropList[Math.floor(Math.random() * dropList.length)];
+      const s0 = dropList[(match.evIdx * 5 + 3) % dropList.length];
       const [x, z] = freeSpot(s0[0] * 0.55, s0[1] * 0.55);
       const grp = new THREE.Group();
       const crate = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), new THREE.MeshStandardMaterial({ color: 0xd4a640, metalness: 0.9, roughness: 0.25, emissive: 0x5a3a00, emissiveIntensity: 0.7 }));
@@ -3112,7 +3239,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 140, 16, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true, opacity: 0.2, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, fog: false }));
       beam.position.set(x, 70, z);
       scene.add(beam);
-      drops.push({ grp, chute, strings, beam, x, z, landed: false });
+      drops.push({ id: match.evIdx, grp, chute, strings, beam, x, z, landed: false });
       announceNow('👑 GOLDEN AK AIRDROP INCOMING', '#facc15');
       pushFeed('📦 Golden AK airdrop! Follow the light', '#facc15');
       sfx.play('powerup');
@@ -3186,6 +3313,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       f.tx = d.x; f.ty = d.y; f.tz = d.z; f.tface = d.f;
       f.hp = d.hp; f.dead = !!d.dd; f.kills = d.k || 0; f.deaths = d.dt || 0;
       f.dancing = !!d.dn;
+      f.remoteProt = !!d.sp;
       if (d.w && f.mesh && SHOOT_WEAPONS[d.w]) swapGun(f, f.mesh, d.w);
     };
     const onMsg = (tp, payload) => {
@@ -3227,6 +3355,20 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       } else if (d.t === 'h') {
         const target = fighters.find(x => x.id === d.to && (x.isMe || x.isBot));
         applyDamage(target, d.from, d.fn, d.d, d.hs);
+      } else if (d.t === 'p') {
+          if (typeof d.i === 'number' && pickups[d.i]) {
+            pickups[d.i].t = 15;
+            pickups[d.i].grp.visible = false;
+          }
+          if (typeof d.drop === 'number') {
+            const k = drops.findIndex(x => x.id === d.drop);
+            if (k >= 0) {
+              scene.remove(drops[k].grp);
+              scene.remove(drops[k].beam);
+              drops.splice(k, 1);
+              pushFeed(`👑 ${d.n} grabbed the Golden AK`, '#facc15');
+            }
+          }
       } else if (d.t === 'x') {
         handleDeath(d);
       }
@@ -3358,6 +3500,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             scene.remove(dp.grp);
             scene.remove(dp.beam);
             drops.splice(i, 1);
+            send({ t: 'p', id: myId, drop: dp.id, n: taker.name });
             if (taker.isMe) {
               addWeapon('golden');
               announceNow('👑 YOU GOT THE GOLDEN AK', '#facc15');
@@ -3437,13 +3580,32 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         const wl = Math.hypot(wx, wz);
         if (wl > 1) { wx /= wl; wz /= wl; }
         const sprint = (keys.ShiftLeft || keys.ShiftRight || (IS_TOUCH && wl > 0.95)) && fwdIn > 0 && me.adsT < 0.3;
+        me.sprinting = sprint && me.onGround;
         const speed = (me.adsT > 0.5 ? 5 : sprint ? 12 : 8.5) * (world.bullT > 0 ? 1.4 : 1) * (SHOOT_WEAPONS[me.weapons[me.slot].key].spinUp && me.spin > 0.2 ? 0.7 : 1);
         const accel = me.onGround ? 12 : 3;
         me.vel.x += (wx * speed - me.vel.x) * Math.min(1, dt * accel);
         me.vel.z += (wz * speed - me.vel.z) * Math.min(1, dt * accel);
         if (c.jump && me.onGround && !frozen) me.vel.y = 10.5;
         me.vel.y -= grav * dt;
+        const preVy = me.vel.y;
+        const wasGround = me.onGround;
         me.onGround = moveBody(me.pos, me.vel, 0.6, dt);
+        if (!wasGround && me.onGround && preVy < -11) {
+          me.landDip = Math.min(0.45, -preVy * 0.018);
+          sfx.play('land', Math.min(1, -preVy / 25));
+          for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * Math.PI * 2;
+            spawnFx({ pos: new THREE.Vector3(me.pos.x + Math.cos(a) * 0.6, me.pos.y + 0.15, me.pos.z + Math.sin(a) * 0.6), size: 0.4, grow: 1.4, life: 0.6, color: variant === 'siege' ? 0xd9a77a : 0xe9dcc4, smoke: true, opacity: 0.6, vx: Math.cos(a) * 3, vy: 0.4, vz: Math.sin(a) * 3, drag: 3 });
+          }
+        }
+        me.landDip = (me.landDip || 0) * Math.exp(-dt * 9);
+        if (me.sprinting && Math.hypot(me.vel.x, me.vel.z) > 9) {
+          me.stepT = (me.stepT || 0) - dt;
+          if (me.stepT <= 0) {
+            me.stepT = 0.28;
+            spawnFx({ pos: new THREE.Vector3(me.pos.x, me.pos.y + 0.1, me.pos.z), size: 0.3, grow: 0.9, life: 0.5, color: variant === 'siege' ? 0xd9a77a : 0xe9dcc4, smoke: true, opacity: 0.45, vy: 0.5, drag: 2 });
+          }
+        }
         bob += Math.hypot(me.vel.x, me.vel.z) * dt * (me.onGround ? 1 : 0);
 
         // weapon state
@@ -3478,7 +3640,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         me.adsT += ((c.ads && me.reloadT <= 0 ? 1 : 0) - me.adsT) * Math.min(1, dt * 10);
 
         // pickups
-        pickups.forEach(p => {
+        pickups.forEach((p, pi) => {
           if (p.t > 0) {
             p.t -= dt;
             if (p.t <= 0) p.grp.visible = true;
@@ -3496,6 +3658,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             }
             p.t = 15;
             p.grp.visible = false;
+            send({ t: 'p', id: myId, i: pi });
             announceNow(`${pd.icon} ${pd.label}`, pd.color);
             sfx.play('powerup');
           }
@@ -3554,6 +3717,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (!hitPoint && (next.y <= 0.05 || rk.life <= 0)) hitPoint = next;
         if (hitPoint) {
           scene.remove(rk.g);
+          rk.g.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
           rockets.splice(i, 1);
           explodeAt(hitPoint, rk.owner, false, rk.start);
           continue;
@@ -3571,6 +3735,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         bm.glow.material.opacity = Math.max(0, 1 - k * 1.3);
         if (k >= 1) {
           scene.remove(bm.ring, bm.glow);
+          bm.ring.geometry.dispose();
+          bm.ring.material.dispose();
+          bm.glow.material.dispose();
           booms.splice(i, 1);
         }
       }
@@ -3638,6 +3805,59 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         }
       }
       map.clouds.forEach((cl, i) => { cl.position.x += dt * (0.6 + (i % 3) * 0.3); if (cl.position.x > 170) cl.position.x = -170; });
+      shells.forEach(sh => {
+        if (sh.life <= 0) return;
+        sh.life -= dt;
+        sh.v.y -= 22 * dt;
+        sh.m.position.addScaledVector(sh.v, dt);
+        sh.m.rotation.x += 14 * dt;
+        sh.m.rotation.z += 9 * dt;
+        if (sh.m.position.y < 0.04 && sh.v.y < 0) {
+          sh.m.position.y = 0.04;
+          sh.v.y *= -0.35;
+          sh.v.x *= 0.5;
+          sh.v.z *= 0.5;
+          sh.bounced++;
+        }
+        if (sh.life <= 0) sh.m.visible = false;
+      });
+      muzzleLight.intensity *= Math.exp(-dt * 30);
+      if (gunModel && gunModel.userData.heatMat) {
+        const firingGat = c.firing && me.spin > 0.3;
+        me.heat = Math.max(0, Math.min(1, (me.heat || 0) + (firingGat ? dt * 0.35 : -dt * 0.25)));
+        gunModel.userData.heatMat.emissive.setRGB(me.heat * 1.2, me.heat * 0.35, 0);
+        if (!firingGat && me.heat > 0.35 && Math.random() < me.heat * 0.5) {
+          spawnFx({ pos: gunModel.userData.muzzle.getWorldPosition(new THREE.Vector3()), size: 0.15, grow: 0.8, life: 0.9, color: 0xe5e7eb, smoke: true, opacity: 0.35, vy: 1.2, drag: 1 });
+        }
+      }
+      if (me.protT > 0) me.protT -= dt;
+      fighters.forEach(f => {
+        if (f.isBot && f.protT > 0) f.protT -= dt;
+        if (f.bubble) {
+          const on = (f.protT > 0 || f.remoteProt) && !f.dead;
+          f.bubble.visible = on;
+          if (on) f.bubble.material.opacity = 0.16 + Math.sin(now * 0.012) * 0.08;
+        }
+      });
+      if (!me.dead && me.hp < 30) {
+        me.beatT = (me.beatT || 0) - dt;
+        if (me.beatT <= 0) {
+          me.beatT = 0.85;
+          sfx.play('heart', 0.8);
+        }
+      }
+      {
+        const pa = dustGeo.attributes.position.array;
+        const tt = now * 0.001;
+        const cx = camera.position.x, cz = camera.position.z;
+        for (let i = 0; i < DUST_N; i++) {
+          const bx = dustBase[i * 3] + tt * (variant === 'siege' ? 2.2 : 0.4), bz = dustBase[i * 3 + 2] + tt * 0.3;
+          pa[i * 3] = cx + ((((bx - cx) % 60) + 90) % 60) - 30;
+          pa[i * 3 + 1] = dustBase[i * 3 + 1] + Math.sin(tt * 0.7 + i) * 0.4;
+          pa[i * 3 + 2] = cz + ((((bz - cz) % 60) + 90) % 60) - 30;
+        }
+        dustGeo.attributes.position.needsUpdate = true;
+      }
       if (me.flashT > 0) { me.flashT -= dt; if (me.flashT <= 0) flash.visible = false; }
 
       // ----- camera + viewmodel -----
@@ -3661,8 +3881,12 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         camera.rotation.set(me.pitch + me.recoil, me.yaw, 0);
         const def = SHOOT_WEAPONS[me.weapons[me.slot].key];
         const zoom = 1 + (def.zoom - 1) * me.adsT;
-        const fov = BASE_FOV / zoom;
-        if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
+        const fov = BASE_FOV / zoom + (me.sprinting ? 7 : 0);
+        if (Math.abs(camera.fov - fov) > 0.01) {
+          camera.fov += (fov - camera.fov) * Math.min(1, dt * 12);
+          camera.updateProjectionMatrix();
+        }
+        camera.position.y -= me.landDip || 0;
         const scoped = me.weapons[me.slot].key === 'sniper' && me.adsT > 0.8;
         vm.visible = !scoped;
         const sightY = gunModel ? gunModel.userData.sightY * gunModel.userData.vmScale : 0.12;
@@ -3674,7 +3898,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           hipY + (adsY - hipY) * me.adsT - reloadDip + Math.abs(Math.cos(bob * 0.8)) * 0.012 * (1 - me.adsT),
           hipZ + (adsZ - hipZ) * me.adsT + me.kick * 0.07
         );
-        vm.rotation.set(me.kick * 0.12 + reloadDip * 1.2, 0, 0);
+        me.swayX = (me.swayX || 0) * Math.exp(-dt * 8);
+        me.swayY = (me.swayY || 0) * Math.exp(-dt * 8);
+        vm.rotation.set(me.kick * 0.12 + reloadDip * 1.2 - me.swayY, -me.swayX, me.swayX * 0.6);
+        vm.position.y -= me.landDip || 0;
       }
 
       myMesh.visible = me.dancing && !me.dead;
@@ -3694,10 +3921,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (now - lastNet > 66) {
         lastNet = now;
         const r2 = v => Math.round(v * 100) / 100;
-        const pkt = { t: 's', id: myId, n: name, c: cls.id, x: r2(me.pos.x), y: r2(me.pos.y), z: r2(me.pos.z), f: r2(me.yaw + Math.PI), hp: Math.round(me.hp), dd: me.dead ? 1 : 0, k: me.kills, dt: me.deaths, tr: net.pendingTr, w: me.weapons[me.slot].key, dn: me.dancing ? 1 : 0, ex: net.pendingEx, tm: me.team };
+        const pkt = { t: 's', id: myId, n: name, c: cls.id, x: r2(me.pos.x), y: r2(me.pos.y), z: r2(me.pos.z), f: r2(me.yaw + Math.PI), hp: Math.round(me.hp), dd: me.dead ? 1 : 0, k: me.kills, dt: me.deaths, tr: net.pendingTr, w: me.weapons[me.slot].key, dn: me.dancing ? 1 : 0, ex: net.pendingEx, tm: me.team, sp: me.protT > 0 ? 1 : 0 };
         if (net.isHost) {
           pkt.left = Math.round(match.left * 10) / 10;
-          pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.cls.id, x: r2(b.pos.x), y: r2(b.pos.y), z: r2(b.pos.z), f: r2(b.face), hp: Math.round(b.hp), dd: b.dead ? 1 : 0, k: b.kills, dt: b.deaths, dn: b.danceT > 0 ? 1 : 0, w: b.golden ? 'golden' : 'ak', tm: b.team }));
+          pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.cls.id, x: r2(b.pos.x), y: r2(b.pos.y), z: r2(b.pos.z), f: r2(b.face), hp: Math.round(b.hp), dd: b.dead ? 1 : 0, k: b.kills, dt: b.deaths, dn: b.danceT > 0 ? 1 : 0, w: b.golden ? 'golden' : b.wkey || 'ak', sp: b.protT > 0 ? 1 : 0, tm: b.team }));
           if (siege) pkt.obj = [obj.stage, Math.round(obj.prog), obj.contested ? 1 : 0, obj.capturing ? 1 : 0];
         }
         send(pkt);
@@ -3755,6 +3982,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           weapons: me.weapons.map((wp, i) => ({ key: wp.key, short: SHOOT_WEAPONS[wp.key].short, icon: SHOOT_WEAPONS[wp.key].icon, active: i === me.slot })),
           moon: Math.max(0, Math.ceil(world.moonT)),
           bull: Math.max(0, Math.ceil(world.bullT)),
+          prot: me.protT > 0 && !me.dead,
+          hurt: me.hurtAt && now - me.hurtAt < 1200 && me.hurtFrom !== undefined && !me.dead ? { ang: (-(me.hurtFrom - me.yaw - Math.PI) * 180) / Math.PI, age: now - me.hurtAt } : null,
           started: everLocked,
           dancing: me.dancing,
           spin: me.spin,
@@ -3777,6 +4006,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       document.removeEventListener('mouseup', onMouseUp);
       document.removeEventListener('touchmove', blockTouch);
       document.removeEventListener('wheel', onWheel);
+      document.removeEventListener('pointerlockchange', onLockChange);
+      window.removeEventListener('blur', releaseInputs);
       if (document.pointerLockElement) document.exitPointerLock();
       try { if (net.client) net.client.end(true); } catch (e) {}
       if (post) post.dispose();
@@ -3913,6 +4144,17 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           <div className={`w-8 h-8 mx-auto rounded-full border-2 border-white font-game text-white flex items-center justify-center text-sm ${hud.obj && hud.obj.contested ? 'bg-amber-500' : hud.obj && hud.obj.capturing ? 'bg-rose-500' : 'bg-slate-900/70'}`}>{hud.marker.k}</div>
           <div className="text-[10px] font-black text-white" style={{ textShadow: '0 1px 2px #000' }}>{hud.marker.d}m</div>
         </div>
+      )}
+      {hud.hurt && (
+        <div className="absolute left-1/2 top-1/2 pointer-events-none" style={{ transform: `translate(-50%,-50%) rotate(${hud.hurt.ang}deg)`, opacity: Math.max(0, 1 - hud.hurt.age / 1200) }}>
+          <div className="w-[230px] h-[230px] rounded-full" style={{ borderTop: '7px solid rgba(239,68,68,0.95)', borderLeft: '7px solid transparent', borderRight: '7px solid transparent', borderBottom: '7px solid transparent', filter: 'drop-shadow(0 0 6px rgba(239,68,68,0.9))' }} />
+        </div>
+      )}
+      {hud.hp < 30 && !hud.dead && (
+        <div className="absolute inset-0 pointer-events-none animate-pulse" style={{ background: 'radial-gradient(circle at center, transparent 45%, rgba(150,0,0,0.5) 100%)' }} />
+      )}
+      {hud.prot && (
+        <div className="absolute left-1/2 top-[38%] -translate-x-1/2 pointer-events-none text-[11px] md:text-xs font-black px-3 py-1 rounded-full bg-cyan-500/80 text-slate-950">🛡️ SPAWN SHIELD · shooting ends it</div>
       )}
       {hud.dancing && !hud.dead && (
         <div className="absolute left-1/2 bottom-[18%] -translate-x-1/2 pointer-events-none text-center">
@@ -5210,6 +5452,8 @@ function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    const clearKeys = () => { keysRef.current = {}; };
+    window.addEventListener('blur', clearKeys);
     sfx.startMusic();
     sfx.onTrack(name => pushKillFeed(`🎵 Now playing: ${name}`, '#c084fc'));
     const blockGesture = ev => {
@@ -6052,6 +6296,7 @@ function App() {
     return () => {
       cancelAnimationFrame(animationFrameId);
       sfx.stopMusic();
+      window.removeEventListener('blur', clearKeys);
       document.removeEventListener('gesturestart', blockGesture);
       document.removeEventListener('touchmove', blockGesture);
       window.removeEventListener('keydown', onKeyDown);
