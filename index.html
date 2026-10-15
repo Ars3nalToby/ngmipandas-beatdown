@@ -76,6 +76,43 @@
       font-weight: 800; font-size: 11px; color: #f8fafc;
     }
     .glass { background: rgba(8, 12, 30, 0.72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+    /* ---- lobby glow-up ---- */
+    .game-title.alt {
+      text-shadow:
+        0 2px 0 #ff8fa3, 0 4px 0 #f43f5e, 0 6px 0 #be123c, 0 8px 0 #881337,
+        0 10px 0 #4c0519, 0 16px 24px rgba(0,0,0,0.6), 0 0 70px rgba(251,113,133,0.45);
+    }
+    .chip { font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.14); color: #e2e8f0; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); white-space: nowrap; }
+    .ticker-track { display: flex; width: max-content; animation: ticker 48s linear infinite; }
+    @keyframes ticker { to { transform: translateX(-50%); } }
+    .poster { isolation: isolate; }
+    .poster-art { transition: transform 0.45s cubic-bezier(.2,1.2,.4,1), filter 0.3s; filter: drop-shadow(0 10px 18px rgba(0,0,0,0.6)) saturate(0.9) brightness(0.85); }
+    .poster:hover .poster-art, .poster.selected .poster-art { transform: scale(1.07) translateX(-6px) rotate(-1.5deg); filter: drop-shadow(0 12px 22px rgba(0,0,0,0.65)) saturate(1.1) brightness(1); }
+    .poster-word { position: absolute; right: -6px; top: -10px; font-family: 'Bungee', sans-serif; font-size: 78px; line-height: 1; color: transparent; -webkit-text-stroke: 1px rgba(255,255,255,0.09); pointer-events: none; z-index: 0; }
+    .holo::before {
+      content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none; opacity: 0; transition: opacity 0.3s;
+      background: linear-gradient(115deg, transparent 22%, rgba(255,80,220,0.22) 36%, rgba(80,255,255,0.24) 46%, rgba(255,240,90,0.2) 56%, transparent 70%);
+      background-size: 260% 260%; mix-blend-mode: color-dodge; animation: holo 2.6s linear infinite;
+    }
+    .holo:hover::before, .holo.selected::before { opacity: 1; }
+    @keyframes holo { from { background-position: 100% 100%; } to { background-position: 0% 0%; } }
+    .rays { position: absolute; left: 50%; top: 46%; width: 160%; aspect-ratio: 1; pointer-events: none;
+      background: repeating-conic-gradient(var(--acc) 0deg 7deg, transparent 7deg 20deg);
+      -webkit-mask-image: radial-gradient(circle, #000 12%, transparent 62%); mask-image: radial-gradient(circle, #000 12%, transparent 62%);
+      animation: raySpin 30s linear infinite; }
+    @keyframes raySpin { from { transform: translate(-50%,-50%) rotate(0deg); } to { transform: translate(-50%,-50%) rotate(360deg); } }
+    .tilt { transition: transform 0.35s cubic-bezier(.2,1,.3,1); transform-style: preserve-3d; will-change: transform; }
+    .warp-flash { animation: warp 0.75s ease-out forwards; }
+    @keyframes warp { 0% { opacity: 1; } 100% { opacity: 0; } }
+    .play-btn.alt { background: linear-gradient(180deg, #ffb3c1 0%, #fb7185 50%, #e11d48 100%); box-shadow: 0 8px 0 #9f1239, 0 14px 30px rgba(251,113,133,0.4); animation: playPulseAlt 1.8s ease-in-out infinite; }
+    .play-btn.alt:active { box-shadow: 0 2px 0 #9f1239, 0 6px 14px rgba(251,113,133,0.3); }
+    @keyframes playPulseAlt { 0%,100% { box-shadow: 0 8px 0 #9f1239, 0 14px 30px rgba(251,113,133,0.3); } 50% { box-shadow: 0 8px 0 #9f1239, 0 14px 46px rgba(251,113,133,0.65); } }
+    .intro { background: radial-gradient(circle at 50% 50%, #0b1a33 0%, #050816 70%); animation: introOut 0.45s ease-in 0.95s forwards; }
+    .intro-logo { animation: introSlam 0.65s cubic-bezier(.2,1.7,.4,1) both; }
+    .intro-ring { position: absolute; left: 50%; top: 50%; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 3px solid #34d399; animation: introRing 0.9s ease-out 0.25s both; }
+    @keyframes introSlam { 0% { transform: scale(2.4); opacity: 0; filter: blur(10px); } 60% { opacity: 1; filter: blur(0); } 100% { transform: scale(1); opacity: 1; } }
+    @keyframes introRing { 0% { transform: scale(0.3); opacity: 1; } 100% { transform: scale(9); opacity: 0; } }
+    @keyframes introOut { to { opacity: 0; visibility: hidden; } }
   </style>
 </head>
 <body class="bg-[#04060e] text-white overflow-hidden m-0 p-0">
@@ -845,8 +882,10 @@ function makeArenaTexture() {
 }
 
 // Live 3D arena spinning behind the lobby menu
-function LobbyBackdrop() {
+function LobbyBackdrop({ mode = 'beatdown' }) {
   const ref = useRef(null);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
   useEffect(() => {
     const el = ref.current;
     if (!el) return undefined;
@@ -916,10 +955,222 @@ function LobbyBackdrop() {
       walkers.push({ m, a: (i / 7) * Math.PI * 2, r: 6 + (i % 3) * 5, sp: 0.25 + Math.random() * 0.35, hop: Math.random() * 6, dir: i % 2 ? 1 : -1 });
     }
 
+    // ---------- SHOOTOUT world: dusk cartoon town with a live firefight ----------
+    const town = new THREE.Group();
+    town.visible = false;
+    scene.add(town);
+    const skyCv = document.createElement('canvas');
+    skyCv.width = 4;
+    skyCv.height = 256;
+    const sg = skyCv.getContext('2d');
+    const grad = sg.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, '#120a2e');
+    grad.addColorStop(0.45, '#3b1650');
+    grad.addColorStop(0.62, '#b8436a');
+    grad.addColorStop(0.72, '#ff8a4c');
+    grad.addColorStop(1, '#2a1020');
+    sg.fillStyle = grad;
+    sg.fillRect(0, 0, 4, 256);
+    const sky = new THREE.Mesh(new THREE.SphereGeometry(180, 32, 16), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(skyCv), side: THREE.BackSide, fog: false, depthWrite: false }));
+    town.add(sky);
+    const sun = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(255,190,110,1)', 'rgba(255,90,60,0)'), transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
+    sun.scale.set(110, 110, 1);
+    sun.position.set(-10, 4, -150);
+    town.add(sun);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(260, 260), new THREE.MeshStandardMaterial({ color: 0xa27a52, roughness: 1 }));
+    ground.rotation.x = -Math.PI / 2;
+    town.add(ground);
+    const winCv = document.createElement('canvas');
+    winCv.width = 64;
+    winCv.height = 128;
+    const wg = winCv.getContext('2d');
+    const emCv = document.createElement('canvas');
+    emCv.width = 64;
+    emCv.height = 128;
+    const eg = emCv.getContext('2d');
+    wg.fillStyle = '#ffffff';
+    wg.fillRect(0, 0, 64, 128);
+    eg.fillStyle = '#000000';
+    eg.fillRect(0, 0, 64, 128);
+    for (let y = 8; y < 120; y += 18) {
+      for (let x = 6; x < 60; x += 15) {
+        const lit = Math.random() < 0.45;
+        wg.fillStyle = lit ? '#ffe7a8' : '#2b2740';
+        wg.fillRect(x, y, 9, 11);
+        if (lit) {
+          eg.fillStyle = '#ffcf73';
+          eg.fillRect(x, y, 9, 11);
+        }
+      }
+    }
+    const winTex = new THREE.CanvasTexture(winCv);
+    const emTex = new THREE.CanvasTexture(emCv);
+    const pal = [0xf9a8d4, 0xfde68a, 0x86efac, 0x93c5fd, 0xc4b5fd, 0xfca5a5, 0x5eead4, 0xfdba74];
+    const addBld = (x, z, w, d, hgt) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, hgt, d), new THREE.MeshStandardMaterial({ color: pal[Math.floor(Math.random() * pal.length)], map: winTex, emissive: 0xffffff, emissiveMap: emTex, emissiveIntensity: 0.9, roughness: 0.85 }));
+      m.position.set(x, hgt / 2, z);
+      town.add(m);
+    };
+    for (let x = -46; x <= 46; x += 7.5) addBld(x + Math.random() * 2, -24 - Math.random() * 6, 6, 6, 6 + Math.random() * 10);
+    for (let z = -16; z <= 8; z += 7.5) {
+      addBld(-26 - Math.random() * 3, z, 6, 6, 5 + Math.random() * 8);
+      addBld(26 + Math.random() * 3, z, 6, 6, 5 + Math.random() * 8);
+    }
+    const sign = (text, bg, fg, x, y, z, ry, w) => {
+      const cv = document.createElement('canvas');
+      cv.width = 512;
+      cv.height = 128;
+      const c = cv.getContext('2d');
+      c.fillStyle = bg;
+      c.fillRect(0, 0, 512, 128);
+      c.strokeStyle = fg;
+      c.lineWidth = 8;
+      c.strokeRect(6, 6, 500, 116);
+      c.fillStyle = fg;
+      c.font = '900 64px Bungee, Arial Black, sans-serif';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText(text, 256, 68);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w / 4), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(cv), side: THREE.DoubleSide }));
+      m.position.set(x, y, z);
+      m.rotation.y = ry;
+      town.add(m);
+    };
+    sign('WAGMI FM', '#1e1b4b', '#f0abfc', -14, 13, -20.5, 0, 9);
+    sign('NGMI DINER', '#111827', '#fbbf24', 10, 11, -20.5, 0, 9);
+    sign('HODL', '#0c4a6e', '#67e8f9', -22.6, 9, -4, Math.PI / 2, 7);
+    sign('TO THE MOON', '#3f0d12', '#fb7185', 22.6, 9, -6, -Math.PI / 2, 8);
+    for (let i = 0; i < 9; i++) {
+      const crate = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.6, 1.6), new THREE.MeshStandardMaterial({ color: 0xb7793f, roughness: 0.9 }));
+      crate.position.set((Math.random() - 0.5) * 30, 0.8, -6 - Math.random() * 12);
+      crate.rotation.y = Math.random();
+      town.add(crate);
+    }
+    const gunKeys = ['ak', 'smg', 'shotgun', 'rpg', 'gatling', 'golden'];
+    const shooters = [];
+    for (let i = 0; i < (IS_TOUCH ? 4 : 6); i++) {
+      const team = i % 2;
+      const cls = PANDA_CLASSES[(i * 3 + 1) % PANDA_CLASSES.length];
+      const m = buildNgmiPandaMesh(cls, false, team ? '#fb7185' : '#38bdf8');
+      const g = makeGunModel(gunKeys[i % gunKeys.length], false);
+      g.rotation.y = Math.PI;
+      g.position.set(-0.05, 0.1, 0.55);
+      m.userData.rightArmGroup.add(g);
+      m.userData.leftArmGroup.rotation.x = -0.35;
+      town.add(m);
+      shooters.push({ m, team, row: (Math.floor(i / 2) - 1) * 5, ph: Math.random() * 6, cd: 0.3 + Math.random(), hitT: 0, x0: team ? 7 : -7 });
+    }
+    const flashTex = makeGlowTexture('rgba(255,236,170,1)', 'rgba(255,140,40,0)');
+    const tracers = [];
+    for (let i = 0; i < 10; i++) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6), 3));
+      const ln = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffe08a, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+      const fl = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashTex, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      fl.scale.set(1.3, 1.3, 1);
+      town.add(ln, fl);
+      tracers.push({ ln, fl, t: 0 });
+    }
+    let tri = 0;
+    const booms = [];
+    for (let i = 0; i < 3; i++) {
+      const b = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashTex, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      town.add(b);
+      booms.push({ s: b, t: 0 });
+    }
+    let boomCd = 2.5, bi = 0;
+    const warmSun = new THREE.DirectionalLight(0xffa36b, 0);
+    warmSun.position.set(25, 30, 35);
+    scene.add(warmSun);
+    const boomLight = new THREE.PointLight(0xffa040, 0, 30, 1.6);
+    scene.add(boomLight);
+    const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3();
+
+    const bgA = new THREE.Color(0x050816), bgB = new THREE.Color(0x2a1030);
+    let k = modeRef.current === 'shootout' ? 1 : 0;
+    let lastT = 0, px = 0, py = 0, pxs = 0, pys = 0;
+    const onMove = e => {
+      px = (e.clientX / window.innerWidth) * 2 - 1;
+      py = (e.clientY / window.innerHeight) * 2 - 1;
+    };
+    window.addEventListener('pointermove', onMove);
+
     let id;
     const loop = t => {
       id = requestAnimationFrame(loop);
       const s = t * 0.001;
+      const dt = Math.min(0.05, Math.max(0, (t - lastT) / 1000));
+      lastT = t;
+      const target = modeRef.current === 'shootout' ? 1 : 0;
+      k += (target - k) * Math.min(1, dt * 2.6);
+      if (Math.abs(target - k) < 0.002) k = target;
+      const bump = Math.sin(Math.PI * k);
+      const inTown = k > 0.5;
+      arena.visible = !inTown;
+      moon.visible = !inTown;
+      town.visible = inTown;
+      stars.material.opacity = inTown ? 0.35 : 0.85;
+      scene.background.copy(bgA).lerp(bgB, k);
+      scene.fog.color.copy(scene.background);
+      scene.fog.density = (inTown ? 0.006 : 0.008) + bump * 0.06;
+      warmSun.intensity = inTown ? 1.7 : 0;
+      dl.intensity = inTown ? 0.5 : 1.6;
+      pxs += (px - pxs) * Math.min(1, dt * 3);
+      pys += (py - pys) * Math.min(1, dt * 3);
+      cam.fov = 45 + bump * 28;
+      cam.updateProjectionMatrix();
+      if (inTown) {
+        cam.position.set(Math.sin(s * 0.12) * 7 + pxs * 3, 8.5 + bump * 10 - pys * 1.5, 30);
+        cam.lookAt(0, 3, -4);
+        shooters.forEach(sh => {
+          const z = sh.row - 8 + Math.sin(s * 0.9 + sh.ph) * 2.2;
+          sh.hitT = Math.max(0, sh.hitT - dt);
+          sh.m.position.set(sh.x0 + Math.sin(s * 0.6 + sh.ph) * 0.8, sh.hitT > 0 ? Math.sin((sh.hitT / 0.25) * Math.PI) * 0.5 : 0, z);
+          sh.m.rotation.y = sh.team ? -Math.PI / 2 : Math.PI / 2;
+          sh.cd -= dt;
+          if (sh.cd <= 0) {
+            sh.cd = 0.25 + Math.random() * 0.9;
+            const foes = shooters.filter(o => o.team !== sh.team);
+            const tg = foes[Math.floor(Math.random() * foes.length)];
+            const dir = sh.team ? -1 : 1;
+            tmpA.set(sh.m.position.x + dir * 1.25, 1.25, sh.m.position.z - 0.15);
+            tmpB.set(tg.m.position.x, 1.1 + Math.random() * 0.8, tg.m.position.z + (Math.random() - 0.5) * 1.5);
+            const tr = tracers[tri++ % tracers.length];
+            const pa = tr.ln.geometry.attributes.position;
+            pa.setXYZ(0, tmpA.x, tmpA.y, tmpA.z);
+            pa.setXYZ(1, tmpB.x, tmpB.y, tmpB.z);
+            pa.needsUpdate = true;
+            tr.fl.position.copy(tmpA);
+            tr.t = 0.08;
+            if (Math.random() < 0.35) tg.hitT = 0.25;
+          }
+        });
+        tracers.forEach(tr => {
+          tr.t = Math.max(0, tr.t - dt);
+          tr.ln.material.opacity = tr.t > 0 ? 0.95 : 0;
+          tr.fl.material.opacity = tr.t > 0 ? 1 : 0;
+        });
+        boomCd -= dt;
+        if (boomCd <= 0) {
+          boomCd = 2.2 + Math.random() * 2.5;
+          const b = booms[bi++ % booms.length];
+          b.t = 0.7;
+          b.s.position.set((Math.random() - 0.5) * 22, 1.5, -12 - Math.random() * 8);
+          boomLight.position.copy(b.s.position);
+          boomLight.intensity = 9;
+        }
+        booms.forEach(b => {
+          b.t = Math.max(0, b.t - dt);
+          const p = 1 - b.t / 0.7;
+          b.s.material.opacity = b.t > 0 ? (1 - p) : 0;
+          const sc = 2 + p * 9;
+          b.s.scale.set(sc, sc, 1);
+        });
+        boomLight.intensity = Math.max(0, boomLight.intensity - dt * 16);
+        renderer.render(scene, cam);
+        return;
+      }
+      boomLight.intensity = 0;
       arena.rotation.y = s * 0.08;
       walkers.forEach(wk => {
         wk.a += wk.sp * 0.016 * wk.dir;
@@ -929,7 +1180,7 @@ function LobbyBackdrop() {
         if (ud && ud.rightArmGroup) ud.rightArmGroup.position.z = Math.sin(s * 4 + wk.hop) > 0.7 ? 0.65 : 0.2;
       });
       stars.rotation.y = s * 0.01;
-      cam.position.x = Math.sin(s * 0.15) * 6;
+      cam.position.set(Math.sin(s * 0.15) * 6 + pxs * 4, 26 + bump * 14 - pys * 2, 46);
       cam.lookAt(0, 0, 0);
       renderer.render(scene, cam);
     };
@@ -944,6 +1195,7 @@ function LobbyBackdrop() {
     return () => {
       cancelAnimationFrame(id);
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('pointermove', onMove);
       renderer.dispose();
       if (renderer.forceContextLoss) renderer.forceContextLoss();
       el.innerHTML = '';
@@ -953,7 +1205,7 @@ function LobbyBackdrop() {
 }
 
 // Rotating 3D preview of a panda class for the character select cards
-function makePreviewScene(config, w, h, solo = true) {
+function makePreviewScene(config, w, h, solo = true, noPed = false) {
   const scene = new THREE.Scene();
   const cam = new THREE.PerspectiveCamera(30, w / h, 0.1, 100);
   cam.position.set(0, 2.7, 10.2);
@@ -983,7 +1235,7 @@ function makePreviewScene(config, w, h, solo = true) {
     new THREE.MeshStandardMaterial({ color: 0x1a1816, metalness: 0.2, roughness: 0.35, emissive: config.accent, emissiveIntensity: 0.06 })
   );
   ped.position.y = -0.16;
-  scene.add(ped);
+  if (!noPed) scene.add(ped);
   return { scene, cam, hero, minion };
 }
 
@@ -1009,6 +1261,69 @@ function getPreviewSnapshots() {
   }
   return previewSnapshots;
 }
+
+let gameArt = null;
+function getGameArt() {
+  if (gameArt) return gameArt;
+  gameArt = {};
+  let r = null;
+  const holdGun = (mesh, key) => {
+    const g = makeGunModel(key, false);
+    g.rotation.y = Math.PI;
+    g.position.set(-0.05, 0.1, 0.55);
+    mesh.userData.rightArmGroup.add(g);
+    mesh.userData.leftArmGroup.rotation.x = -0.35;
+  };
+  try {
+    r = styleRenderer(new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true }));
+    r.setPixelRatio(1);
+    r.setSize(440, 320, false);
+    {
+      const { scene, cam, hero } = makePreviewScene(PANDA_CLASSES[2], 440, 320, true, true);
+      hero.position.x = 0.8;
+      hero.rotation.y = -0.55;
+      hero.userData.rightArmGroup.position.z = 0.65;
+      const v = buildNgmiPandaMesh(PANDA_CLASSES[3], false, '#fb7185');
+      v.position.set(-2.1, 1.6, -0.8);
+      v.rotation.set(0.25, 1.0, 0.8);
+      scene.add(v);
+      cam.position.set(0, 2.9, 15);
+      cam.lookAt(-0.4, 2.3, 0);
+      r.clear();
+      r.render(scene, cam);
+      gameArt.beatdown = r.domElement.toDataURL('image/png');
+    }
+    {
+      const { scene, cam, hero } = makePreviewScene(PANDA_CLASSES[1], 440, 320, true, true);
+      holdGun(hero, 'ak');
+      hero.position.x = 0.7;
+      hero.rotation.y = 0.7;
+      const h2 = buildNgmiPandaMesh(PANDA_CLASSES[4], false, '#facc15');
+      holdGun(h2, 'rpg');
+      h2.position.set(-1.9, 0, -1.3);
+      h2.rotation.y = 0.25;
+      scene.add(h2);
+      cam.position.set(0, 2.9, 15);
+      cam.lookAt(-0.4, 2.3, 0);
+      r.clear();
+      r.render(scene, cam);
+      gameArt.shootout = r.domElement.toDataURL('image/png');
+    }
+  } catch (e) {}
+  if (r) {
+    r.dispose();
+    if (r.forceContextLoss) r.forceContextLoss();
+  }
+  return gameArt;
+}
+
+const TICKER = [
+  ['$NGMI ▲ 420.69%', '#34d399'], ['🚀 GME TO THE MOON', '#facc15'], ['💀 PaperHands_99 got RUGGED off the moon', '#fb7185'],
+  ['👑 Golden AK spotted in Cartoon Town', '#fbbf24'], ['🏰 Fort HODL is under siege', '#60a5fa'], ['☄️ 4-kill streak = MOON STRIKE', '#f87171'],
+  ['💎 DIAMOND HANDS ONLY', '#a5f3fc'], ['📉 $PAPER ▼ 69%', '#f87171'], ['🐼 EST. 2022 ON SOLANA', '#c4b5fd'],
+  ['🎉 Level up to unlock crowns, halos & jetpacks', '#86efac'], ['💃 Press V to dance & heal', '#f0abfc'], ['🥊 Gang up. Pump their %. Ring them out.', '#6ee7b7']
+];
+let introShown = false;
 
 function Showcase({ config, cosmetic }) {
   const ref = useRef(null);
@@ -4626,6 +4941,24 @@ function App() {
   const [myDeaths, setMyDeaths] = useState(0);
   const [gfx, setGfx] = useState(IS_TOUCH ? 'fast' : 'cinematic');
   const [mode, setMode] = useState('beatdown');
+  const [gameArtImgs] = useState(() => getGameArt());
+  const [intro, setIntro] = useState(() => !introShown);
+  const tiltRef = useRef(null);
+  useEffect(() => {
+    if (!intro) return undefined;
+    introShown = true;
+    const tm = setTimeout(() => setIntro(false), 1450);
+    return () => clearTimeout(tm);
+  }, []);
+  const onTilt = e => {
+    const el = tiltRef.current;
+    if (!el || IS_TOUCH) return;
+    const r = el.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width - 0.5;
+    const y = (e.clientY - r.top) / r.height - 0.5;
+    el.style.transform = `perspective(900px) rotateY(${x * 9}deg) rotateX(${-y * 7}deg) translateZ(0)`;
+  };
+  const offTilt = () => { if (tiltRef.current) tiltRef.current.style.transform = ''; };
   const [profile, setProfile] = useState(loadProfile);
   const updateProfile = patch => {
     const np = { ...loadProfile(), ...patch };
@@ -6598,14 +6931,25 @@ function App() {
 
       {screen === 'lobby' && (
         <div className="absolute inset-0 z-20 overflow-hidden">
-          <LobbyBackdrop />
-          <div className="absolute inset-0 bg-gradient-to-b from-[#050816]/70 via-[#050816]/35 to-[#050816]/90 pointer-events-none" />
+          <LobbyBackdrop mode={mode} />
+          <div className="absolute inset-0 bg-gradient-to-b from-[#050816]/60 via-transparent to-[#050816]/90 pointer-events-none" />
+          <div key={mode} className="warp-flash absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(circle at 50% 35%, ${mode === 'shootout' ? '#fb7185' : '#34d399'}66, transparent 65%)` }} />
 
           <div className="relative h-full overflow-y-auto safe-top safe-bottom">
+            <div className="relative overflow-hidden border-y border-white/10 bg-black/45 backdrop-blur-sm select-none">
+              <div className="ticker-track py-1.5 text-[11px] font-black tracking-wider">
+                {[0, 1].map(dup => (
+                  <div key={dup} className="flex gap-8 pr-8 shrink-0">
+                    <span className="whitespace-nowrap text-white">⭐ YOU · LV {profile.level} · {profile.wins} WINS</span>
+                    {TICKER.map(([txt, col], i) => <span key={i} className="whitespace-nowrap" style={{ color: col }}>{txt}</span>)}
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="min-h-full flex flex-col items-center px-4 pt-6 pb-32 md:py-10">
-              <header className="text-center select-none">
-                <div className="kicker text-[11px] md:text-xs font-black text-emerald-300">NGMI PANDAS</div>
-                <h1 className="game-title text-[15vw] sm:text-7xl md:text-8xl mt-2">{mode === 'shootout' ? 'SHOOTOUT' : 'BEATDOWN'}</h1>
+              <header key={intro ? 'intro' : 'live'} className="text-center select-none">
+                <div className={`kicker text-[11px] md:text-xs font-black ${mode === 'shootout' ? 'text-rose-300' : 'text-emerald-300'}`}>NGMI PANDAS · SEASON 1</div>
+                <h1 className={`game-title ${mode === 'shootout' ? 'alt' : ''} text-[15vw] sm:text-7xl md:text-8xl mt-2`}>{mode === 'shootout' ? 'SHOOTOUT' : 'BEATDOWN'}</h1>
                 <p className="tagline text-slate-200 text-sm md:text-lg mt-4 font-semibold">
                   {mode === 'shootout' ? (
                     soVariant === 'siege' ? (
@@ -6617,6 +6961,12 @@ function App() {
                     <>Gang up. Pump their <span className="text-amber-300 font-black">%</span>. Ring them out.</>
                   )}
                 </p>
+                <div className="tagline flex flex-wrap justify-center gap-1.5 mt-4 max-w-xl mx-auto">
+                  {(mode === 'shootout'
+                    ? ['🔫 8 weapons', '🏰 Siege mode', '☄️ Moon Strike', '👑 Golden AK', '📱 Plays on phone']
+                    : ['🌕 Moon arena', '👥 Up to 12 players', '💥 %-knockback', '🤖 AI fills empty slots', '📱 Plays on phone']
+                  ).map(c => <span key={c} className="chip">{c}</span>)}
+                </div>
               </header>
 
               <div className="w-full max-w-6xl mt-8 grid gap-5 lg:grid-cols-[1fr_330px] items-start">
@@ -6627,23 +6977,28 @@ function App() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     {[
-                      { id: 'beatdown', icon: '🥊', title: 'BEATDOWN', sub: 'Gang brawl on the moon · ring them out', grad: 'from-emerald-500/30 to-cyan-500/10', ring: '#34d399' },
-                      { id: 'shootout', icon: '🔫', title: 'SHOOTOUT', sub: 'First-person free-for-all · guns in a cartoon town', grad: 'from-rose-500/30 to-amber-400/10', ring: '#fb7185' }
+                      { id: 'beatdown', icon: '🥊', title: 'BEATDOWN', kicker: 'MOON ARENA · 3RD PERSON', sub: 'Gang brawl · pump their % · ring them out', bg: 'radial-gradient(circle at 78% 70%, #7c3aed77, transparent 60%), linear-gradient(135deg, #0a1f2e, #140b30)', ring: '#34d399' },
+                      { id: 'shootout', icon: '🔫', title: 'SHOOTOUT', kicker: 'FPS · FFA + SIEGE', sub: 'AKs, RPGs & a wooden gatling', bg: 'radial-gradient(circle at 78% 70%, #fb718577, transparent 60%), linear-gradient(135deg, #2a0d1a, #2b1607)', ring: '#fb7185', tag: 'NEW · SIEGE' }
                     ].map(g => (
                       <button
                         key={g.id}
-                        onClick={() => setMode(g.id)}
-                        className={`card relative text-left rounded-2xl border-2 p-3 md:p-4 bg-gradient-to-br ${g.grad} glass cursor-pointer ${mode === g.id ? 'selected' : 'border-slate-800 hover:border-slate-600'}`}
-                        style={mode === g.id ? { borderColor: g.ring, boxShadow: `0 0 0 1px ${g.ring}, 0 14px 30px -12px ${g.ring}` } : undefined}
+                        onClick={() => {
+                          sfx.unlock();
+                          if (mode !== g.id) sfx.play('powerup', 0.35);
+                          setMode(g.id);
+                        }}
+                        className={`card poster holo relative text-left rounded-2xl border-2 overflow-hidden h-32 md:h-40 cursor-pointer ${mode === g.id ? 'selected' : 'border-slate-800 hover:border-slate-600'}`}
+                        style={{ background: g.bg, ...(mode === g.id ? { borderColor: g.ring, boxShadow: `0 0 0 1px ${g.ring}, 0 18px 40px -14px ${g.ring}` } : {}) }}
                       >
-                        <div className="flex items-center gap-3">
-                          <span className="text-3xl md:text-4xl">{g.icon}</span>
-                          <div>
-                            <div className="font-game text-base md:text-xl text-white leading-none">{g.title}</div>
-                            <div className="text-[10px] md:text-[12px] text-slate-300 mt-1 leading-snug">{g.sub}</div>
-                          </div>
+                        <span className="poster-word hidden sm:block">{g.title}</span>
+                        {gameArtImgs[g.id] && <img src={gameArtImgs[g.id]} alt="" draggable={false} className="poster-art opacity-60 sm:opacity-100 absolute -right-8 md:-right-4 bottom-0 h-full w-auto object-contain pointer-events-none" />}
+                        <div className="relative z-10 h-full flex flex-col justify-end p-3 md:p-4 max-w-[70%] md:max-w-[58%]">
+                          <div className="hidden sm:block text-[10px] font-black tracking-widest" style={{ color: g.ring }}>{g.kicker}</div>
+                          <div className="font-game text-base md:text-2xl text-white leading-none mt-1 drop-shadow">{g.icon} {g.title}</div>
+                          <div className="hidden sm:block text-[11px] md:text-[12px] text-slate-300 mt-1 leading-snug">{g.sub}</div>
                         </div>
-                        {mode === g.id && <span className="absolute right-2 top-2 text-[9px] font-black px-1.5 py-0.5 rounded bg-white text-slate-900">SELECTED</span>}
+                        {mode === g.id && <span className="absolute left-2 top-2 z-10 text-[9px] font-black px-1.5 py-0.5 rounded bg-white text-slate-900">▶ SELECTED</span>}
+                        {g.tag && <span className="absolute right-2 top-2 z-10 text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-300 text-slate-900">{g.tag}</span>}
                       </button>
                     ))}
                   </div>
@@ -6685,13 +7040,17 @@ function App() {
 
                   <div className="stagger grid gap-4 md:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
                     <div
-                      className="glass relative rounded-3xl border overflow-hidden"
+                      ref={tiltRef}
+                      onMouseMove={onTilt}
+                      onMouseLeave={offTilt}
+                      className="tilt holo selected glass relative rounded-3xl border overflow-hidden"
                       style={{ borderColor: `${selectedClass.accent}66`, boxShadow: `0 24px 60px -24px ${selectedClass.accent}88` }}
                     >
-                      <div className="relative h-64 md:h-80" style={{ background: 'radial-gradient(circle at 50% 120%, rgba(0,0,0,0.6), transparent 55%), #05060c' }}>
+                      <div className="relative h-64 md:h-80 overflow-hidden" style={{ background: `radial-gradient(circle at 50% 120%, rgba(0,0,0,0.6), transparent 55%), radial-gradient(circle at 50% 40%, ${selectedClass.accent}22, transparent 60%), #05060c` }}>
+                        <div className="rays" style={{ '--acc': `${selectedClass.accent}2a` }} />
                         <div
-                          className="absolute left-1/2 top-[44%] -translate-x-1/2 -translate-y-1/2 w-[78%] max-w-[300px] aspect-square rounded-full"
-                          style={{ background: 'radial-gradient(circle at 38% 35%, #6d8ff0 0%, #2b4fb8 45%, #142a6b 75%, #0b1740 100%)', boxShadow: '0 0 80px rgba(80,120,255,0.35)', opacity: 0.85 }}
+                          className="absolute left-1/2 top-[44%] -translate-x-1/2 -translate-y-1/2 w-[72%] max-w-[280px] aspect-square rounded-full"
+                          style={{ background: 'radial-gradient(circle at 38% 35%, #6d8ff0 0%, #2b4fb8 45%, #142a6b 75%, #0b1740 100%)', boxShadow: `0 0 90px ${selectedClass.accent}55`, opacity: 0.8 }}
                         />
                         <Showcase config={selectedClass} cosmetic={profile.cosmetic} />
                         <span className="absolute left-3 top-3 text-[10px] font-black px-2 py-0.5 rounded-full uppercase" style={{ backgroundColor: `${selectedClass.accent}2e`, color: selectedClass.accent }}>
@@ -6722,8 +7081,12 @@ function App() {
                         return (
                           <button
                             key={c.id}
-                            onClick={() => setSelectedClass(c)}
-                            className={`card relative rounded-2xl border-2 overflow-hidden cursor-pointer text-left ${isSel ? 'selected' : 'border-slate-800 hover:border-slate-600'}`}
+                            onClick={() => {
+                              sfx.unlock();
+                              if (!isSel) sfx.play('pop', 0.5);
+                              setSelectedClass(c);
+                            }}
+                            className={`card holo relative rounded-2xl border-2 overflow-hidden cursor-pointer text-left ${isSel ? 'selected' : 'border-slate-800 hover:border-slate-600'}`}
                             style={{ background: 'radial-gradient(circle at 50% 30%, #2b4fb855, #070a14 75%)', ...(isSel ? { borderColor: c.accent, boxShadow: `0 0 0 1px ${c.accent}, 0 10px 24px -8px ${c.accent}aa` } : {}) }}
                             title={c.name}
                           >
@@ -6802,9 +7165,9 @@ function App() {
                       setResults(null);
                       setScreen(mode === 'shootout' ? 'shootout' : 'playing');
                     }}
-                    className="play-btn hidden md:block w-full py-4 rounded-2xl font-game text-2xl text-slate-950 cursor-pointer"
+                    className={`play-btn ${mode === 'shootout' ? 'alt' : ''} hidden md:block w-full py-4 rounded-2xl font-game text-2xl text-slate-950 cursor-pointer`}
                   >
-                    ▶ PLAY
+                    ▶ PLAY {mode === 'shootout' ? 'SHOOTOUT' : 'BEATDOWN'}
                   </button>
 
                   <div className="flex items-center justify-between gap-3 text-xs">
@@ -6917,11 +7280,21 @@ function App() {
                 setResults(null);
                 setScreen(mode === 'shootout' ? 'shootout' : 'playing');
               }}
-              className="play-btn w-full py-4 rounded-2xl font-game text-2xl text-slate-950 cursor-pointer"
+              className={`play-btn ${mode === 'shootout' ? 'alt' : ''} w-full py-4 rounded-2xl font-game text-xl text-slate-950 cursor-pointer`}
             >
-              ▶ PLAY AS {selectedClass.badge}
+              ▶ PLAY {mode === 'shootout' ? 'SHOOTOUT' : 'BEATDOWN'}
             </button>
           </div>
+          {intro && (
+            <div className="intro absolute inset-0 z-50 flex items-center justify-center pointer-events-none">
+              <div className="intro-ring" />
+              <div className="intro-logo text-center">
+                <div className="text-6xl md:text-7xl">🐼</div>
+                <div className="font-game text-4xl md:text-6xl text-white mt-2" style={{ textShadow: '0 4px 0 #065f46, 0 0 40px rgba(52,211,153,0.5)' }}>NGMI PANDAS</div>
+                <div className="text-[11px] md:text-xs font-black tracking-[0.4em] text-emerald-300 mt-3">BEATDOWN · SHOOTOUT</div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
