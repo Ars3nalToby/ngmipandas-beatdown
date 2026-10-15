@@ -335,6 +335,23 @@ const sfx = (() => {
       case 'powerup':
         [659, 880, 1175, 1568].forEach((f, i) => tone('square', f, 0, 0.08, 0.12 * vol, null, now + i * 0.06));
         break;
+      case 'shot_gatling':
+        tone('square', 260 * p, 90, 0.05, 0.14 * vol);
+        hiss(0.05, 0.3 * vol, 'bandpass', 2800, 900);
+        break;
+      case 'shot_rpg':
+        hiss(0.55, 0.65 * vol, 'bandpass', 300, 2200);
+        tone('sawtooth', 120, 55, 0.3, 0.3 * vol, null, null, 900);
+        break;
+      case 'explode':
+        tone('sine', 90, 24, 0.9, 1.0 * vol);
+        hiss(1.0, 0.95 * vol, 'lowpass', 2600, 90);
+        tone('square', 62, 30, 0.4, 0.28 * vol, null, null, 600);
+        break;
+      case 'dance':
+        tone('triangle', 660 * p, 0, 0.12, 0.16 * vol);
+        tone('sine', 165 * p, 0, 0.12, 0.2 * vol);
+        break;
       case 'shot_ak':
         tone('square', 150 * p, 48, 0.09, 0.28 * vol);
         hiss(0.16, 0.7 * vol, 'lowpass', 3600, 450);
@@ -1390,10 +1407,14 @@ const SHOOT_WEAPONS = {
   ak: { name: 'AK-47', short: 'AK-47', icon: '🔥', dmg: 31, rate: 0.1, mag: 30, reload: 1.8, spread: 0.016, moveSpread: 0.035, pellets: 1, auto: true, recoil: 0.024, snd: 'shot_ak', zoom: 1.45 },
   smg: { name: 'DEGEN SMG', short: 'SMG', icon: '⚡', dmg: 15, rate: 0.068, mag: 40, reload: 1.4, spread: 0.028, moveSpread: 0.025, pellets: 1, auto: true, recoil: 0.011, snd: 'shot_pistol', zoom: 1.25 },
   shotgun: { name: 'FLOOR SWEEPER', short: 'SHOTGUN', icon: '💥', dmg: 13, rate: 0.8, mag: 6, reload: 1.9, spread: 0.085, moveSpread: 0.02, pellets: 9, auto: false, recoil: 0.07, snd: 'shot_shotgun', zoom: 1.15 },
+  gatling: { name: 'WOODEN GATLING', short: 'GATLING', icon: '🌀', dmg: 13, rate: 0.04, slowRate: 0.17, mag: 120, reload: 2.6, spread: 0.03, moveSpread: 0.03, pellets: 1, auto: true, recoil: 0.005, snd: 'shot_gatling', zoom: 1.1, spinUp: true, vmScale: 0.48, hip: [0.3, -0.36, -0.62] },
+  rpg: { name: 'RPG-7', short: 'RPG', icon: '🚀', dmg: 100, rate: 0.9, mag: 1, reload: 2.3, spread: 0.003, moveSpread: 0.01, pellets: 1, auto: false, recoil: 0.11, snd: 'shot_rpg', zoom: 1.3, rocket: true, vmScale: 0.6, hip: [0.3, -0.24, -0.5] },
   golden: { name: 'GOLDEN AK', short: 'GOLD AK', icon: '👑', dmg: 55, rate: 0.09, mag: 45, reload: 1.3, spread: 0.01, moveSpread: 0.025, pellets: 1, auto: true, recoil: 0.016, snd: 'shot_ak', zoom: 1.5 }
 };
 const SHOOT_PICKUPS = {
   ak: { icon: '🔥', label: 'AK-47', color: '#f97316' },
+  gatling: { icon: '🌀', label: 'WOODEN GATLING · hold fire to spin up', color: '#d6a76a' },
+  rpg: { icon: '🚀', label: 'RPG-7 · direct hit = 100 damage', color: '#84cc16' },
   shotgun: { icon: '💥', label: 'FLOOR SWEEPER (shotgun)', color: '#fb7185' },
   smg: { icon: '⚡', label: 'DEGEN SMG', color: '#a3e635' },
   burger: { icon: '🍔', label: '+50 HP', color: '#facc15' }
@@ -1473,6 +1494,71 @@ function makeGunModel(key, view) {
     scope.position.set(0, 0.12, -0.1);
     if (view) scope.renderOrder = order++;
     g.add(scope);
+  } else if (key === 'gatling') {
+    const plyA = mat(0xdcbc8e, { metalness: 0, roughness: 0.75 }), plyB = mat(0xc49a68, { metalness: 0, roughness: 0.8 });
+    part(0.2, 0.22, 0.5, 0, 0, 0.12, plyA);
+    part(0.06, 0.24, 0.12, 0, -0.18, 0.28, plyB).rotation.x = -0.35;
+    part(0.05, 0.05, 0.42, 0, 0.27, 0.0, plyB);
+    part(0.05, 0.18, 0.05, 0, 0.18, 0.18, plyB);
+    part(0.05, 0.18, 0.05, 0, 0.18, -0.18, plyB);
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.42, 14), plyB);
+    drum.rotation.x = Math.PI / 2;
+    drum.position.set(0, -0.2, -0.02);
+    if (view) drum.renderOrder = order++;
+    g.add(drum);
+    [-0.18, -0.48, -0.8].forEach(z => {
+      const plate = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.035, 20), plyA);
+      plate.rotation.x = Math.PI / 2;
+      plate.position.set(0, 0.02, z);
+      if (view) plate.renderOrder = order++;
+      g.add(plate);
+    });
+    const barrels = new THREE.Group();
+    barrels.position.set(0, 0.02, -0.5);
+    const tubeMat = mat(0xf1e4cc, { metalness: 0, roughness: 0.6 }), tipMat = mat(0xdc2626, { metalness: 0.1, roughness: 0.45 }), band = mat(0xf59e0b, { metalness: 0, roughness: 0.5, emissive: 0x6b3a00, emissiveIntensity: 0.4 });
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.66, 8), tubeMat);
+      tube.rotation.x = Math.PI / 2;
+      tube.position.set(Math.cos(a) * 0.11, Math.sin(a) * 0.11, 0);
+      const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.042, 0.042, 0.06, 8), tipMat);
+      tip.rotation.x = Math.PI / 2;
+      tip.position.set(Math.cos(a) * 0.11, Math.sin(a) * 0.11, -0.35);
+      const rb = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.012, 0.66), band);
+      rb.position.set(Math.cos(a + 0.5) * 0.16, Math.sin(a + 0.5) * 0.16, 0);
+      [tube, tip, rb].forEach(m => { if (view) m.renderOrder = order++; barrels.add(m); });
+    }
+    g.add(barrels);
+    g.userData.barrels = barrels;
+  } else if (key === 'rpg') {
+    const tubeM = mat(0x1f2125, { metalness: 0.5, roughness: 0.45 }), woodM = mat(0x9a5b2a, { metalness: 0, roughness: 0.6 }), gripM = mat(0x3a2a1e, { metalness: 0, roughness: 0.8 }), greenM = mat(0x3f5a3a, { metalness: 0.3, roughness: 0.5 });
+    const cyl = (r1, r2, len, z, m, y = 0) => {
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, 14), m);
+      c.rotation.x = Math.PI / 2;
+      c.position.set(0, y, z);
+      if (view) c.renderOrder = order++;
+      g.add(c);
+      return c;
+    };
+    cyl(0.1, 0.05, 0.14, 0.5, tubeM);
+    cyl(0.06, 0.06, 1.0, -0.05, tubeM);
+    cyl(0.085, 0.085, 0.36, 0.12, woodM);
+    part(0.05, 0.16, 0.06, 0, -0.11, -0.16, gripM).rotation.x = 0.2;
+    part(0.05, 0.16, 0.06, 0, -0.11, 0.12, gripM).rotation.x = 0.2;
+    part(0.03, 0.08, 0.05, 0, 0.08, -0.3, tubeM);
+    const warhead = new THREE.Group();
+    const wb = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.045, 0.24, 14), greenM);
+    wb.rotation.x = -Math.PI / 2;
+    wb.position.z = -0.66;
+    const wt = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.3, 14), greenM);
+    wt.rotation.x = -Math.PI / 2;
+    wt.position.z = -0.93;
+    const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.06, 8), mat(0xcbd5e1, { metalness: 1, roughness: 0.2 }));
+    fuse.rotation.x = Math.PI / 2;
+    fuse.position.z = -1.1;
+    [wb, wt, fuse].forEach(m => { if (view) m.renderOrder = order++; warhead.add(m); });
+    g.add(warhead);
+    g.userData.warhead = warhead;
   } else if (key === 'ak' || key === 'golden') {
     const wood = gold ? goldMat : mat(0x8a4f22, { metalness: 0.05, roughness: 0.7 });
     part(0.09, 0.14, 0.32, 0, -0.04, 0.27, wood);
@@ -1503,10 +1589,10 @@ function makeGunModel(key, view) {
     g.add(dot);
   }
   const muzzle = new THREE.Object3D();
-  muzzle.position.set(0, 0.03, key === 'pistol' ? -0.36 : key === 'shotgun' ? -0.88 : key === 'sniper' ? -1.15 : key === 'smg' ? -0.55 : key === 'ak' || key === 'golden' ? -0.84 : -0.75);
+  muzzle.position.set(0, 0.03, key === 'pistol' ? -0.36 : key === 'shotgun' ? -0.88 : key === 'sniper' ? -1.15 : key === 'smg' ? -0.55 : key === 'ak' || key === 'golden' ? -0.84 : key === 'gatling' ? -0.86 : key === 'rpg' ? -1.15 : -0.75);
   g.add(muzzle);
   g.userData.muzzle = muzzle;
-  g.userData.sightY = key === 'pistol' ? 0.03 : key === 'shotgun' ? 0.04 : key === 'sniper' ? 0.12 : key === 'ak' || key === 'golden' ? 0.1 : 0.165;
+  g.userData.sightY = key === 'pistol' ? 0.03 : key === 'shotgun' ? 0.04 : key === 'sniper' ? 0.12 : key === 'ak' || key === 'golden' || key === 'rpg' ? 0.1 : key === 'gatling' ? 0.3 : 0.165;
   return g;
 }
 
@@ -1832,7 +1918,7 @@ function buildShootoutMap(scene, cinematic) {
   });
 
   const spawns = [[-48, -22], [48, 22], [-48, 22], [48, -22], [-20, -46], [20, 46], [0, 0], [-40, 0], [40, 0], [0, -40], [0, 40], [-24, 34], [24, -34]];
-  const pickupSpots = [[-24, -8, 'ak'], [24, 8, 'ak'], [14, -14, 'ak'], [-44, 12, 'ak'], [-14, -42, 'smg'], [30, 44, 'shotgun'], [-16, 30, 'shotgun'], [12, -36, 'smg'], [-38, -24, 'burger'], [38, 24, 'burger'], [-40, -38, 'ak', 9], [42, 38, 'ak', 10], [-42, 40, 'burger', 7]];
+  const pickupSpots = [[-24, -8, 'ak'], [24, 8, 'ak'], [14, -14, 'gatling'], [-44, 12, 'rpg'], [0, -40, 'gatling'], [44, -12, 'rpg'], [-14, -42, 'smg'], [30, 44, 'shotgun'], [-16, 30, 'shotgun'], [12, -36, 'smg'], [-38, -24, 'burger'], [38, 24, 'burger'], [-40, -38, 'ak', 9], [42, 38, 'rpg', 10], [-42, 40, 'burger', 7]];
   return { colliders, solids, spawns, pickupSpots, clouds, pads };
 }
 
@@ -2039,13 +2125,15 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
     const equipModel = key => {
       if (gunModel) vm.remove(gunModel);
       gunModel = makeGunModel(key, true);
-      gunModel.scale.setScalar(0.72);
+      gunModel.userData.vmScale = SHOOT_WEAPONS[key].vmScale || 0.72;
+      gunModel.scale.setScalar(gunModel.userData.vmScale);
       vm.add(gunModel);
       gunModel.add(arm);
       arm.position.set(0.05, -0.2, 0.22);
       arm.rotation.set(1.1, 0, 0.25);
       gunModel.userData.muzzle.add(flash);
       flash.visible = false;
+      swapGun(myHolder, myMesh, key);
     };
 
     // ---------- fighters ----------
@@ -2077,6 +2165,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
         gun.position.set(-0.05, 0.1, 0.55);
         mesh.userData.rightArmGroup.add(gun);
         f.gun = gun;
+        f.gunKey = 'ak';
         mesh.userData.leftArmGroup.rotation.x = -0.35;
         f.mesh = mesh;
         f.tag = makeTag(nm, color);
@@ -2091,6 +2180,36 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       const i = fighters.indexOf(f);
       if (i >= 0) fighters.splice(i, 1);
     };
+    const swapGun = (holder, mesh, key) => {
+      if (holder.gunKey === key) return;
+      if (holder.gun) mesh.userData.rightArmGroup.remove(holder.gun);
+      holder.gun = makeGunModel(key, false);
+      holder.gun.rotation.y = Math.PI;
+      holder.gun.position.set(-0.05, 0.1, 0.55);
+      mesh.userData.rightArmGroup.add(holder.gun);
+      holder.gunKey = key;
+    };
+    const poseMesh = (mesh, dancing, t, face) => {
+      const ud = mesh.userData;
+      if (dancing) {
+        const k = t * 0.009;
+        mesh.position.y += Math.abs(Math.sin(k)) * 0.38;
+        mesh.rotation.y = face + Math.sin(t * 0.0028) * 1.3;
+        ud.leftArmGroup.rotation.x = -1.7 + Math.sin(k) * 1.0;
+        ud.rightArmGroup.rotation.x = -1.7 - Math.sin(k) * 1.0;
+        ud.headGroup.rotation.z = Math.sin(t * 0.0045) * 0.3;
+      } else {
+        ud.leftArmGroup.rotation.x = -0.35;
+        ud.rightArmGroup.rotation.x = 0;
+        ud.headGroup.rotation.z = 0;
+      }
+    };
+    const myMesh = buildNgmiPandaMesh(cls, false, LOCAL_GANG_COLOR);
+    myMesh.scale.setScalar(1);
+    myMesh.rotation.order = 'YXZ';
+    myMesh.visible = false;
+    scene.add(myMesh);
+    const myHolder = {};
     const pickSpawn = self => {
       let best = map.spawns[0], bd = -1;
       map.spawns.forEach(([x, z]) => {
@@ -2114,6 +2233,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
     me.adsT = 0;
     me.recoil = 0;
     me.semiHeld = false;
+    me.spin = 0;
+    me.shake = 0;
+    me.dancing = false;
     const spawnMe = () => {
       const [x, z] = pickSpawn(me);
       me.pos.set(x, 0, z);
@@ -2128,7 +2250,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
     equipModel('ak');
 
     // ---------- network ----------
-    const net = { isHost: true, hostId: myId, seen: {}, peers: {}, status: 'CONNECTING', client: null, pendingTr: [] };
+    const net = { isHost: true, hostId: myId, seen: {}, peers: {}, status: 'CONNECTING', client: null, pendingTr: [], pendingEx: [] };
     const topic = `ngmipandas/shootout/v1/${String(room || 'NGMI-888').trim().toUpperCase()}`;
     const send = obj => {
       const c = net.client;
@@ -2170,6 +2292,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       if (k && ev.kid !== ev.vid) {
         k.kills += 1;
         k.streak += 1;
+        if (k.isBot) k.danceT = 1.8;
         if (k.isMe) {
           showHit(ev.hs, true);
           sfx.play('ko', 0.8);
@@ -2191,6 +2314,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       handleDeath(ev);
       send({ t: 'x', id: myId, ...ev });
       if (f.isMe) {
+        me.dancing = false;
         me.deathBy = { name: killerName || 'gravity', hs, id: killerId };
         el.style.filter = 'grayscale(1) contrast(1.15)';
         sfx.play('ko');
@@ -2227,7 +2351,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
         startReload();
         return;
       }
-      me.shotCd = def.rate * (world.bullT > 0 ? 0.8 : 1);
+      me.shotCd = (def.spinUp ? def.slowRate + (def.rate - def.slowRate) * me.spin : def.rate) * (world.bullT > 0 ? 0.8 : 1);
       w.mag -= 1;
       sfx.play(def.snd, 1);
       me.recoil += def.recoil;
@@ -2240,6 +2364,14 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       const origin = camera.getWorldPosition(new THREE.Vector3());
       const muzzle = gunModel.userData.muzzle.getWorldPosition(new THREE.Vector3());
       camera.getWorldDirection(fwd);
+      if (def.rocket) {
+        const from = origin.clone().addScaledVector(fwd, 1.2).add(new THREE.Vector3(0, -0.15, 0));
+        fireRocket(from, fwd.clone(), me);
+        me.shake = Math.max(me.shake, 0.35);
+        puff(muzzle, '#d1d5db', 6, 3);
+        if (w.mag === 0) startReload();
+        return;
+      }
       let hitAny = false, headAny = false;
       for (let i = 0; i < def.pellets; i++) {
         const d = fwd.clone();
@@ -2271,6 +2403,59 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       if (me.reloadT > 0 || w.mag >= def.mag) return;
       me.reloadT = def.reload;
       sfx.play('reload');
+    };
+    const rockets = [];
+    const booms = [];
+    const fireRocket = (origin, dir, owner) => {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.55, 10), new THREE.MeshStandardMaterial({ color: 0x1f2125, roughness: 0.5 }));
+      body.rotation.x = Math.PI / 2;
+      const head = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.42, 12), new THREE.MeshStandardMaterial({ color: 0x3f5a3a, roughness: 0.5 }));
+      head.rotation.x = Math.PI / 2;
+      head.position.z = 0.48;
+      const fire = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(255,210,120,1)', 'rgba(255,90,20,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      fire.scale.set(0.9, 0.9, 1);
+      fire.position.z = -0.4;
+      g.add(body, head, fire);
+      g.position.copy(origin);
+      g.lookAt(origin.clone().add(dir));
+      scene.add(g);
+      rockets.push({ g, dir: dir.clone(), owner, start: origin.clone(), life: 3, speed: 48 });
+    };
+    const explodeAt = (point, owner, visualOnly, start) => {
+      puff(point, '#ff8a2a', 26, 13);
+      puff(point, '#fde047', 12, 9);
+      puff(point, '#3f3f46', 16, 6);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.6, 1.0, 40), new THREE.MeshBasicMaterial({ color: 0xffa94d, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(point.x, Math.max(0.1, point.y - 0.8), point.z);
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(255,230,160,1)', 'rgba(255,110,30,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      glow.position.copy(point);
+      scene.add(ring, glow);
+      booms.push({ ring, glow, t: 0 });
+      const dme = me.pos.distanceTo(point);
+      me.shake = Math.max(me.shake, Math.max(0, 1.3 - dme / 22));
+      sfx.play('explode', Math.max(0.15, 1 - dme / 90));
+      if (dme < 6) inkSplat(new THREE.Vector3(point.x, 0.02, point.z), new THREE.Vector3(0, 1, 0), 3.2);
+      if (visualOnly) return;
+      net.pendingEx.push([r1(point.x), r1(point.y), r1(point.z)]);
+      if (start) queueTracer(start, point);
+      fighters.forEach(f => {
+        if (f.dead) return;
+        const cx = f.pos.x, cy = f.pos.y + 1.2, cz = f.pos.z;
+        const d = Math.hypot(cx - point.x, cy - point.y, cz - point.z);
+        if (d > 7) return;
+        let dmg = d < 1.6 ? 100 : 100 * (1 - (d - 1.6) / 5.4);
+        if (f === owner) dmg *= 0.3;
+        if (dmg < 1) return;
+        if (f.isMe || (f.isBot && net.isHost)) {
+          const kx = (cx - point.x) / (d || 1), kz = (cz - point.z) / (d || 1), kb = 16 * (1 - d / 7);
+          f.vel.x += kx * kb;
+          f.vel.z += kz * kb;
+          f.vel.y = Math.max(f.vel.y, 6 + 9 * (1 - d / 7));
+        }
+        damage(f, owner, Math.round(dmg), false);
+      });
     };
     const selectSlot = i => {
       if (i === me.slot || !me.weapons[i]) return;
@@ -2351,6 +2536,16 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
             b.mesh.userData.rightArmGroup.add(b.gun);
           }
         }
+        return;
+      }
+      if (b.danceT > 0) {
+        b.danceT -= dt;
+        b.dancing = b.danceT > 0;
+        b.hp = Math.min(100, b.hp + 15 * dt);
+        b.vel.x *= 0.85;
+        b.vel.z *= 0.85;
+        b.vel.y -= (world.moonT > 0 ? 9 : 26) * dt;
+        b.onGround = moveBody(b.pos, b.vel, 0.7, dt);
         return;
       }
       b.thinkT -= dt;
@@ -2449,6 +2644,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       const c = ctl.current;
       if (e.code === 'Space') { e.preventDefault(); c.jump = true; }
       if (e.code === 'KeyR') c.reload = true;
+      if (e.code === 'KeyV') c.dance = true;
       if (e.code === 'KeyQ') c.swap = true;
       if (/^Digit[1-5]$/.test(e.code)) c.slot = Number(e.code.slice(5)) - 1;
       if (e.code === 'KeyM') {
@@ -2568,6 +2764,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
     const applyRemote = (f, d) => {
       f.tx = d.x; f.ty = d.y; f.tz = d.z; f.tface = d.f;
       f.hp = d.hp; f.dead = !!d.dd; f.kills = d.k || 0; f.deaths = d.dt || 0;
+      f.dancing = !!d.dn;
+      if (d.w && f.mesh && SHOOT_WEAPONS[d.w]) swapGun(f, f.mesh, d.w);
     };
     const onMsg = (tp, payload) => {
       let d;
@@ -2583,6 +2781,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
           (d.b || []).forEach(bs => applyRemote(upsertRemote(bs.i, bs.n, bs.c), bs));
           if (typeof d.left === 'number' && Math.abs(match.left - d.left) > 1.5) match.left = d.left;
         }
+        (d.ex || []).forEach(e => explodeAt(new THREE.Vector3(e[0], e[1], e[2]), null, true));
         (d.tr || []).forEach(t => {
           const a = new THREE.Vector3(t[0], t[1], t[2]), b = new THREE.Vector3(t[3], t[4], t[5]);
           spawnTracer(a, b);
@@ -2748,12 +2947,30 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
         let fwdIn = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - c.mz;
         let strIn = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + c.mx;
         if (frozen) { fwdIn = 0; strIn = 0; }
+        if (c.dance) {
+          c.dance = false;
+          me.dancing = !me.dancing && !frozen;
+          if (me.dancing) announceNow('💃 DANCE BREAK · +15 HP/s', '#f472b6');
+        }
+        if (me.dancing && (Math.abs(fwdIn) + Math.abs(strIn) > 0.2 || c.firing || c.jump)) me.dancing = false;
+        if (me.dancing) {
+          fwdIn = 0;
+          strIn = 0;
+          me.hp = Math.min(100, me.hp + 15 * dt);
+          me.danceBeat = (me.danceBeat || 0) - dt;
+          if (me.danceBeat <= 0) {
+            me.danceBeat = 0.28;
+            me.danceNote = ((me.danceNote || 0) + 1) % 4;
+            sfx.play('dance', 0.6, [1, 1.26, 1.5, 1.26][me.danceNote]);
+            puff(new THREE.Vector3(me.pos.x, me.pos.y + 3, me.pos.z), me.hp >= 100 ? '#facc15' : '#f472b6', 3, 2.5);
+          }
+        }
         const sy = Math.sin(me.yaw), cy = Math.cos(me.yaw);
         let wx = -sy * fwdIn + cy * strIn, wz = -cy * fwdIn - sy * strIn;
         const wl = Math.hypot(wx, wz);
         if (wl > 1) { wx /= wl; wz /= wl; }
         const sprint = (keys.ShiftLeft || keys.ShiftRight || (IS_TOUCH && wl > 0.95)) && fwdIn > 0 && me.adsT < 0.3;
-        const speed = (me.adsT > 0.5 ? 5 : sprint ? 12 : 8.5) * (world.bullT > 0 ? 1.4 : 1);
+        const speed = (me.adsT > 0.5 ? 5 : sprint ? 12 : 8.5) * (world.bullT > 0 ? 1.4 : 1) * (SHOOT_WEAPONS[me.weapons[me.slot].key].spinUp && me.spin > 0.2 ? 0.7 : 1);
         const accel = me.onGround ? 12 : 3;
         me.vel.x += (wx * speed - me.vel.x) * Math.min(1, dt * accel);
         me.vel.z += (wz * speed - me.vel.z) * Math.min(1, dt * accel);
@@ -2777,6 +2994,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
         const w = me.weapons[me.slot];
         const def = SHOOT_WEAPONS[w.key];
         if (me.shotCd > 0) me.shotCd -= dt;
+        if (def.spinUp && c.firing && !frozen && me.reloadT <= 0 && !me.dancing) me.spin = Math.min(1, me.spin + dt * 1.7);
+        else me.spin = Math.max(0, me.spin - dt * 1.2);
+        if (gunModel && gunModel.userData.barrels) gunModel.userData.barrels.rotation.z += dt * (1 + me.spin * 32);
+        if (gunModel && gunModel.userData.warhead) gunModel.userData.warhead.visible = w.mag > 0 && me.reloadT <= 0;
         if (me.reloadT > 0) {
           me.reloadT -= dt;
           if (me.reloadT <= 0) {
@@ -2831,6 +3052,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
           const moving = Math.hypot(f.vel.x, f.vel.z) > 1 && !f.dead;
           f.mesh.position.set(f.pos.x, f.pos.y + (moving ? Math.abs(Math.sin(now * 0.012 + f.pos.x)) * 0.12 : 0), f.pos.z);
           f.mesh.rotation.y = f.face;
+          poseMesh(f.mesh, !!f.dancing && !f.dead, now, f.face);
           f.tag.sprite.visible = !f.dead;
           const hpR = Math.max(0, Math.round(f.hp));
           if (hpR !== f.tag.hp) {
@@ -2849,6 +3071,42 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
           if (t.life <= 0) t.m.visible = false;
         }
       });
+      for (let i = rockets.length - 1; i >= 0; i--) {
+        const rk = rockets[i];
+        const step = rk.speed * dt;
+        const from = rk.g.position.clone();
+        const next = from.clone().addScaledVector(rk.dir, step);
+        rk.life -= dt;
+        let hitPoint = null;
+        const wh = step > 0 ? wallHit(from, rk.dir, step) : null;
+        if (wh) hitPoint = wh.point.clone().addScaledVector(rk.dir, -0.2);
+        if (!hitPoint) {
+          const hf = fighters.find(f => f !== rk.owner && !f.dead && Math.hypot(f.pos.x - next.x, f.pos.y + 1.2 - next.y, f.pos.z - next.z) < 1.3);
+          if (hf) hitPoint = next;
+        }
+        if (!hitPoint && (next.y <= 0.05 || rk.life <= 0)) hitPoint = next;
+        if (hitPoint) {
+          scene.remove(rk.g);
+          rockets.splice(i, 1);
+          explodeAt(hitPoint, rk.owner, false, rk.start);
+          continue;
+        }
+        rk.g.position.copy(next);
+        if (Math.random() < 0.7) puff(from, '#9ca3af', 1, 0.6);
+      }
+      for (let i = booms.length - 1; i >= 0; i--) {
+        const bm = booms[i];
+        bm.t += dt;
+        const k = bm.t / 0.45;
+        bm.ring.scale.setScalar(1 + k * 8);
+        bm.ring.material.opacity = Math.max(0, 1 - k);
+        bm.glow.scale.setScalar(4 + k * 10);
+        bm.glow.material.opacity = Math.max(0, 1 - k * 1.3);
+        if (k >= 1) {
+          scene.remove(bm.ring, bm.glow);
+          booms.splice(i, 1);
+        }
+      }
       for (let i = parts.length - 1; i >= 0; i--) {
         const p = parts[i];
         p.vy -= 18 * dt;
@@ -2874,6 +3132,12 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
         camera.position.set(me.pos.x, me.pos.y + 4.5, me.pos.z + 3);
         camera.lookAt(k ? k.pos.x : me.pos.x, k ? k.pos.y + 1.5 : 0, k ? k.pos.z : me.pos.z);
         vm.visible = false;
+      } else if (me.dancing) {
+        const a = me.yaw + now * 0.0006;
+        camera.position.set(me.pos.x + Math.sin(a) * 6.5, me.pos.y + 3.6, me.pos.z + Math.cos(a) * 6.5);
+        camera.lookAt(me.pos.x, me.pos.y + 1.6, me.pos.z);
+        if (camera.fov !== BASE_FOV) { camera.fov = BASE_FOV; camera.updateProjectionMatrix(); }
+        vm.visible = false;
       } else {
         const by = me.onGround ? Math.sin(bob * 1.6) * 0.06 : 0;
         camera.position.set(me.pos.x, me.pos.y + 2.25 + by, me.pos.z);
@@ -2885,8 +3149,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
         if (Math.abs(camera.fov - fov) > 0.01) { camera.fov = fov; camera.updateProjectionMatrix(); }
         const scoped = me.weapons[me.slot].key === 'sniper' && me.adsT > 0.8;
         vm.visible = !scoped;
-        const sightY = (gunModel ? gunModel.userData.sightY : 0.16) * 0.72;
-        const hipX = 0.27, hipY = -0.25, hipZ = -0.5;
+        const sightY = gunModel ? gunModel.userData.sightY * gunModel.userData.vmScale : 0.12;
+        const [hipX, hipY, hipZ] = def.hip || [0.27, -0.25, -0.5];
         const adsX = 0, adsY = -sightY, adsZ = -0.36;
         const reloadDip = me.reloadT > 0 ? Math.sin(Math.min(1, me.reloadT / def.reload) * Math.PI) * 0.25 : 0;
         vm.position.set(
@@ -2897,6 +3161,16 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
         vm.rotation.set(me.kick * 0.12 + reloadDip * 1.2, 0, 0);
       }
 
+      myMesh.visible = me.dancing && !me.dead;
+      if (myMesh.visible) {
+        myMesh.position.copy(me.pos);
+        poseMesh(myMesh, true, now, me.yaw + Math.PI);
+      }
+      if (me.shake > 0.01) {
+        camera.position.x += (Math.random() - 0.5) * me.shake * 0.8;
+        camera.position.y += (Math.random() - 0.5) * me.shake * 0.8;
+        me.shake *= Math.exp(-dt * 7);
+      }
       if (post) post.render(now * 0.001);
       else renderer.render(scene, camera);
 
@@ -2904,13 +3178,14 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       if (now - lastNet > 66) {
         lastNet = now;
         const r2 = v => Math.round(v * 100) / 100;
-        const pkt = { t: 's', id: myId, n: name, c: cls.id, x: r2(me.pos.x), y: r2(me.pos.y), z: r2(me.pos.z), f: r2(me.yaw + Math.PI), hp: Math.round(me.hp), dd: me.dead ? 1 : 0, k: me.kills, dt: me.deaths, tr: net.pendingTr };
+        const pkt = { t: 's', id: myId, n: name, c: cls.id, x: r2(me.pos.x), y: r2(me.pos.y), z: r2(me.pos.z), f: r2(me.yaw + Math.PI), hp: Math.round(me.hp), dd: me.dead ? 1 : 0, k: me.kills, dt: me.deaths, tr: net.pendingTr, w: me.weapons[me.slot].key, dn: me.dancing ? 1 : 0, ex: net.pendingEx };
         if (net.isHost) {
           pkt.left = Math.round(match.left * 10) / 10;
-          pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.cls.id, x: r2(b.pos.x), y: r2(b.pos.y), z: r2(b.pos.z), f: r2(b.face), hp: Math.round(b.hp), dd: b.dead ? 1 : 0, k: b.kills, dt: b.deaths }));
+          pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.cls.id, x: r2(b.pos.x), y: r2(b.pos.y), z: r2(b.pos.z), f: r2(b.face), hp: Math.round(b.hp), dd: b.dead ? 1 : 0, k: b.kills, dt: b.deaths, dn: b.danceT > 0 ? 1 : 0, w: b.golden ? 'golden' : 'ak' }));
         }
         send(pkt);
         net.pendingTr = [];
+        net.pendingEx = [];
       }
 
       // ----- HUD + housekeeping (10 Hz) -----
@@ -2953,6 +3228,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
           moon: Math.max(0, Math.ceil(world.moonT)),
           bull: Math.max(0, Math.ceil(world.bullT)),
           started: everLocked,
+          dancing: me.dancing,
+          spin: me.spin,
           locked: IS_TOUCH || locked(),
           peers: 1 + Object.keys(net.peers).length,
           net: net.status
@@ -3088,6 +3365,17 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
       </div>
 
       {/* death screen */}
+      {hud.dancing && !hud.dead && (
+        <div className="absolute left-1/2 bottom-[18%] -translate-x-1/2 pointer-events-none text-center">
+          <div className="font-game text-lg md:text-2xl text-pink-300" style={{ textShadow: '0 3px 0 #000' }}>💃 DANCING {hud.hp >= 100 ? '· FULL HP' : '· +15 HP/s'}</div>
+          <div className="text-[11px] font-bold text-white/90">move, jump or shoot to stop</div>
+        </div>
+      )}
+      {hud.wkey === 'gatling' && hud.spin > 0.05 && !hud.dead && (
+        <div className="absolute left-1/2 top-[60%] -translate-x-1/2 w-28 h-1.5 bg-black/40 rounded pointer-events-none overflow-hidden">
+          <div className="h-full bg-amber-400" style={{ width: `${hud.spin * 100}%` }} />
+        </div>
+      )}
       {hud.dead && !results && (
         <div className="absolute left-1/2 top-[58%] -translate-x-1/2 pointer-events-none text-center">
           <div className="bg-rose-600 text-white px-5 py-2 rounded-lg shadow-xl border-2 border-white/80">
@@ -3136,6 +3424,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
               <span className="keycap">WHEEL</span><span>Switch weapon (or <span className="keycap">1</span>–<span className="keycap">5</span>, <span className="keycap">Q</span> last gun)</span>
               <span className="keycap">SPACE</span><span>Jump · cyan pads launch you onto rooftops</span>
               <span className="keycap">R</span><span>Reload · ammo is endless</span>
+              <span className="keycap">V</span><span>Dance 💃 · heals +15 HP/s up to 100</span>
               <span className="keycap">TAB</span><span>Scoreboard</span>
             </div>
             <div className="text-[11px] text-slate-400 mt-3">Press <span className="keycap">ESC</span> any time to pause and free your mouse</div>
@@ -3220,7 +3509,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain }) {
                 ['ADS', 'right-[108px] bottom-[6px]', () => { c.ads = !c.ads; }],
                 ['JUMP', 'right-[100px] bottom-[78px]', () => { c.jump = true; }],
                 ['R', 'right-[28px] bottom-[112px]', () => { c.reload = true; }],
-                ['⇄', 'right-[150px] bottom-[130px]', () => { c.cycle = 1; }]
+                ['⇄', 'right-[150px] bottom-[130px]', () => { c.cycle = 1; }],
+                ['💃', 'right-[168px] bottom-[64px]', () => { c.dance = true; }]
               ].map(([label, pos, fn]) => (
                 <button key={label} className={`touch-btn pointer-events-auto absolute ${pos} w-[58px] h-[58px] rounded-full bg-slate-900/70 border-2 border-white/60 font-black text-xs text-white`} onPointerDown={e => { e.stopPropagation(); fn(); }}>{label}</button>
               ))}
@@ -5422,6 +5712,7 @@ function App() {
                         <span><span className="keycap">SPACE</span></span><span>Jump</span>
                         <span><span className="keycap">R</span></span><span>Reload</span>
                         <span><span className="keycap">WHEEL</span></span><span>Switch weapon · ammo is endless</span>
+                        <span><span className="keycap">V</span></span><span>Dance · heal to 100 HP</span>
                         <span><span className="keycap">ESC</span></span><span>Pause · free your mouse</span>
                       </div>
                     </div>
