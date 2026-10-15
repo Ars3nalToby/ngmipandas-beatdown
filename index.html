@@ -264,6 +264,8 @@ const sfx = (() => {
     if (!ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
+      // iOS 17+: play game audio even when the ringer/silent switch is on
+      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
       ctx = new AC();
       const comp = ctx.createDynamicsCompressor();
       comp.threshold.value = -16;
@@ -276,13 +278,15 @@ const sfx = (() => {
       sfxBus.gain.value = 0.85;
       sfxBus.connect(master);
       musicBus = ctx.createGain();
-      musicBus.gain.value = 0.3;
+      musicBus.gain.value = 0.42;
       musicBus.connect(master);
       noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
       const d = noiseBuf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     }
-    if (ctx.state === 'suspended') ctx.resume();
+    if (ctx.state !== 'running' && ctx.state !== 'closed') {
+      try { const pr = ctx.resume(); if (pr && pr.catch) pr.catch(() => {}); } catch (e) {}
+    }
     return ctx;
   };
 
@@ -519,7 +523,9 @@ const sfx = (() => {
   };
 
   const tick = () => {
-    if (!ctx) return;
+    if (!ctx || ctx.state !== 'running') return;
+    // after the audio was suspended/interrupted, skip ahead instead of firing a burst of old notes
+    if (nextStepTime < ctx.currentTime - 0.3) nextStepTime = ctx.currentTime + 0.05;
     while (nextStepTime < ctx.currentTime + 0.15) {
       scheduleStep(step, nextStepTime);
       nextStepTime += 60 / cur().bpm / 4;
@@ -544,6 +550,8 @@ const sfx = (() => {
       if (master) master.gain.setTargetAtTime(m ? 0 : 0.9, ctx.currentTime, 0.05);
     },
     isMuted() { return muted; },
+    ctxState() { return ctx ? ctx.state : 'none'; },
+    musicOn() { return !!musicTimer; },
     setIntensity(x) { intensity = Math.max(0, Math.min(1, x)); },
     setRush(on) {
       if (rush === on) return;
@@ -570,6 +578,20 @@ const sfx = (() => {
     }
   };
 })();
+
+// keep audio alive: iOS/Android suspend or 'interrupt' the AudioContext (calls, app switch, Siri…).
+// Any tap/key brings it back; in the lobby the first tap also starts the music.
+try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
+if (typeof window !== 'undefined') {
+  const kickAudio = () => {
+    try {
+      if (sfx.ctxState() !== 'running') sfx.unlock();
+      if (window.__ngmiLobby && !sfx.musicOn()) sfx.startMusic();
+    } catch (e) {}
+  };
+  ['pointerdown', 'touchend', 'keydown'].forEach(ev => window.addEventListener(ev, kickAudio, { passive: true }));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) kickAudio(); });
+}
 
 THREE.ColorManagement.legacyMode = false;
 let GFX_CINEMATIC = true;
@@ -1352,7 +1374,7 @@ function createClipper({ src, onClip, crosshair = false, stat = null }) {
       if (r.keep && r.chunks.length) {
         const type = ((mr.mimeType || mime || 'video/webm').split(';')[0]) || 'video/webm';
         const blob = new Blob(r.chunks, { type });
-        onClip({ blob, url: URL.createObjectURL(blob), secs: Math.max(1, Math.round((r.t1 - r.t0) / 1000)), ext: type.includes('mp4') ? 'mp4' : 'webm', label: r.label || 'HIGHLIGHT' });
+        onClip({ blob, secs: Math.max(1, Math.round((r.t1 - r.t0) / 1000)), ext: type.includes('mp4') ? 'mp4' : 'webm', label: r.label || 'HIGHLIGHT' });
       }
       r.chunks = [];
     };
@@ -1460,52 +1482,153 @@ function createClipper({ src, onClip, crosshair = false, stat = null }) {
   };
 }
 
-function ClipShelf({ clips, game }) {
-  if (!CLIP_OK) return null;
-  const download = (c, name) => {
-    const a = document.createElement('a');
-    a.href = c.url;
-    a.download = name || `ngmi-pandas-${game.toLowerCase()}-${c.secs}s.${c.ext}`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+// clips live in IndexedDB so they survive going back to the lobby or closing the tab (newest 12 kept)
+const clipDB = (() => {
+  let dbp = null;
+  const open = () => dbp || (dbp = new Promise((res, rej) => {
+    try {
+      const r = indexedDB.open('ngmi_clips', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('clips', { keyPath: 'id' });
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    } catch (e) { rej(e); }
+  }));
+  const run = async (mode, fn) => {
+    const db = await open();
+    return new Promise((res, rej) => {
+      const t = db.transaction('clips', mode);
+      const req = fn(t.objectStore('clips'));
+      t.oncomplete = () => res(req ? req.result : undefined);
+      t.onerror = () => rej(t.error);
+      t.onabort = () => rej(t.error);
+    });
   };
-  const share = c => {
-    const name = `ngmi-pandas-${game.toLowerCase()}-${c.secs}s.${c.ext}`;
-    let file = null;
-    try { file = new File([c.blob], name, { type: c.blob.type }); } catch (e) {}
-    const text = `My NGMI Pandas ${game} highlight 🐼🔥 Play free: https://ngmipandas-beatdown.vercel.app`;
-    if (file && navigator.canShare && navigator.share) {
-      let ok = false;
-      try { ok = navigator.canShare({ files: [file] }); } catch (e) {}
-      if (ok) {
-        navigator.share({ files: [file], title: 'NGMI Pandas highlight', text }).catch(err => { if (!err || err.name !== 'AbortError') download(c, name); });
-        return;
-      }
+  return {
+    put: c => run('readwrite', st => st.put(c)),
+    all: () => run('readonly', st => st.getAll()),
+    del: id => run('readwrite', st => st.delete(id))
+  };
+})();
+const clipStore = (() => {
+  let list = [], loaded = false;
+  const subs = new Set(), urls = new Map();
+  const emit = () => subs.forEach(f => f(list));
+  const withUrl = r => {
+    if (!urls.has(r.id)) urls.set(r.id, URL.createObjectURL(r.blob));
+    return { ...r, url: urls.get(r.id) };
+  };
+  const drop = id => { if (urls.has(id)) { URL.revokeObjectURL(urls.get(id)); urls.delete(id); } };
+  const load = async () => {
+    loaded = true;
+    try {
+      const all = await clipDB.all();
+      const known = new Set(list.map(x => x.id));
+      list = [...list, ...all.filter(r => !known.has(r.id)).map(withUrl)].sort((a, b) => b.ts - a.ts);
+    } catch (e) {}
+    emit();
+  };
+  return {
+    subscribe(f) {
+      subs.add(f);
+      if (!loaded) load();
+      f(list);
+      return () => subs.delete(f);
+    },
+    add(c) {
+      const rec = { id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, ts: Date.now(), blob: c.blob, secs: c.secs, ext: c.ext, label: c.label, game: c.game || 'Game' };
+      list = [withUrl(rec), ...list];
+      const extra = list.slice(12);
+      list = list.slice(0, 12);
+      emit();
+      clipDB.put(rec).then(() => Promise.all(extra.map(x => clipDB.del(x.id)))).catch(() => {});
+      extra.forEach(x => drop(x.id));
+    },
+    remove(id) {
+      list = list.filter(x => x.id !== id);
+      drop(id);
+      emit();
+      clipDB.del(id).catch(() => {});
     }
-    download(c, name);
   };
+})();
+function useClips() {
+  const [l, setL] = useState([]);
+  useEffect(() => clipStore.subscribe(setL), []);
+  return l;
+}
+const clipName = c => `ngmi-pandas-${String(c.game || 'clip').toLowerCase()}-${c.secs}s.${c.ext}`;
+const downloadClip = c => {
+  const a = document.createElement('a');
+  a.href = c.url;
+  a.download = clipName(c);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+};
+const shareClip = c => {
+  let file = null;
+  try { file = new File([c.blob], clipName(c), { type: c.blob.type }); } catch (e) {}
+  const text = `My NGMI Pandas ${c.game || ''} highlight 🐼🔥 Play free: https://ngmipandas-beatdown.vercel.app`;
+  if (file && navigator.canShare && navigator.share) {
+    let ok = false;
+    try { ok = navigator.canShare({ files: [file] }); } catch (e) {}
+    if (ok) {
+      navigator.share({ files: [file], title: 'NGMI Pandas highlight', text }).catch(err => { if (!err || err.name !== 'AbortError') downloadClip(c); });
+      return;
+    }
+  }
+  downloadClip(c);
+};
+function ClipCard({ c, onDelete, w = '' }) {
+  return (
+    <div className={`${w} rounded-xl overflow-hidden border border-slate-700 bg-black`}>
+      <video src={c.url} className="w-full aspect-video bg-black" controls playsInline preload="metadata" />
+      <div className="p-2 bg-slate-950">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-[11px] font-black text-white truncate">{c.game ? `${c.game} · ` : ''}{c.label} · {c.secs}s</div>
+          {onDelete && <button onClick={onDelete} className="text-[11px] text-slate-400 px-1 cursor-pointer" title="Delete">🗑️</button>}
+        </div>
+        <div className="grid grid-cols-2 gap-1.5 mt-1.5">
+          <button onClick={() => shareClip(c)} className="py-2 rounded-lg bg-emerald-400 text-slate-950 text-[11px] font-black cursor-pointer">📤 SHARE</button>
+          <button onClick={() => downloadClip(c)} className="py-2 rounded-lg bg-slate-800 text-white text-[11px] font-black cursor-pointer">⬇️ SAVE</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+function ClipShelf({ clips }) {
+  if (!CLIP_OK) return null;
   if (!clips.length) {
-    return <div className="mt-4 text-[11px] text-slate-400 rounded-xl border border-dashed border-slate-700 px-3 py-2">🎬 Get a multi-kill — or tap 🎬 — and we save the last 30–60 s as a clip you can share.</div>;
+    return <div className="mt-3 text-[11px] text-slate-400 rounded-xl border border-dashed border-slate-700 px-3 py-2 text-left">🎬 No clip this match. Get a double kill (or tap 🎬) and the last 30–60 s are saved to 🎬 My Clips.</div>;
   }
   return (
-    <div className="mt-4 text-left">
-      <div className="text-[10px] font-black tracking-widest text-slate-400 mb-2">🎬 YOUR HIGHLIGHTS · {clips.length}</div>
+    <div className="mt-3 text-left">
+      <div className="text-[10px] font-black tracking-widest text-emerald-300 mb-2">🎬 HIGHLIGHTS FROM THIS MATCH · {clips.length}</div>
       <div className="flex gap-2 overflow-x-auto pb-1 snap-x">
-        {clips.map(c => (
-          <div key={c.url} className="snap-start shrink-0 w-[230px] rounded-xl overflow-hidden border border-slate-700 bg-black">
-            <video src={c.url} className="w-full aspect-video bg-black" controls playsInline preload="metadata" />
-            <div className="p-2 bg-slate-950">
-              <div className="text-[11px] font-black text-white truncate">{c.label} · {c.secs}s</div>
-              <div className="grid grid-cols-2 gap-1.5 mt-1.5">
-                <button onClick={() => share(c)} className="py-2 rounded-lg bg-emerald-400 text-slate-950 text-[11px] font-black cursor-pointer">📤 SHARE</button>
-                <button onClick={() => download(c)} className="py-2 rounded-lg bg-slate-800 text-white text-[11px] font-black cursor-pointer">⬇️ SAVE</button>
-              </div>
-            </div>
-          </div>
-        ))}
+        {clips.map(c => <ClipCard key={c.id} c={c} w="snap-start shrink-0 w-[230px]" />)}
       </div>
-      <div className="text-[10px] text-slate-500 mt-1 leading-snug">On phones, SHARE opens Instagram, TikTok, WhatsApp… SAVE downloads the video.</div>
+      <div className="text-[10px] text-slate-500 mt-1 leading-snug">Also saved in 🎬 My Clips in the lobby. On phones, SHARE opens Instagram, TikTok, WhatsApp…</div>
+    </div>
+  );
+}
+function ClipGallery({ onClose }) {
+  const clips = useClips();
+  return (
+    <div className="fixed inset-0 z-[70] bg-slate-950/85 flex items-center justify-center p-3 pointer-events-auto safe-top safe-bottom" onPointerDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="glass border border-slate-600 rounded-3xl p-4 w-[min(96vw,780px)] max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-3">
+          <div className="font-game text-xl text-white">🎬 MY CLIPS</div>
+          <button onClick={onClose} className="w-9 h-9 rounded-xl bg-slate-800 text-white font-black cursor-pointer">✕</button>
+        </div>
+        {!CLIP_OK ? (
+          <div className="text-sm text-slate-300">This browser can't record clips. Try the latest Chrome, or Safari on iOS 15+.</div>
+        ) : !clips.length ? (
+          <div className="text-sm text-slate-300 leading-relaxed">No clips yet. Get a <b className="text-white">double kill</b> in Shootout or a <b className="text-white">double K.O.</b> in Beatdown and the last 30–60 seconds are saved here automatically. You can also tap <b className="text-white">🎬</b> during a match (or press <span className="keycap">C</span> in Shootout).</div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{clips.map(c => <ClipCard key={c.id} c={c} onDelete={() => clipStore.remove(c.id)} />)}</div>
+        )}
+        <div className="text-[10px] text-slate-500 mt-3">Saved on this device · newest 12 kept. On phones, SHARE opens Instagram, TikTok, WhatsApp…</div>
+      </div>
     </div>
   );
 }
@@ -2802,10 +2925,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
   const [announce, setAnnounce] = useState(null);
   const [results, setResults] = useState(null);
   const clipRef = useRef(null);
-  const [clips, setClips] = useState([]);
+  const allClips = useClips();
+  const [matchT0] = useState(() => Date.now());
+  const clips = allClips.filter(cl => cl.ts >= matchT0 && cl.game === 'Shootout');
   const [clipToast, setClipToast] = useState(null);
-  const clipsRef = useRef([]);
-  useEffect(() => () => clipsRef.current.forEach(cl => URL.revokeObjectURL(cl.url)), []);
+  const [showClips, setShowClips] = useState(false);
   const [showBoard, setShowBoard] = useState(false);
   const [muted, setMutedS] = useState(sfx.isMuted());
 
@@ -2832,10 +2956,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         crosshair: true,
         stat: () => `K ${me.kills} · D ${me.deaths}`,
         onClip: cl => {
-          clipsRef.current = [...clipsRef.current, cl];
-          if (clipsRef.current.length > 4) { URL.revokeObjectURL(clipsRef.current[0].url); clipsRef.current = clipsRef.current.slice(-4); }
-          setClips(clipsRef.current);
-          setClipToast(`🎬 Clip saved · ${cl.secs}s`);
+          clipStore.add({ ...cl, game: 'Shootout' });
+          setClipToast(`🎬 Clip saved · ${cl.secs}s → My Clips`);
           setTimeout(() => setClipToast(null), 2600);
         }
       });
@@ -4789,6 +4911,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           <div className="leading-none"><span className="text-[9px] text-slate-400 font-bold block">K / D</span><span className="font-game text-base text-emerald-300">{hud.kills}<span className="text-slate-500">/</span><span className="text-rose-300">{hud.deaths}</span></span></div>
           <span className="hidden md:inline text-[10px] font-bold text-cyan-300">● {hud.net} ({hud.peers})</span>
           <button onClick={() => { const m = !muted; sfx.setMuted(m); setMutedS(m); }} className="touch-btn w-8 h-8 rounded-lg bg-slate-800 text-sm cursor-pointer">{muted ? '🔇' : '🔊'}</button>
+          {IS_TOUCH && clips.length > 0 && (
+            <button onClick={() => setShowClips(true)} className="touch-btn h-8 px-2 rounded-lg bg-rose-600/90 text-[11px] font-black text-white cursor-pointer">🎬 {clips.length}</button>
+          )}
           {IS_TOUCH ? (
             <button onClick={() => setTouchMenu(true)} className="touch-btn w-8 h-8 rounded-lg bg-slate-800 text-sm cursor-pointer">⚙️</button>
           ) : (
@@ -4915,6 +5040,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 <button onClick={() => { const m = !muted; sfx.setMuted(m); setMutedS(m); }} className="py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 font-black text-sm cursor-pointer">{muted ? '🔇 UNMUTE' : '🔊 MUTE'}</button>
                 <button onClick={onExit} className="py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 font-black text-sm cursor-pointer">🏠 BACK TO LOBBY</button>
               </div>
+              <button onClick={() => setShowClips(true)} className="py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-rose-400/40 font-black text-sm cursor-pointer">🎬 MY CLIPS{allClips.length ? ` · ${allClips.length}` : ''}</button>
             </div>
             <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-left text-[12px] mt-4 text-slate-200">
               <span className="flex gap-1"><span className="keycap">W</span><span className="keycap">A</span><span className="keycap">S</span><span className="keycap">D</span></span><span>Move · <span className="keycap">SHIFT</span> sprint</span>
@@ -4960,6 +5086,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         </div>
       )}
 
+      {showClips && <ClipGallery onClose={() => setShowClips(false)} />}
       {clipToast && !results && (
         <div className="absolute left-1/2 top-[calc(env(safe-area-inset-top)+64px)] -translate-x-1/2 pointer-events-none text-[11px] font-black px-3 py-1 rounded-full bg-slate-950/85 border border-emerald-400/60 text-emerald-300 whitespace-nowrap">{clipToast}</div>
       )}
@@ -5009,6 +5136,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               <button onClick={() => { const m = !muted; sfx.setMuted(m); setMutedS(m); }} className="py-3 rounded-xl bg-slate-800 font-black text-sm cursor-pointer">{muted ? '🔇 Sound off' : '🔊 Sound on'}</button>
               <button onClick={onExit} className="py-3 rounded-xl bg-rose-600 font-black text-sm cursor-pointer">🏠 Lobby</button>
             </div>
+            <button onClick={() => setShowClips(true)} className="w-full mt-2 py-3 rounded-xl bg-slate-800 border border-rose-400/40 font-black text-sm text-white cursor-pointer">🎬 My clips{allClips.length ? ` · ${allClips.length}` : ''}</button>
             <button onClick={() => setTouchMenu(false)} className="play-btn w-full mt-3 py-3 rounded-2xl font-game text-lg text-slate-950 cursor-pointer">▶ BACK TO GAME</button>
           </div>
         </div>
@@ -5113,8 +5241,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 </div>
               ))}
             </div>
+            <ClipShelf clips={clips} />
             <XpPanel xp={results.xp} />
-            <ClipShelf clips={clips} game="Shootout" />
             <div className="flex gap-3 mt-4">
               <button onClick={onAgain} className="play-btn flex-1 py-3 rounded-2xl font-game text-lg text-slate-950 cursor-pointer">PLAY AGAIN</button>
               <button onClick={onExit} className="px-5 py-3 rounded-2xl bg-slate-800 font-bold cursor-pointer">LOBBY</button>
@@ -5174,7 +5302,8 @@ function awardXp({ kills = 0, deaths = 0, won = false, headshots = 0, bestStreak
   return { gained, parts, before, after: p.level, unlocked: COSMETICS.filter(c => c.lvl > before && c.lvl <= p.level), profile: p };
 }
 let voiceCache = null;
-function sayLine(text) {
+function sayLine() {} // announcer voice removed (kept as a no-op so call sites stay simple)
+function sayLineUnused(text) {
   try {
     if (!window.speechSynthesis || sfx.isMuted() || !loadProfile().voice) return;
     window.speechSynthesis.cancel();
@@ -5312,8 +5441,10 @@ function App() {
   const [mode, setMode] = useState('beatdown');
   const [gameArtImgs] = useState(() => getGameArt());
   const bdClipRef = useRef(null);
-  const bdClipsRef = useRef([]);
-  const [bdClips, setBdClips] = useState([]);
+  const bdT0Ref = useRef(Date.now());
+  const allClipsApp = useClips();
+  const bdClips = allClipsApp.filter(cl => cl.ts >= bdT0Ref.current && cl.game === 'Beatdown');
+  const [showClipsApp, setShowClipsApp] = useState(false);
   const [bdClipToast, setBdClipToast] = useState(null);
   const [loreOpen, setLoreOpen] = useState(false);
   const [a2hs, setA2hs] = useState(() => {
@@ -5343,9 +5474,11 @@ function App() {
     setProfile(np);
   };
   useEffect(() => {
+    window.__ngmiLobby = screen === 'lobby';
     if (screen === 'lobby') {
       setProfile(loadProfile());
       releaseOrientation();
+      if (sfx.ctxState() === 'running' && !sfx.musicOn()) sfx.startMusic();
     }
   }, [screen]);
   const [soVariant, setSoVariant] = useState('ffa');
@@ -5438,16 +5571,12 @@ function App() {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.innerHTML = '';
     container.appendChild(renderer.domElement);
-    bdClipsRef.current.forEach(cl => URL.revokeObjectURL(cl.url));
-    bdClipsRef.current = [];
-    setBdClips([]);
+    bdT0Ref.current = Date.now();
     bdClipRef.current = loadProfile().clips !== false ? createClipper({
       src: renderer.domElement,
       onClip: cl => {
-        bdClipsRef.current = [...bdClipsRef.current, cl];
-        if (bdClipsRef.current.length > 4) { URL.revokeObjectURL(bdClipsRef.current[0].url); bdClipsRef.current = bdClipsRef.current.slice(-4); }
-        setBdClips(bdClipsRef.current);
-        setBdClipToast(`🎬 Clip saved · ${cl.secs}s`);
+        clipStore.add({ ...cl, game: 'Beatdown' });
+        setBdClipToast(`🎬 Clip saved · ${cl.secs}s → My Clips`);
         setTimeout(() => setBdClipToast(null), 2600);
       }
     }) : null;
@@ -7368,6 +7497,9 @@ function App() {
                     ? ['🔫 8 weapons', '🏰 Siege mode', '☄️ Moon Strike', '👑 Golden AK', '📱 Plays on phone']
                     : ['🌕 Moon arena', '👥 Up to 12 players', '💥 %-knockback', '🤖 AI fills empty slots', '📱 Plays on phone']
                   ).map(c => <span key={c} className="chip">{c}</span>)}
+                  {CLIP_OK && (
+                    <button onClick={() => setShowClipsApp(true)} className="chip cursor-pointer" style={{ background: 'rgba(244,63,94,0.25)', borderColor: 'rgba(251,113,133,0.7)', color: '#fff' }}>🎬 My clips · {allClipsApp.length}</button>
+                  )}
                 </div>
               </header>
 
@@ -7516,6 +7648,12 @@ function App() {
                 </section>
 
                 <aside className="side-panel glass border border-slate-700/70 rounded-3xl p-5 space-y-4">
+                  {CLIP_OK && (
+                    <button onClick={() => setShowClipsApp(true)} className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl border border-rose-400/40 bg-rose-500/10 cursor-pointer">
+                      <span className="font-black text-sm text-white">🎬 MY CLIPS</span>
+                      <span className="text-[11px] font-black text-rose-200">{allClipsApp.length ? `${allClipsApp.length} saved ›` : 'none yet ›'}</span>
+                    </button>
+                  )}
                   {a2hs && (
                     <div className="relative rounded-2xl border border-sky-400/40 bg-sky-500/10 p-3 pr-9 text-[12px] text-slate-200 leading-snug">
                       <div className="font-black text-sky-300 text-[11px] tracking-widest mb-0.5">📲 PLAY FULL-SCREEN</div>
@@ -7593,13 +7731,6 @@ function App() {
                     <span className="font-bold text-slate-300">🎬 Auto highlight clips</span>
                     <button onClick={() => updateProfile({ clips: profile.clips === false })} className={`relative w-11 h-6 rounded-full transition cursor-pointer ${profile.clips !== false ? 'bg-emerald-500' : 'bg-slate-700'}`}>
                       <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${profile.clips !== false ? 'left-[22px]' : 'left-0.5'}`} />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-3 text-xs">
-                    <span className="font-bold text-slate-300">Announcer voice</span>
-                    <button onClick={() => updateProfile({ voice: !profile.voice })} className={`relative w-11 h-6 rounded-full transition cursor-pointer ${profile.voice ? 'bg-emerald-500' : 'bg-slate-700'}`}>
-                      <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${profile.voice ? 'left-[22px]' : 'left-0.5'}`} />
                     </button>
                   </div>
 
@@ -7716,6 +7847,7 @@ function App() {
         </div>
       )}
 
+      {showClipsApp && <ClipGallery onClose={() => setShowClipsApp(false)} />}
       {screen === 'playing' && bdClipToast && (
         <div className="absolute left-1/2 top-[calc(env(safe-area-inset-top)+96px)] -translate-x-1/2 z-40 pointer-events-none text-[11px] font-black px-3 py-1 rounded-full bg-slate-950/85 border border-emerald-400/60 text-emerald-300 whitespace-nowrap">{bdClipToast}</div>
       )}
@@ -7761,8 +7893,8 @@ function App() {
               <div className="bg-slate-900/80 rounded-xl py-2"><div className="font-game text-xl text-pink-300">{Math.round(results.biggestHit)}</div><div className="text-[10px] text-slate-400 font-bold">BIGGEST HIT</div></div>
               <div className="bg-slate-900/80 rounded-xl py-2"><div className="font-game text-xl text-sky-300">{results.falls}</div><div className="text-[10px] text-slate-400 font-bold">TIMES YOU FELL</div></div>
             </div>
+            <ClipShelf clips={bdClips} />
             <XpPanel xp={results.xp} />
-            <ClipShelf clips={bdClips} game="Beatdown" />
             <div className="flex gap-3 mt-5">
               <button
                 onClick={() => {
@@ -7833,10 +7965,11 @@ function App() {
                 {CLIP_OK && profile.clips !== false && (
                   <button
                     onClick={() => { if (bdClipRef.current) { bdClipRef.current.highlight('MY CLIP', 1200); setBdClipToast('🎬 Saving the last 30–60 s…'); } }}
-                    className="touch-btn w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-[15px] cursor-pointer"
+                    className="touch-btn relative w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-[15px] cursor-pointer"
                     title="Save a clip of the last 30-60 s"
                   >
                     🎬
+                    {bdClips.length > 0 && <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[9px] font-black leading-4">{bdClips.length}</span>}
                   </button>
                 )}
                 <button
