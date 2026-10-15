@@ -1565,21 +1565,41 @@ const downloadClip = c => {
   a.click();
   a.remove();
 };
-const shareClip = c => {
-  let file = null;
-  try { file = new File([c.blob], clipName(c), { type: c.blob.type }); } catch (e) {}
-  const text = `My NGMI Pandas ${c.game || ''} highlight 🐼🔥 Play free: https://ngmipandas-beatdown.vercel.app`;
-  if (file && navigator.canShare && navigator.share) {
-    let ok = false;
-    try { ok = navigator.canShare({ files: [file] }); } catch (e) {}
-    if (ok) {
-      navigator.share({ files: [file], title: 'NGMI Pandas highlight', text }).catch(err => { if (!err || err.name !== 'AbortError') downloadClip(c); });
-      return;
-    }
+// Websites can't write into the Photos app directly. The phone's own share sheet can:
+// iPhone shows "Save Video" (→ Photos), Android shows "Save to device"/Google Photos.
+// Files only — adding text/title makes iOS hide "Save Video".
+const clipFile = c => {
+  try { return new File([c.blob], clipName(c), { type: c.blob.type || 'video/mp4' }); } catch (e) { return null; }
+};
+const canShareFile = f => {
+  if (!f || !navigator.share || !navigator.canShare) return false;
+  try { return navigator.canShare({ files: [f] }); } catch (e) { return false; }
+};
+const CAN_SAVE_TO_PHOTOS = IS_TOUCH && typeof navigator !== 'undefined' && !!navigator.share && !!navigator.canShare;
+// returns 'sheet' | 'cancel' | 'download' via callback
+const sendClip = (c, done) => {
+  const f = clipFile(c);
+  if (IS_TOUCH && canShareFile(f)) {
+    navigator.share({ files: [f] }).then(() => done && done('sheet')).catch(err => {
+      if (err && err.name === 'AbortError') { if (done) done('cancel'); return; }
+      downloadClip(c);
+      if (done) done('download');
+    });
+    return;
   }
   downloadClip(c);
+  if (done) done('download');
 };
+const shareClip = c => sendClip(c);
 function ClipCard({ c, onDelete, w = '' }) {
+  const [msg, setMsg] = useState(null);
+  const save = () => {
+    if (CAN_SAVE_TO_PHOTOS) setMsg(IS_IOS ? '👉 In the menu, tap “Save Video”' : '👉 In the menu, pick Save / Photos');
+    sendClip(c, r => {
+      setMsg(r === 'sheet' ? '✅ Done — open your Photos app' : r === 'download' ? '⬇️ Downloaded' : null);
+      setTimeout(() => setMsg(null), 4000);
+    });
+  };
   return (
     <div className={`${w} rounded-xl overflow-hidden border border-slate-700 bg-black`}>
       <video src={c.url} className="w-full aspect-video bg-black" controls playsInline preload="metadata" />
@@ -1588,10 +1608,13 @@ function ClipCard({ c, onDelete, w = '' }) {
           <div className="text-[11px] font-black text-white truncate">{c.game ? `${c.game} · ` : ''}{c.label} · {c.secs}s</div>
           {onDelete && <button onClick={onDelete} className="text-[11px] text-slate-400 px-1 cursor-pointer" title="Delete">🗑️</button>}
         </div>
-        <div className="grid grid-cols-2 gap-1.5 mt-1.5">
-          <button onClick={() => shareClip(c)} className="py-2 rounded-lg bg-emerald-400 text-slate-950 text-[11px] font-black cursor-pointer">📤 SHARE</button>
-          <button onClick={() => downloadClip(c)} className="py-2 rounded-lg bg-slate-800 text-white text-[11px] font-black cursor-pointer">⬇️ SAVE</button>
+        <div className={`grid ${CAN_SAVE_TO_PHOTOS ? 'grid-cols-1' : 'grid-cols-2'} gap-1.5 mt-1.5`}>
+          <button onClick={save} className="py-2.5 rounded-lg bg-emerald-400 text-slate-950 text-[12px] font-black cursor-pointer">
+            {CAN_SAVE_TO_PHOTOS ? '📸 SAVE TO PHOTOS / SHARE' : '⬇️ DOWNLOAD'}
+          </button>
+          {!CAN_SAVE_TO_PHOTOS && <button onClick={() => shareClip(c)} className="py-2.5 rounded-lg bg-slate-800 text-white text-[11px] font-black cursor-pointer">📤 SHARE</button>}
         </div>
+        {msg && <div className="mt-1.5 text-[11px] font-black text-amber-300 text-center">{msg}</div>}
       </div>
     </div>
   );
@@ -1607,7 +1630,7 @@ function ClipShelf({ clips }) {
       <div className="flex gap-2 overflow-x-auto pb-1 snap-x">
         {clips.map(c => <ClipCard key={c.id} c={c} w="snap-start shrink-0 w-[230px]" />)}
       </div>
-      <div className="text-[10px] text-slate-500 mt-1 leading-snug">Also saved in 🎬 My Clips in the lobby. On phones, SHARE opens Instagram, TikTok, WhatsApp…</div>
+      <div className="text-[10px] text-slate-500 mt-1 leading-snug">Also kept in 🎬 My Clips. iPhone: tap 📸 then “Save Video” → it goes straight to your Photos.</div>
     </div>
   );
 }
@@ -1627,7 +1650,7 @@ function ClipGallery({ onClose }) {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{clips.map(c => <ClipCard key={c.id} c={c} onDelete={() => clipStore.remove(c.id)} />)}</div>
         )}
-        <div className="text-[10px] text-slate-500 mt-3">Saved on this device · newest 12 kept. On phones, SHARE opens Instagram, TikTok, WhatsApp…</div>
+        <div className="text-[10px] text-slate-500 mt-3">Kept in the game on this device (newest 12). iPhone: 📸 → “Save Video” puts it in your Photos app; the same menu also posts to Instagram, TikTok, WhatsApp.</div>
       </div>
     </div>
   );
