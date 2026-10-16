@@ -4320,7 +4320,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const startNet = () => {
       if (!window.mqtt) return;
       try {
-        const client = window.mqtt.connect('wss://broker.emqx.io:8084/mqtt', { clientId: `ngmis_${myId}`, clean: true, connectTimeout: 5000 });
+        const client = window.mqtt.connect(MQTT_URL, { clientId: `ngmis_${myId}`, clean: true, connectTimeout: 5000 });
         net.client = client;
         client.on('connect', () => { net.status = 'LIVE'; client.subscribe(topic); });
         client.on('error', () => { net.status = 'OFFLINE'; });
@@ -5590,10 +5590,73 @@ function XpPanel({ xp }) {
   );
 }
 
+const MQTT_URL = 'wss://broker.emqx.io:8084/mqtt';
+let mqttLoading = null;
+function loadMqtt() {
+  if (window.mqtt) return Promise.resolve(window.mqtt);
+  if (!mqttLoading) {
+    mqttLoading = new Promise((res, rej) => {
+      const sc = document.createElement('script');
+      sc.src = 'https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js';
+      sc.async = true;
+      sc.onload = () => res(window.mqtt);
+      sc.onerror = () => { mqttLoading = null; rej(new Error('mqtt load failed')); };
+      document.body.appendChild(sc);
+    });
+  }
+  return mqttLoading;
+}
+// Lobby only: listens (never sends) to see who is fighting in a room right now.
+function useRoomPresence(room, active) {
+  const [names, setNames] = useState(null);
+  useEffect(() => {
+    if (!active) { setNames(null); return undefined; }
+    let alive = true;
+    let client = null;
+    const seen = {};
+    const topic = `ngmipandas/beatdown3d/v3/${cleanRoom(room)}`;
+    const startT = setTimeout(() => {
+      loadMqtt().then(mq => {
+        if (!alive || !mq) return;
+        client = mq.connect(MQTT_URL, { clientId: `ngmi_lobby_${Math.random().toString(36).slice(2, 9)}`, clean: true, connectTimeout: 4000 });
+        client.on('connect', () => client.subscribe(topic));
+        client.on('message', (t, payload) => {
+          try {
+            const d = JSON.parse(payload.toString());
+            if (d && d.t === 's' && typeof d.id === 'string' && d.id.length < 40) seen[d.id] = { t: Date.now(), name: String(d.name || 'Panda').slice(0, 16) };
+          } catch (e) {}
+        });
+      }).catch(() => {});
+    }, 500);
+    const tick = setInterval(() => {
+      const now = Date.now();
+      Object.keys(seen).forEach(k => { if (now - seen[k].t > 5000) delete seen[k]; });
+      setNames(Object.values(seen).map(v => v.name));
+    }, 1000);
+    return () => {
+      alive = false;
+      clearTimeout(startT);
+      clearInterval(tick);
+      if (client) { try { client.end(true); } catch (e) {} }
+    };
+  }, [room, active]);
+  return names;
+}
+const newRoomCode = () => `PANDA-${Math.floor(1000 + Math.random() * 9000)}`;
+
 function App() {
   const [screen, setScreen] = useState('lobby');
-  const [playerName, setPlayerName] = useState(() => `Panda_${Math.floor(100 + Math.random() * 899)}`);
-  const [roomCode, setRoomCode] = useState('NGMI-888');
+  const [playerName, setPlayerName] = useState(() => {
+    try { const n = localStorage.getItem('ngmi_name'); if (n) return n.slice(0, 16); } catch (e) {}
+    return `Panda_${Math.floor(100 + Math.random() * 899)}`;
+  });
+  const [roomCode, setRoomCode] = useState(() => {
+    try { return cleanRoom(localStorage.getItem('ngmi_room') || 'NGMI-888'); } catch (e) { return 'NGMI-888'; }
+  });
+  const [invitedRoom, setInvitedRoom] = useState(null);
+  const [nextRound, setNextRound] = useState(null);
+  useEffect(() => { try { localStorage.setItem('ngmi_name', String(playerName || '').slice(0, 16)); } catch (e) {} }, [playerName]);
+  useEffect(() => { try { localStorage.setItem('ngmi_room', cleanRoom(roomCode)); } catch (e) {} }, [roomCode]);
   const [selectedClass, setSelectedClass] = useState(PANDA_CLASSES[0]);
   const [fillWithBots, setFillWithBots] = useState(true);
   const [netStatus, setNetStatus] = useState('READY');
@@ -5718,9 +5781,35 @@ function App() {
     try {
       const params = new URLSearchParams(window.location.search);
       const roomParam = params.get('room');
-      if (roomParam) setRoomCode(cleanRoom(roomParam));
+      if (roomParam) {
+        setRoomCode(cleanRoom(roomParam));
+        setInvitedRoom(cleanRoom(roomParam));
+      }
     } catch (e) {}
   }, []);
+
+  useEffect(() => {
+    if (screen !== 'playing' && mqttClientRef.current) {
+      try { mqttClientRef.current.end(true); } catch (e) {}
+      mqttClientRef.current = null;
+    }
+  }, [screen]);
+  useEffect(() => {
+    if (!results || !results.party || screen !== 'playing') { setNextRound(null); return undefined; }
+    let n = 12;
+    setNextRound(n);
+    const t = setInterval(() => {
+      n -= 1;
+      if (n <= 0) {
+        clearInterval(t);
+        setNextRound(null);
+        setResults(null);
+        setMatchId(m => m + 1);
+      } else setNextRound(n);
+    }, 1000);
+    return () => clearInterval(t);
+  }, [results, screen]);
+  const roomNow = useRoomPresence(roomCode, screen === 'lobby' && mode === 'beatdown');
 
   const pushKillFeed = (msg, color = '#22c55e') => {
     const id = Date.now() + Math.random();
@@ -6119,7 +6208,7 @@ function App() {
 
     let gangColorIdx = 0;
     const createFighterEntity = (id, name, pandaClass, isLocal, isBot, startAngle, index) => {
-      const dist = isLocal ? 0 : 16 + (index % 2) * 6;
+      const dist = isLocal ? 7 : 16 + (index % 2) * 6;
       const x = Math.cos(startAngle) * dist;
       const z = Math.sin(startAngle) * dist;
       let hash = 0;
@@ -6211,7 +6300,7 @@ function App() {
       selectedClass,
       true,
       false,
-      0,
+      Math.random() * Math.PI * 2,
       0
     );
     fighters.push(localFighter);
@@ -6228,14 +6317,26 @@ function App() {
       const i = fighters.indexOf(f);
       if (i !== -1) fighters.splice(i, 1);
     };
+    // ---------- room size: humans first, AI pandas fill the empty slots ----------
+    const ROOM_SLOTS = 8;
+    let botSeq = 0;
     const spawnBots = count => {
       for (let i = 0; i < count; i++) {
-        const angle = ((i + 1) / count) * Math.PI * 2;
-        const botClass = PANDA_CLASSES[(i + 1) % PANDA_CLASSES.length];
-        fighters.push(createFighterEntity(`${myIdRef.current}_b${i}`, RIVAL_NAMES[i % RIVAL_NAMES.length], botClass, false, true, angle, i + 1));
+        const seq = botSeq++;
+        const angle = Math.random() * Math.PI * 2;
+        const botClass = PANDA_CLASSES[(seq + 1) % PANDA_CLASSES.length];
+        fighters.push(createFighterEntity(`${myIdRef.current}_b${seq}`, RIVAL_NAMES[seq % RIVAL_NAMES.length], botClass, false, true, angle, seq + 1));
       }
     };
-    const net = { isHost: true, remoteSeen: {}, hostId: myIdRef.current, hitRate: {} };
+    const storyMode = storyRunRef.current !== null && !!CHAPTERS[storyRunRef.current];
+    if (storyMode) remotePlayersRef.current = {};
+    // players seen in the last few seconds (kept across PLAY AGAIN, so a rematch knows the room at once)
+    const livePeers = () => {
+      const t = performance.now();
+      return Object.keys(remotePlayersRef.current).filter(pid => t - remotePlayersRef.current[pid].lastSeen < 5000);
+    };
+    const startPeers = storyMode ? [] : livePeers();
+    const net = { isHost: [myIdRef.current, ...startPeers].sort()[0] === myIdRef.current, remoteSeen: {}, hostId: myIdRef.current, hitRate: {} };
     const makeWhale = f => {
       f.isWhale = true;
       f.baseScale *= 1.75;
@@ -6245,12 +6346,12 @@ function App() {
       sfx.play('streak');
       pushKillFeed('🐋 Ring out the Whale for +3 K.O. and +4 pandas!', '#38bdf8');
     };
-    const storyMode = storyRunRef.current !== null && !!CHAPTERS[storyRunRef.current];
     const whaleHunt = storyMode && CHAPTERS[storyRunRef.current].whale;
     // story chapters always have rivals to ring out, even if "Fill with bots" is off
     const wantBots = fillWithBots || storyMode;
     let whaleTimer = whaleHunt ? 18 : 55;
-    if (wantBots) spawnBots(7);
+    const botsWanted = humans => (wantBots ? Math.max(0, ROOM_SLOTS - humans) : 0);
+    if (net.isHost) spawnBots(botsWanted(1 + startPeers.length));
 
     const spawnWildPanda = () => {
       if (wildMinions.length >= 14) return;
@@ -6657,7 +6758,6 @@ function App() {
       sfx.play('powerup', f.isLocal ? 1 : volAt(pos) * 0.6);
     };
 
-    let mqttScript = null;
     const topic = `ngmipandas/beatdown3d/v3/${cleanRoom(roomCode)}`;
     const send = obj => {
       const c = mqttClientRef.current;
@@ -6695,23 +6795,30 @@ function App() {
       while (f.minions.length > want) releasePanda(f.minions.pop().mesh);
     };
 
+    let onNetMessage = null;
     const initMultiplayer = () => {
       if (!window.mqtt) return;
-      setNetStatus('CONNECTING...');
-      const client = window.mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
-        clientId: `ngmi_${myIdRef.current}`,
-        clean: true,
-        connectTimeout: 4000
-      });
+      let client = mqttClientRef.current;
+      if (client && client.__topic === topic && !client.disconnecting) {
+        // same room as last round: keep the live connection (no reconnect gap between rounds)
+        setNetStatus(client.connected ? 'LIVE ONLINE' : 'CONNECTING...');
+      } else {
+        if (client) { try { client.end(true); } catch (e) {} }
+        setNetStatus('CONNECTING...');
+        client = window.mqtt.connect(MQTT_URL, {
+          clientId: `ngmi_${myIdRef.current}`,
+          clean: true,
+          connectTimeout: 4000
+        });
+        client.__topic = topic;
+        mqttClientRef.current = client;
+        client.on('connect', () => {
+          setNetStatus('LIVE ONLINE');
+          client.subscribe(topic);
+        });
+      }
 
-      mqttClientRef.current = client;
-
-      client.on('connect', () => {
-        setNetStatus('LIVE ONLINE');
-        client.subscribe(topic);
-      });
-
-      client.on('message', (t, payload) => {
+      onNetMessage = (t, payload) => {
         let data;
         try {
           data = JSON.parse(payload.toString());
@@ -6739,9 +6846,11 @@ function App() {
           }
           if (Array.isArray(data.b) && data.id === net.hostId) {
             data.b.slice(0, 16).forEach(b => { if (b && typeof b.i === 'string') applyRemoteState(upsertRemote(b.i, String(b.n || 'Bot').slice(0, 24), b.c), b); });
+            const keep = new Set(data.b.map(b => b && b.i));
+            [...fighters].forEach(f => { if (f.remote && f.id.startsWith(`${data.id}_`) && !keep.has(f.id)) removeFighter(f); });
           }
-          if (data.id === net.hostId && typeof data.left === 'number' && Math.abs(match.left - data.left) > 1.5) {
-            match.left = data.left;
+          if (data.id === net.hostId && !data.ov && !match.over && Number.isFinite(data.left) && data.left > 0 && Math.abs(match.left - data.left) > 1.5) {
+            match.left = Math.min(MATCH_SECONDS, data.left);
           }
         } else if (data.t === 'h') {
           // someone hit one of MY fighters: I own their physics, so I apply it
@@ -6776,22 +6885,20 @@ function App() {
           if (killer) creditKO(killer, String(data.vn || 'someone').slice(0, 24), netNum(data.vx, -120, 120), netNum(data.vz, -120, 120), netNum(data.vs, 0, 99), !!data.vw);
           else pushKillFeed(`💥 ${data.kn}'s gang RINGED OUT ${data.vn}!`, '#facc15');
         }
-      });
+      };
+      client.on('message', onNetMessage);
     };
 
     let netCancelled = false;
     if (storyMode) {
       // story chapters are single-player: never join a public room
+      if (mqttClientRef.current) { try { mqttClientRef.current.end(true); } catch (e) {} mqttClientRef.current = null; }
       setNetStatus('STORY · OFFLINE');
     } else if (window.mqtt) {
       initMultiplayer();
     } else {
-      mqttScript = document.createElement('script');
-      mqttScript.src = 'https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js';
-      mqttScript.async = true;
       // the match may already be over (back to lobby) by the time the script loads
-      mqttScript.onload = () => { if (!netCancelled) initMultiplayer(); };
-      document.body.appendChild(mqttScript);
+      loadMqtt().then(() => { if (!netCancelled) initMultiplayer(); }).catch(() => setNetStatus('OFFLINE · BOTS ONLY'));
     }
 
     const cdState = { call: 0, smash: 0, swarm: 0, dash: 0, cannon: 0 };
@@ -7061,7 +7168,8 @@ function App() {
           const xpRes = awardXp({ kills: localFighter.kos, deaths: localFighter.deaths || 0, won: myRank === 1, bestStreak: localFighter.maxStreak || 0 });
           sayLine(myRank === 1 ? 'Victory' : 'Time');
           const storyRes = storyEval(storyRunRef.current, { game: 'beatdown', kills: localFighter.kos, ringouts: localFighter.ringouts || 0, bestStreak: localFighter.maxStreak || 0, won: myRank === 1, rank: myRank, whale: localFighter.whaleKOs || 0 });
-          setTimeout(() => setResults({ board, myRank, kos: localFighter.kos, ...stats, xp: xpRes, story: storyRes }), 1600);
+          const party = !storyMode && livePeers().length > 0;
+          setTimeout(() => setResults({ board, myRank, kos: localFighter.kos, ...stats, xp: xpRes, story: storyRes, party }), 1600);
         }
       }
       if (frozen) {
@@ -7909,6 +8017,7 @@ function App() {
         const pkt = { t: 's', id: myIdRef.current, name: playerName, c: selectedClass.id, cos: prof.cosmetic, x: r2(lp.x), y: r2(lp.y), z: r2(lp.z), d: Math.round(localFighter.dmg), m: localFighter.minions.length, k: localFighter.kos, dt: localFighter.deaths, st: localFighter.streak || 0, ev: netEvents.length ? netEvents.join(',') : null };
         if (net.isHost) {
           pkt.left = Math.round(match.left * 10) / 10;
+          pkt.ov = match.over ? 1 : 0;
           pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.pandaClass.id, x: r2(b.mesh.position.x), y: r2(b.mesh.position.y), z: r2(b.mesh.position.z), d: Math.round(b.dmg), m: b.minions.length, k: b.kos, dt: b.deaths, st: b.streak || 0 }));
         }
         send(pkt);
@@ -7963,7 +8072,7 @@ function App() {
           if (f.remote && now - (net.remoteSeen[f.id] || 0) > 5000) removeFighter(f);
         });
         // host = smallest id in the room; only the host runs the AI pandas
-        const peers = Object.keys(remotePlayersRef.current);
+        const peers = storyMode ? [] : livePeers();
         const hostId = [myIdRef.current, ...peers].sort()[0];
         net.hostId = hostId;
         const amHost = hostId === myIdRef.current;
@@ -7974,8 +8083,17 @@ function App() {
             pushKillFeed('🔗 Synced with room host', '#38bdf8');
           }
         }
-        if (net.isHost && wantBots && !fighters.some(f => f.isBot)) {
-          spawnBots(Math.max(0, 7 - peers.length));
+        if (net.isHost) {
+          const myBots = fighters.filter(f => f.isBot && !f.isWhale);
+          const want = botsWanted(1 + peers.length);
+          if (myBots.length < want) spawnBots(want - myBots.length);
+          else if (myBots.length > want) {
+            // a friend joined: hand their slot over by retiring the bots furthest from the action
+            myBots
+              .sort((a, b) => Math.hypot(b.mesh.position.x, b.mesh.position.z) - Math.hypot(a.mesh.position.x, a.mesh.position.z))
+              .slice(0, myBots.length - want)
+              .forEach(removeFighter);
+          }
         }
         setOnlinePeersCount(1 + Object.keys(remotePlayersRef.current).length);
 
@@ -8040,12 +8158,8 @@ function App() {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('orientationchange', handleResize);
-      if (mqttClientRef.current) {
-        try {
-          mqttClientRef.current.end();
-        } catch (e) {}
-        mqttClientRef.current = null;
-      }
+      // keep the connection for the next round; just stop this round listening to it
+      if (mqttClientRef.current && onNetMessage) mqttClientRef.current.removeListener('message', onNetMessage);
       if (post) post.dispose();
       envRT.dispose();
       pmrem.dispose();
@@ -8149,6 +8263,38 @@ function App() {
                       </div>
                     );
                   })()}
+
+                  {mode === 'beatdown' && (
+                    <div className={`rounded-3xl border-2 p-4 bg-slate-950/70 backdrop-blur ${invitedRoom && invitedRoom === cleanRoom(roomCode) ? 'border-amber-300 shadow-[0_0_30px_-8px_#fcd34d]' : 'border-sky-400/50'}`}>
+                      {invitedRoom && invitedRoom === cleanRoom(roomCode) && (
+                        <div className="mb-3 rounded-xl bg-amber-300/15 border border-amber-300/50 px-3 py-2 text-[13px] font-bold text-amber-100">🎉 You're invited to room <b>{invitedRoom}</b>. Pick a name, then tap <b>PLAY BEATDOWN</b>.</div>
+                      )}
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-[11px] font-black tracking-widest text-sky-300">👥 PLAY WITH FRIENDS</div>
+                        <div className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 font-game text-sm text-emerald-300 tracking-wider">{cleanRoom(roomCode)}</div>
+                      </div>
+                      <div className="mt-2 text-[13px] font-bold text-slate-200 min-h-[20px]">
+                        {roomNow === null ? '…checking who is in this room' : roomNow.length ? `🟢 ${roomNow.length} fighting here now: ${roomNow.slice(0, 4).join(', ')}${roomNow.length > 4 ? '…' : ''}` : '⚪ Nobody in this room right now. Invite your friends!'}
+                      </div>
+                      <div className="mt-3 flex gap-2">
+                        <button onClick={handleCopyInvite} className="flex-1 py-2.5 rounded-xl bg-sky-400 text-slate-950 font-black text-sm cursor-pointer">{copiedNotice ? '✓ LINK COPIED' : '📤 INVITE FRIENDS'}</button>
+                        <button onClick={() => { setRoomCode(newRoomCode()); setInvitedRoom(null); }} className="px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-600 font-black text-sm cursor-pointer">🎲 NEW ROOM</button>
+                      </div>
+                      <div className="mt-3 flex items-center gap-2">
+                        <label className="text-[11px] font-black tracking-widest text-slate-400 whitespace-nowrap">YOUR NAME</label>
+                        <input
+                          type="text"
+                          maxLength={16}
+                          value={playerName}
+                          onChange={e => setPlayerName(e.target.value.slice(0, 16))}
+                          className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white font-black text-sm focus:outline-none focus:border-sky-400"
+                        />
+                      </div>
+                      <div className="mt-2 text-[11px] text-slate-400 leading-snug">
+                        Same room code = same arena. Up to 8 fighters: friends take the slots first, AI pandas fill the rest. {cleanRoom(roomCode) === 'NGMI-888' ? 'NGMI-888 is the public room; tap 🎲 for a private one.' : 'Only people with this code can join.'}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="flex items-center gap-3">
                     <span className="font-game text-sm text-white">CHOOSE YOUR GAME</span>
@@ -8549,6 +8695,9 @@ function App() {
             <StoryResult story={results.story} />
             <ClipShelf clips={bdClips} />
             <XpPanel xp={results.xp} />
+            {results.party && nextRound !== null && (
+              <div className="mt-5 rounded-xl bg-sky-400/15 border border-sky-300/50 px-3 py-2 text-sm font-bold text-sky-100">👥 Next round with the room starts in <span className="font-game text-sky-300">{nextRound}s</span> · tap LOBBY to leave</div>
+            )}
             <div className="flex gap-3 mt-5">
               <button
                 onClick={() => {
@@ -8557,7 +8706,7 @@ function App() {
                 }}
                 className="play-btn flex-1 py-3 rounded-2xl font-game text-lg text-slate-950 cursor-pointer"
               >
-                PLAY AGAIN
+                {results.party ? 'PLAY NOW' : 'PLAY AGAIN'}
               </button>
               <button
                 onClick={() => {
@@ -8591,7 +8740,7 @@ function App() {
             <div className="glass border border-slate-800 rounded-2xl px-2.5 py-2 md:p-3.5 shadow-xl">
               <div className="hidden md:flex items-center justify-between gap-3 mb-2">
                 <span className="text-xs font-black px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">ROOM: {roomCode}</span>
-                <span className="text-[11px] font-bold text-cyan-300">● {netStatus} ({onlinePeersCount} LIVE)</span>
+                <span className="text-[11px] font-bold text-cyan-300">● {netStatus}{storyRun === null ? ` · 👥 ${onlinePeersCount} ${onlinePeersCount === 1 ? 'player' : 'players'}` : ''}</span>
               </div>
               <div className={`md:hidden font-game text-lg leading-none mb-1 ${matchTime <= 30 ? 'text-orange-300 animate-pulse' : 'text-white'}`}>
                 ⏱ {Math.floor(matchTime / 60)}:{String(matchTime % 60).padStart(2, '0')}
