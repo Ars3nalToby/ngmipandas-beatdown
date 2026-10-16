@@ -1733,7 +1733,7 @@ const TICKER = [
   ['$NGMI ▲ 420.69%', '#34d399'], ['🚀 GME TO THE MOON', '#facc15'], ['💀 PaperHands_99 got RUGGED off the moon', '#fb7185'],
   ['👑 Golden AK spotted in Cartoon Town', '#fbbf24'], ['🏰 Fort HODL is under siege', '#60a5fa'], ['☄️ 4-kill streak = MOON STRIKE', '#f87171'],
   ['💎 DIAMOND HANDS ONLY', '#a5f3fc'], ['📉 $PAPER ▼ 69%', '#f87171'], ['🐼 EST. 2022 ON SOLANA', '#c4b5fd'],
-  ['🎉 Level up to unlock crowns, halos & jetpacks', '#86efac'], ['📖 STORY MODE: hunt down PaperHands', '#fde68a'], ['🧻 Wanted: PaperHands, for the Rug of 2022', '#fca5a5'], ['💃 Press V to dance & heal', '#f0abfc'], ['🥊 Gang up. Pump their %. Ring them out.', '#6ee7b7']
+  ['🎉 Level up to unlock crowns, halos & jetpacks', '#86efac'], ['📖 STORY MODE: 5 chapters to hunt down PaperHands', '#fde68a'], ['🧻 Wanted: PaperHands, for the Rug of 2022', '#fca5a5'], ['💃 Press V to dance & heal', '#f0abfc'], ['🥊 Gang up. Pump their %. Ring them out.', '#6ee7b7']
 ];
 let introShown = false;
 
@@ -1764,25 +1764,25 @@ const CHAPTERS = [
     n: 1, title: 'THE RUG', emoji: '🧻', color: '#34d399', mode: 'beatdown', where: 'Beatdown',
     goal: 'Ring out 3 rivals in one Beatdown match', check: s => s.game === 'beatdown' && s.kills >= 3, progress: s => `${s.kills || 0}/3 K.O.s`,
     intro: [{ kicker: 'CHAPTER 1 · MOON ARENA', art: 'beatdown', color: '#34d399', text: 'Stranded on the Moon. Broke. Angry. Up here, scores get settled the old way: in the ring.', goal: 'Ring out 3 rivals in one Beatdown match' }],
-    outro: [{ kicker: 'CHAPTER 1 · CLEARED', emoji: '🗺️', color: '#34d399', text: 'A K.O.’d panda spills it: “PaperHands went back to Earth. WAGMI Town. Everybody knows.”' }]
+    outro: [{ kicker: 'CHAPTER 1 · CLEARED', emoji: '🗺️', color: '#34d399', text: 'A K.O.’d panda spills it: “PaperHands is still up here on the Moon… and he’s building an army.”' }]
   },
   {
-    n: 2, title: 'WAGMI TOWN', emoji: '🏙️', color: '#fb7185', mode: 'shootout', variant: 'ffa', where: 'Shootout · Free-for-all',
-    goal: 'Get 8 kills in one Shootout match', check: s => s.game === 'shootout' && s.kills >= 8, progress: s => `${s.kills || 0}/8 kills`,
-    intro: [{ kicker: 'CHAPTER 2 · WAGMI TOWN', art: 'shootout', color: '#fb7185', text: 'WAGMI Town used to be home. Now PaperHands’ bots run the streets. Grab an AK. Clean house.', goal: 'Get 8 kills in one Shootout match' }],
-    outro: [{ kicker: 'CHAPTER 2 · CLEARED', emoji: '📜', color: '#fb7185', text: 'A bot drops a crumpled map. The stolen liquidity is locked in the Moon Vault, deep inside Fort HODL.' }]
+    n: 2, title: 'THE BOT ARMY', emoji: '🤖', color: '#fb7185', mode: 'beatdown', where: 'Beatdown',
+    goal: 'Ring out 5 rivals in one Beatdown match', check: s => s.game === 'beatdown' && s.kills >= 5, progress: s => `${s.kills || 0}/5 K.O.s`,
+    intro: [{ kicker: 'CHAPTER 2 · THE BOT ARMY', emoji: '🤖🤖🤖', color: '#fb7185', text: 'PaperHands heard you’re coming. He sends his whole bot gang to the Moon to stop you. Bad idea.', goal: 'Ring out 5 rivals in one Beatdown match' }],
+    outro: [{ kicker: 'CHAPTER 2 · CLEARED', emoji: '📜', color: '#fb7185', text: 'A bot glitches out mid-air: “Boss is… hiding… behind the Diamond Hands… Fort HODL…”' }]
   },
   {
-    n: 3, title: 'DIAMOND HANDS', emoji: '💎', color: '#38bdf8', mode: 'shootout', variant: 'ffa', where: 'Shootout · Free-for-all',
-    goal: 'Get a 3-kill streak (TRIPLE KILL)', check: s => s.game === 'shootout' && s.bestStreak >= 3, progress: s => `best streak ${s.bestStreak || 0}/3`,
-    intro: [{ kicker: 'CHAPTER 3 · THE TEST', emoji: '💎🤝', color: '#38bdf8', text: 'Fort HODL won’t fall to rookies. The Diamond Hands guard the gate, and they only respect one thing: a streak.', goal: 'Get a 3-kill streak without dying' }],
-    outro: [{ kicker: 'CHAPTER 3 · CLEARED', emoji: '🤝', color: '#38bdf8', text: '“Alright, NGMI,” the Diamond Hands nod. “Raid the fort. We’ll leave the gate open.”' }]
+    n: 3, title: 'DIAMOND HANDS', emoji: '💎', color: '#38bdf8', mode: 'beatdown', where: 'Beatdown',
+    goal: 'Get a TRIPLE K.O. (3 in a row without falling)', check: s => s.game === 'beatdown' && s.bestStreak >= 3, progress: s => `best streak ${s.bestStreak || 0}/3`,
+    intro: [{ kicker: 'CHAPTER 3 · THE TEST', emoji: '💎🤝', color: '#38bdf8', text: 'The Diamond Hands guard Fort HODL, and they only respect one thing: a streak. Show them you don’t fold.', goal: 'Get a TRIPLE K.O.: 3 ring-outs in a row without falling' }],
+    outro: [{ kicker: 'CHAPTER 3 · CLEARED', emoji: '🤝', color: '#38bdf8', text: '“Alright, NGMI,” the Diamond Hands nod. “PaperHands paid a Whale to guard him. Take it down and he’s yours.”' }]
   },
   {
-    n: 4, title: 'SIEGE OF FORT HODL', emoji: '🏰', color: '#f59e0b', mode: 'shootout', variant: 'siege', team: 'atk', where: 'Shootout · Siege (attack)',
-    goal: 'Win Siege as the attacking team', check: s => s.game === 'shootout' && s.variant === 'siege' && s.won && s.team === 'atk', progress: s => (s.won ? 'won, but not as attackers' : 'the fort held'),
-    intro: [{ kicker: 'CHAPTER 4 · FORT HODL', emoji: '🏰⚔️', color: '#f59e0b', text: 'The gate is open. Take the Server Farm, then crack the Moon Vault before the clock runs out.', goal: 'Win Siege as the attackers' }],
-    outro: [{ kicker: 'CHAPTER 4 · CLEARED', emoji: '🕳️', color: '#f59e0b', text: 'The vault swings open… EMPTY. Just a sticky note: “gm. see you on the Moon. PaperHands.”' }]
+    n: 4, title: 'WHALE HUNT', emoji: '🐋', color: '#f59e0b', mode: 'beatdown', where: 'Beatdown', whale: true,
+    goal: 'Ring out THE WHALE', check: s => s.game === 'beatdown' && s.whale >= 1, progress: s => (s.whale ? 'whale down' : 'the Whale survived'),
+    intro: [{ kicker: 'CHAPTER 4 · WHALE HUNT', emoji: '🐋💰', color: '#f59e0b', text: 'PaperHands hired a Whale: huge, slow, and almost impossible to push. Gang up, pump its %, and ring it out. (Tip: 🐼 THROW and 🌪️ TORNADO hit hard.)', goal: 'Ring out THE WHALE' }],
+    outro: [{ kicker: 'CHAPTER 4 · CLEARED', emoji: '🕳️', color: '#f59e0b', text: 'The Whale splashes into deep space. Stuck to its back, a note: “gm. see you in the last ring. PaperHands.”' }]
   },
   {
     n: 5, title: 'THE LAST RING', emoji: '🌕', color: '#facc15', mode: 'beatdown', where: 'Beatdown',
@@ -6195,7 +6195,8 @@ function App() {
       sfx.play('streak');
       pushKillFeed('🐋 Ring out the Whale for +3 K.O. and +4 pandas!', '#38bdf8');
     };
-    let whaleTimer = 55;
+    const whaleHunt = storyRunRef.current !== null && CHAPTERS[storyRunRef.current] && CHAPTERS[storyRunRef.current].whale;
+    let whaleTimer = whaleHunt ? 18 : 55;
     if (fillWithBots) spawnBots(7);
 
     const spawnWildPanda = () => {
@@ -6748,6 +6749,7 @@ function App() {
       }
       if (victimWhale) {
         killer.kos += 2;
+        if (killer.isLocal) killer.whaleKOs = (killer.whaleKOs || 0) + 1;
         for (let w = 0; w < 4; w++) addMinionToFighter(killer);
         announceNow(`🐋 ${killer.isLocal ? 'YOU' : killer.name} HUNTED THE WHALE!`, '#38bdf8');
       }
@@ -6982,7 +6984,7 @@ function App() {
           sfx.play(myRank === 1 ? 'streak' : 'ko');
           const xpRes = awardXp({ kills: localFighter.kos, deaths: localFighter.deaths || 0, won: myRank === 1, bestStreak: localFighter.maxStreak || 0 });
           sayLine(myRank === 1 ? 'Victory' : 'Time');
-          const storyRes = storyEval(storyRunRef.current, { game: 'beatdown', kills: localFighter.kos, bestStreak: localFighter.maxStreak || 0, won: myRank === 1, rank: myRank });
+          const storyRes = storyEval(storyRunRef.current, { game: 'beatdown', kills: localFighter.kos, bestStreak: localFighter.maxStreak || 0, won: myRank === 1, rank: myRank, whale: localFighter.whaleKOs || 0 });
           setTimeout(() => setResults({ board, myRank, kos: localFighter.kos, ...stats, xp: xpRes, story: storyRes }), 1600);
         }
       }
@@ -7056,7 +7058,7 @@ function App() {
       if (net.isHost && !frozen) {
         whaleTimer -= dt;
         if (whaleTimer <= 0) {
-          whaleTimer = 75;
+          whaleTimer = whaleHunt ? 35 : 75;
           if (!fighters.some(f => f.isWhale)) {
             const w = createFighterEntity(`${myIdRef.current}_whale`, '🐋 THE WHALE', PANDA_CLASSES[2], false, true, Math.random() * 6.28, 3);
             w.mesh.position.set(0, 22, 0);
