@@ -357,6 +357,19 @@ const sfx = (() => {
         hiss(0.22, 0.75 * vol, 'highpass', 3500, 900);
         tone('triangle', 1975, 1900, 0.35, 0.16 * vol, null, now + 0.03);
         break;
+      case 'dash':
+        hiss(0.24, 0.42 * vol, 'bandpass', 500, 3200);
+        tone('sine', 260, 820, 0.14, 0.16 * vol);
+        break;
+      case 'cannon':
+        tone('square', 210, 55, 0.2, 0.28 * vol, null, null, 1400);
+        hiss(0.16, 0.35 * vol, 'lowpass', 1600, 300);
+        break;
+      case 'tornado':
+        hiss(1.3, 0.45 * vol, 'bandpass', 260, 2200);
+        tone('sawtooth', 70, 240, 1.1, 0.12 * vol, null, null, 1200);
+        tone('sine', 110, 55, 0.6, 0.4 * vol);
+        break;
       case 'smash':
         hiss(0.38, 0.55 * vol, 'bandpass', 250, 3800);
         tone('sawtooth', 90, 38, 0.32, 0.35 * vol, null, null, 900);
@@ -824,7 +837,7 @@ if (typeof document !== 'undefined') {
   // iOS Safari ignores user-scalable=no: block pinch-zoom ourselves (double-tap is handled by touch-action)
   document.addEventListener('gesturestart', e => e.preventDefault(), { passive: false });
 }
-const CD_MAX = { call: 5.5, smash: 4, swarm: 7 };
+const CD_MAX = { call: 5.5, smash: 4, swarm: 7, dash: 1.6, cannon: 0.8 };
 
 const POWERUPS = [
   { id: 'burger', icon: '🍔', label: 'FAST FOOD! +45% SPEED', color: '#f97316' },
@@ -5585,7 +5598,7 @@ function App() {
   const [myKos, setMyKos] = useState(0);
   const [killFeed, setKillFeed] = useState([]);
   const [activeBeatdownAlert, setActiveBeatdownAlert] = useState(null);
-  const [cooldowns, setCooldowns] = useState({ call: 0, smash: 0, swarm: 0 });
+  const [cooldowns, setCooldowns] = useState({ call: 0, smash: 0, swarm: 0, dash: 0, cannon: 0, ult: 0 });
   const [arenaEventText, setArenaEventText] = useState('HIT RIVALS TO RAISE THEIR % • HIGH % = THEY FLY! 🚀');
   const [onlinePeersCount, setOnlinePeersCount] = useState(1);
 
@@ -5785,6 +5798,28 @@ function App() {
     const rimB = new THREE.PointLight(0xc58bff, 2.0, 120, 1.2);
     rimB.position.set(-30, 8, -30);
     scene.add(rimB);
+    // hero light: a soft warm key that follows YOU, so your gang always pops out of the crowd
+    const heroLight = new THREE.PointLight(0xfff0dc, 1.35, 15, 1.7);
+    scene.add(heroLight);
+    // impact light: one pooled flash for big crits
+    const impactLight = new THREE.PointLight(0xffd27a, 0, 18, 1.8);
+    scene.add(impactLight);
+    // two stadium spotlights sweeping the ring, with soft visible beams (red during FINAL RUSH)
+    const BEAM_DOWN = new THREE.Vector3(0, -1, 0);
+    const beamGeo = new THREE.CylinderGeometry(0.3, 5.2, 1, 24, 1, true);
+    beamGeo.translate(0, -0.5, 0);
+    const stageSpots = [[0x67e8f9, 1], [0xf0abfc, -1]].map(([col, sd]) => {
+      const light = new THREE.SpotLight(col, 7, 110, 0.34, 0.55, 0.9);
+      light.position.set(sd * 40, 30, -12); // arena radius is 34 (ARENA_RADIUS isn't defined yet at this point)
+      scene.add(light);
+      scene.add(light.target);
+      const beamMat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.075, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+      const beam = new THREE.Mesh(beamGeo, beamMat);
+      beam.position.copy(light.position);
+      beam.renderOrder = 5;
+      scene.add(beam);
+      return { light, target: light.target, beam, beamMat, base: col };
+    });
 
     // a real-looking moon: cratered, cool, softly lit
     const moonGroup = new THREE.Group();
@@ -6184,12 +6219,17 @@ function App() {
     const particles = [];
     const debris = [];
     const particleGeo = new THREE.BoxGeometry(0.28, 0.28, 0.28);
+    const partPool = [];
     const fx = { shake: 0, hitStop: 0, liqTimer: 0, combo: 0, comboTimer: 0, slowmo: 0, postFlash: 0 };
 
     const burst = (x, y, z, color, count = 12, speed = 12) => {
       for (let i = 0; i < count && particles.length < 320; i++) {
-        const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 1 });
-        const m = new THREE.Mesh(particleGeo, mat);
+        let m = partPool.pop();
+        if (!m) m = new THREE.Mesh(particleGeo, new THREE.MeshBasicMaterial({ transparent: true, opacity: 1 }));
+        const mat = m.material;
+        mat.color.set(color);
+        mat.opacity = 1;
+        m.rotation.set(0, 0, 0);
         m.position.set(x, y, z);
         scene.add(m);
         const a = Math.random() * Math.PI * 2;
@@ -6240,6 +6280,9 @@ function App() {
       burst(p.x, p.y + 1.5, p.z, attacker.gangColor, 6 + Math.round(kb / 6), 6 + kb * 0.25);
       const vol = (target.isLocal || attacker.isLocal) ? 1 : volAt(p) * 0.7;
       if (attacker.isLocal && kb > stats.biggestHit) stats.biggestHit = kb;
+      if (attacker.isLocal && !(attacker.tornadoT > 0)) ult.v = Math.min(100, ult.v + Math.min(5, 0.6 + kb * 0.1));
+      if (target.isLocal && kb > 18) buzz(14);
+      if (isCrit) { impactLight.position.set(p.x, p.y + 2.2, p.z); impactLight.intensity = Math.min(7, 2 + kb * 0.06); }
       if (isCrit) {
         sfx.play('crit', vol);
         burst(p.x, p.y + 1.5, p.z, '#ffffff', 14, 16);
@@ -6594,6 +6637,9 @@ function App() {
           const f = upsertRemote(data.id, data.name, data.c);
           applyRemoteState(f, data);
           if (isNew) pushKillFeed(`🟢 ${data.name} joined Room ${roomCode}!`, '#38bdf8');
+          if (data.ev === 'dash') doDash(f, Math.sin(f.mesh.rotation.y), Math.cos(f.mesh.rotation.y));
+          if (data.ev === 'cannon') fireCannon(f);
+          if (data.ev === 'tornado') startTornado(f);
           if (data.ev === 'smash') {
             triggerShockwave(data.x, data.z, f.gangColor, 9);
             sfx.play('smash', volAt(f.mesh.position) * 0.6);
@@ -6640,7 +6686,16 @@ function App() {
       document.body.appendChild(mqttScript);
     }
 
-    const cdState = { call: 0, smash: 0, swarm: 0 };
+    const cdState = { call: 0, smash: 0, swarm: 0, dash: 0, cannon: 0 };
+    const ult = { v: 0 }; // 🌪️ tornado meter: fills as your gang lands hits and K.O.s
+    const camLook = new THREE.Vector3(0, 1, -3);
+    // adaptive resolution: drop pixel ratio when the phone can't hold ~45fps, raise it back when it can
+    const perf = { acc: 0, n: 0, t: 0, warm: 3, pr: renderer.getPixelRatio(), max: renderer.getPixelRatio() };
+    const setPR = v => {
+      perf.pr = Math.round(v * 100) / 100;
+      renderer.setPixelRatio(perf.pr);
+      if (post) post.setSize();
+    };
     let lastNetBroadcast = 0;
     let lastHudSync = 0;
     let hazardTimer = 0;
@@ -6664,6 +6719,8 @@ function App() {
       killer.streak = (killer.streak || 0) + 1;
       killer.maxStreak = Math.max(killer.maxStreak || 0, killer.streak);
       if (killer.isLocal) {
+        ult.v = Math.min(100, ult.v + 22);
+        buzz([20, 30, 50]);
         setMyKos(killer.kos);
         fx.shake = 1.6;
         spawnMemeSprite(vx * 0.7, 3, vz * 0.7, 'K.O.!! 💥', '#facc15');
@@ -6710,6 +6767,83 @@ function App() {
       });
     };
 
+    // ---------- NEW MOVES ----------
+    // 🐂 DASH: short burst that bowls over anyone in the way
+    const doDash = (f, dx, dz) => {
+      f.dashT = 0.2;
+      f.dashDir = [dx, dz];
+      f.dashHit = {};
+      f.vx = dx * 46;
+      f.vz = dz * 46;
+      if (f.mesh.position.y <= 0.05) f.vy = Math.max(f.vy, 2.5);
+      f.mesh.rotation.y = Math.atan2(dx, dz);
+      f.squash = 0.35;
+      sfx.play('dash', f.isLocal ? 1 : volAt(f.mesh.position) * 0.5);
+      burst(f.mesh.position.x, 0.4, f.mesh.position.z, '#e2e8f0', 8, 6);
+      if (f.isLocal) { fx.shake = Math.min(1.6, fx.shake + 0.12); buzz(8); }
+    };
+    // 🐼💥 PANDA CANNON: throw one of your own gang at the nearest rival in front of you
+    const cannonballs = [];
+    const fireCannon = f => {
+      const lost = f.minions.pop();
+      if (!lost) return false;
+      if (f.isLocal) setMyGangSize(f.minions.length + 1);
+      const p = f.mesh.position;
+      let [ax, az] = forwardOf(f);
+      let best = null, bd = 30;
+      fighters.forEach(o => {
+        if (o.id === f.id || o.respawnLock > 0) return;
+        const dx = o.mesh.position.x - p.x, dz = o.mesh.position.z - p.z, d = Math.hypot(dx, dz);
+        if (d < bd && d > 1 && (dx * ax + dz * az) / d > 0.4) { bd = d; best = o; }
+      });
+      if (best) {
+        const dx = best.mesh.position.x - p.x, dz = best.mesh.position.z - p.z, d = Math.hypot(dx, dz) || 1;
+        ax = dx / d;
+        az = dz / d;
+      }
+      f.mesh.rotation.y = Math.atan2(ax, az);
+      f.punchAnim = 0.3;
+      const m = lost.mesh;
+      m.position.set(p.x + ax * 1.6, Math.max(0, p.y) + 1.8, p.z + az * 1.6);
+      const flight = best ? Math.min(1.1, Math.max(0.35, bd / 34)) : 0.9;
+      cannonballs.push({ mesh: m, owner: f, vx: ax * 34, vz: az * 34, vy: 7 * flight, life: 1.15 });
+      sfx.play('cannon', f.isLocal ? 1 : volAt(p) * 0.6);
+      burst(m.position.x, m.position.y, m.position.z, '#ffffff', 6, 6);
+      if (f.isLocal) { fx.shake = Math.min(1.6, fx.shake + 0.2); buzz(10); }
+      return true;
+    };
+    // 🌪️ PANDA TORNADO (ultimate): the whole gang spins around you as a launching wall
+    const startTornado = f => {
+      f.tornadoT = 5;
+      f.tornadoHit = {};
+      while (f.minions.length < 8) addMinionToFighter(f);
+      triggerShockwave(f.mesh.position.x, f.mesh.position.z, 0x38bdf8, 11);
+      spawnMemeSprite(f.mesh.position.x, 2.4, f.mesh.position.z, '🌪️ PANDA TORNADO!', '#38bdf8');
+      sfx.play('tornado', f.isLocal ? 1 : volAt(f.mesh.position) * 0.7);
+      if (f.isLocal) {
+        announceNow('🌪️ PANDA TORNADO!', '#38bdf8');
+        fx.shake = Math.min(1.6, fx.shake + 0.8);
+        flash(0.22);
+        buzz([20, 30, 20]);
+      }
+    };
+    const tornadoGeo = { ring: new THREE.TorusGeometry(3.7, 0.18, 8, 56), funnel: (() => { const g = new THREE.CylinderGeometry(4.6, 1.2, 7, 28, 1, true); g.translate(0, 3.5, 0); return g; })() };
+    const ensureTornadoFx = f => {
+      if (f.tornadoFx) return f.tornadoFx;
+      const g = new THREE.Group();
+      const ringMat = new THREE.MeshBasicMaterial({ color: 0x7dd3fc, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false });
+      const ring = new THREE.Mesh(tornadoGeo.ring, ringMat);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.5;
+      const funMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+      const funnel = new THREE.Mesh(tornadoGeo.funnel, funMat);
+      g.add(ring, funnel);
+      g.userData = { ring, funnel, ringMat, funMat };
+      scene.add(g);
+      f.tornadoFx = g;
+      return g;
+    };
+
     const doJump = (f, dirX, dirZ) => {
       if (f.jumps <= 0 || f.stun > 0 || f.pounding) return false;
       const first = f.jumps === 2 && f.mesh.position.y <= 0.05;
@@ -6738,6 +6872,12 @@ function App() {
         actionTriggerRef.current.smash = true;
       } else if (code === 'KeyQ') {
         actionTriggerRef.current.swarm = true;
+      } else if (code === 'ShiftLeft' || code === 'ShiftRight') {
+        if (!e.repeat) actionTriggerRef.current.dash = true;
+      } else if (code === 'KeyC') {
+        actionTriggerRef.current.cannon = true;
+      } else if (code === 'KeyT' || code === 'KeyX') {
+        actionTriggerRef.current.ult = true;
       } else if (code === 'KeyM') {
         const m = !sfx.isMuted();
         sfx.setMuted(m);
@@ -6775,6 +6915,16 @@ function App() {
       if (fx.comboTimer > 0) fx.comboTimer -= rawDt;
 
       cdState.call = Math.max(0, cdState.call - dt);
+      cdState.dash = Math.max(0, cdState.dash - dt);
+      cdState.cannon = Math.max(0, cdState.cannon - dt);
+      perf.acc += rawDt; perf.n += 1; perf.t += rawDt;
+      if (perf.t > 2) {
+        const avg = perf.acc / Math.max(1, perf.n);
+        if (perf.warm > 0) perf.warm -= perf.t;
+        else if (avg > 1 / 42 && perf.pr > 0.7) setPR(perf.pr - 0.15);
+        else if (avg < 1 / 57 && perf.pr < perf.max) setPR(Math.min(perf.max, perf.pr + 0.1));
+        perf.acc = 0; perf.n = 0; perf.t = 0;
+      }
       cdState.smash = Math.max(0, cdState.smash - dt);
       cdState.swarm = Math.max(0, cdState.swarm - dt);
 
@@ -6810,6 +6960,9 @@ function App() {
         actionTriggerRef.current.smash = false;
         actionTriggerRef.current.swarm = false;
         actionTriggerRef.current.jump = false;
+        actionTriggerRef.current.dash = false;
+        actionTriggerRef.current.cannon = false;
+        actionTriggerRef.current.ult = false;
       }
 
       // ---------- rug pull ----------
@@ -6946,8 +7099,13 @@ function App() {
       if (keysRef.current['KeyD'] || keysRef.current['ArrowRight']) moveX += 1;
 
       if (joystickRef.current.active) {
-        moveX += joystickRef.current.dx;
-        moveZ += joystickRef.current.dy;
+        const jx = joystickRef.current.dx, jy = joystickRef.current.dy, jl = Math.hypot(jx, jy);
+        if (jl > 0.14) {
+          // small dead zone + smooth ramp so tiny thumb wobbles don't jitter the panda
+          const k = Math.min(1, (jl - 0.14) / 0.86) / jl;
+          moveX += jx * k;
+          moveZ += jy * k;
+        }
       }
       if (frozen) {
         moveX = 0;
@@ -6969,7 +7127,9 @@ function App() {
       }
       actionTriggerRef.current.jump = false;
 
-      if (localFighter.stun > 0 || localAirborne) {
+      if (localFighter.dashT > 0) {
+        // mid-dash: keep the burst
+      } else if (localFighter.stun > 0 || localAirborne) {
         // knocked: little control. jumping: decent air control for recovery
         const airCtl = localFighter.stun > 0 ? 9 : 26;
         if (moveLen > 0.01) {
@@ -6983,7 +7143,7 @@ function App() {
           }
         }
       } else if (moveLen > 0.01) {
-        const speedBoost = localFighter.swarmTimer > 0 ? 1.48 : 1.0;
+        const speedBoost = (localFighter.swarmTimer > 0 ? 1.48 : 1.0) * (localFighter.tornadoT > 0 ? 1.3 : 1);
         const speed = 13.5 * localFighter.pandaClass.speed * speedBoost * (localFighter.buffs.speed > 0 ? 1.45 : 1);
         localFighter.vx += ((moveX / moveLen) * speed - localFighter.vx) * 10 * dt;
         localFighter.vz += ((moveZ / moveLen) * speed - localFighter.vz) * 10 * dt;
@@ -7048,10 +7208,88 @@ function App() {
       }
       actionTriggerRef.current.swarm = false;
 
+      if (actionTriggerRef.current.dash && cdState.dash <= 0 && localFighter.stun <= 0 && !frozen) {
+        cdState.dash = CD_MAX.dash;
+        let ddx = moveX, ddz = moveZ;
+        const dl = Math.hypot(ddx, ddz);
+        if (dl > 0.01) { ddx /= dl; ddz /= dl; } else [ddx, ddz] = forwardOf(localFighter);
+        doDash(localFighter, ddx, ddz);
+        if (!netEvent) netEvent = 'dash';
+      }
+      actionTriggerRef.current.dash = false;
+      if (actionTriggerRef.current.cannon && cdState.cannon <= 0 && !frozen) {
+        if (fireCannon(localFighter)) {
+          cdState.cannon = CD_MAX.cannon;
+          if (!netEvent) netEvent = 'cannon';
+        } else {
+          cdState.cannon = 0.6;
+          spawnMemeSprite(localFighter.mesh.position.x, 2.2, localFighter.mesh.position.z, 'NO GANG TO THROW 😅 · press GANG', '#94a3b8');
+        }
+      }
+      actionTriggerRef.current.cannon = false;
+      if (actionTriggerRef.current.ult && !frozen) {
+        if (ult.v >= 100) {
+          ult.v = 0;
+          startTornado(localFighter);
+          netEvent = 'tornado';
+        } else spawnMemeSprite(localFighter.mesh.position.x, 2.2, localFighter.mesh.position.z, `🌪️ ${Math.floor(ult.v)}% · keep brawling`, '#7dd3fc');
+      }
+      actionTriggerRef.current.ult = false;
+
       let currentBeatdownBanner = null;
 
       fighters.forEach((f, idx) => {
         if (f.swarmTimer > 0) f.swarmTimer -= dt;
+        if (f.dashT > 0) {
+          f.dashT -= dt;
+          const fp = f.mesh.position;
+          burst(fp.x, fp.y + 0.9, fp.z, f.gangColor, 2, 2.5);
+          if (f.isLocal || f.isBot) {
+            fighters.forEach(o => {
+              if (o.id === f.id || f.dashHit[o.id]) return;
+              const dx = o.mesh.position.x - fp.x, dz = o.mesh.position.z - fp.z, d = Math.hypot(dx, dz);
+              if (d < 2.9 && d > 0.01 && Math.abs(o.mesh.position.y - fp.y) < 2.5) {
+                f.dashHit[o.id] = 1;
+                launch(o, f, f.dashDir[0] * 0.65 + (dx / d) * 0.35, f.dashDir[1] * 0.65 + (dz / d) * 0.35, 12, 7, 11);
+                if (f.isLocal) spawnMemeSprite(o.mesh.position.x, 2.2, o.mesh.position.z, '🐂 BULLDOZED!', '#fde68a');
+              }
+            });
+          }
+          if (f.dashT <= 0) { f.vx *= 0.35; f.vz *= 0.35; }
+        }
+        if (f.tornadoT > 0) {
+          f.tornadoT -= dt;
+          const tfx = ensureTornadoFx(f);
+          const fp = f.mesh.position;
+          tfx.visible = f.tornadoT > 0;
+          tfx.position.set(fp.x, Math.max(0, fp.y), fp.z);
+          tfx.rotation.y += 9 * dt;
+          const fade = Math.min(1, f.tornadoT / 0.6, (5 - f.tornadoT) / 0.3);
+          tfx.userData.ringMat.opacity = 0.55 * fade;
+          tfx.userData.funMat.opacity = (0.1 + Math.sin(now * 0.02) * 0.03) * fade;
+          tfx.scale.setScalar(0.85 + Math.sin(now * 0.012) * 0.08);
+          if (Math.random() < 0.6) burst(fp.x + (Math.random() - 0.5) * 7, 0.3, fp.z + (Math.random() - 0.5) * 7, '#bae6fd', 1, 3);
+          if (f.isLocal || f.isBot) {
+            fighters.forEach(o => {
+              if (o.id === f.id) return;
+              const dx = o.mesh.position.x - fp.x, dz = o.mesh.position.z - fp.z, d = Math.hypot(dx, dz);
+              if (d < 4.8 && d > 0.01 && (!f.tornadoHit[o.id] || now - f.tornadoHit[o.id] > 420)) {
+                f.tornadoHit[o.id] = now;
+                const tx = -dz / d, tz = dx / d;
+                launch(o, f, (dx / d) * 0.75 + tx * 0.45, (dz / d) * 0.75 + tz * 0.45, 13, 12, 9);
+              }
+            });
+            for (let wi = wildMinions.length - 1; wi >= 0; wi--) {
+              const wm = wildMinions[wi];
+              if (wm.mesh.position.distanceTo(fp) < 5.5) {
+                scene.remove(wm.mesh);
+                wildMinions.splice(wi, 1);
+                addMinionToFighter(f);
+              }
+            }
+          }
+        } else if (f.tornadoFx && f.tornadoFx.visible) f.tornadoFx.visible = false;
+        if (f.isBot && !frozen && f.stun <= 0 && f.minions.length >= 3 && Math.random() < 0.0016) fireCannon(f);
         if (f.punchAnim > 0) f.punchAnim -= dt;
         if (f.stun > 0) f.stun -= dt;
         if (f.punchCd > 0) f.punchCd -= dt;
@@ -7323,16 +7561,20 @@ function App() {
         });
 
         const totalMinions = f.minions.length;
+        const spin = f.tornadoT > 0;
+        const follow = 1 - Math.exp(-(spin ? 14 : 9) * dt);
         f.minions.forEach((m, mIdx) => {
-          const orbitAngle = (now * 0.0032 * (f.swarmTimer > 0 ? 2.2 : 1)) + (mIdx * Math.PI * 2) / Math.max(1, totalMinions);
-          const orbitRadius = f.swarmTimer > 0 ? 3.2 : 2.15 + (mIdx % 2) * 0.75;
+          const orbitAngle = (now * (spin ? 0.011 : 0.0032 * (f.swarmTimer > 0 ? 2.2 : 1))) + (mIdx * Math.PI * 2) / Math.max(1, totalMinions);
+          const orbitRadius = spin ? 3.6 : f.swarmTimer > 0 ? 3.2 : 2.15 + (mIdx % 2) * 0.75;
           const targetMX = f.mesh.position.x + Math.cos(orbitAngle) * orbitRadius;
           const targetMZ = f.mesh.position.z + Math.sin(orbitAngle) * orbitRadius;
 
-          m.mesh.position.x += (targetMX - m.mesh.position.x) * 9 * dt;
-          m.mesh.position.z += (targetMZ - m.mesh.position.z) * 9 * dt;
-          m.mesh.position.y = Math.max(f.mesh.position.y * 0.6, 0) + Math.abs(Math.sin(now * 0.012 + mIdx)) * 0.28;
-          m.mesh.rotation.y = f.mesh.rotation.y;
+          m.mesh.position.x += (targetMX - m.mesh.position.x) * follow;
+          m.mesh.position.z += (targetMZ - m.mesh.position.z) * follow;
+          m.mesh.position.y = spin
+            ? Math.max(f.mesh.position.y * 0.6, 0) + 0.8 + Math.sin(now * 0.008 + mIdx * 1.3) * 1.1
+            : Math.max(f.mesh.position.y * 0.6, 0) + Math.abs(Math.sin(now * 0.012 + mIdx)) * 0.28;
+          m.mesh.rotation.y = spin ? m.mesh.rotation.y + 14 * dt : f.mesh.rotation.y;
         });
 
         const fellOut = (f.isLocal || f.isBot) && f.mesh.position.y < -14;
@@ -7386,6 +7628,36 @@ function App() {
 
       fighters.filter(f => f.removeMe).forEach(removeFighter);
 
+      for (let i = cannonballs.length - 1; i >= 0; i--) {
+        const cb = cannonballs[i];
+        const cp = cb.mesh.position;
+        cb.vy -= 16 * dt;
+        cp.x += cb.vx * dt;
+        cp.y += cb.vy * dt;
+        cp.z += cb.vz * dt;
+        cb.mesh.rotation.x += 16 * dt;
+        cb.life -= dt;
+        if (Math.random() < 0.8) burst(cp.x, cp.y, cp.z, cb.owner.gangColor, 1, 1.2);
+        const owns = cb.owner.isLocal || cb.owner.isBot;
+        const hit = owns ? fighters.find(o => o.id !== cb.owner.id && o.respawnLock <= 0 && Math.hypot(o.mesh.position.x - cp.x, o.mesh.position.z - cp.z) < 2.2 && Math.abs(o.mesh.position.y + 1.2 - cp.y) < 3) : null;
+        if (hit || cb.life <= 0 || cp.y < 0.35) {
+          triggerShockwave(cp.x, cp.z, 0xfacc15, 5);
+          burst(cp.x, 1, cp.z, cb.owner.gangColor, 16, 12);
+          burst(cp.x, 1, cp.z, '#ffffff', 8, 9);
+          sfx.play('crit', cb.owner.isLocal || (hit && hit.isLocal) ? 0.9 : volAt(cp) * 0.6);
+          if (owns) {
+            fighters.forEach(o => {
+              if (o.id === cb.owner.id) return;
+              const dx = o.mesh.position.x - cp.x, dz = o.mesh.position.z - cp.z, d = Math.hypot(dx, dz);
+              if (d < 3.8 && d > 0.01) launch(o, cb.owner, dx / d, dz / d, o === hit ? 21 : 12, 10, o === hit ? 20 : 9);
+            });
+            if (cb.owner.isLocal && hit) spawnMemeSprite(cp.x, 2.6, cp.z, '🐼💥 PANDA CANNON!', '#facc15');
+          }
+          debris.push({ mesh: cb.mesh, vx: -cb.vx * 0.2 + (Math.random() - 0.5) * 6, vy: 11, vz: -cb.vz * 0.2 + (Math.random() - 0.5) * 6, life: 1.4 });
+          cannonballs.splice(i, 1);
+        }
+      }
+
       for (let i = projectiles.length - 1; i >= 0; i--) {
         const pr = projectiles[i];
         pr.mesh.position.x += pr.vx * dt;
@@ -7411,7 +7683,7 @@ function App() {
         pt.mat.opacity = Math.max(0, pt.life * 1.6);
         if (pt.life <= 0) {
           scene.remove(pt.m);
-          pt.mat.dispose();
+          partPool.push(pt.m);
           particles.splice(i, 1);
         }
       }
@@ -7458,17 +7730,37 @@ function App() {
         }
       }
 
-      const camTargetX = localFighter.mesh.position.x * camCfg.follow;
-      const camTargetZ = localFighter.mesh.position.z * camCfg.follow + 29 * camCfg.zoom;
-      const camTargetY = (localFighter.swarmTimer > 0 ? 22 : 27) * camCfg.zoom;
-      camera.position.x += (camTargetX - camera.position.x) * 5 * dt;
-      camera.position.z += (camTargetZ - camera.position.z) * 5 * dt;
-      camera.position.y += (camTargetY - camera.position.y) * 4 * dt;
-      camera.lookAt(
-        localFighter.mesh.position.x * camCfg.look,
-        1.0,
-        localFighter.mesh.position.z * camCfg.look - 3
-      );
+      const clp = localFighter.mesh.position;
+      const gangZoom = 1 + Math.min(0.16, localFighter.minions.length * 0.01) + (localFighter.tornadoT > 0 ? 0.08 : 0);
+      const leadX = Math.max(-3, Math.min(3, localFighter.vx * 0.08));
+      const leadZ = Math.max(-3, Math.min(3, localFighter.vz * 0.08));
+      const camTargetX = (clp.x + leadX) * camCfg.follow;
+      const camTargetZ = (clp.z + leadZ) * camCfg.follow + 29 * camCfg.zoom * gangZoom;
+      const camTargetY = (localFighter.swarmTimer > 0 ? 22 : 27) * camCfg.zoom * gangZoom;
+      const kPos = 1 - Math.exp(-5 * rawDt), kY = 1 - Math.exp(-3.5 * rawDt), kLook = 1 - Math.exp(-7 * rawDt);
+      camera.position.x += (camTargetX - camera.position.x) * kPos;
+      camera.position.z += (camTargetZ - camera.position.z) * kPos;
+      camera.position.y += (camTargetY - camera.position.y) * kY;
+      camLook.x += ((clp.x + leadX) * camCfg.look - camLook.x) * kLook;
+      camLook.z += ((clp.z + leadZ) * camCfg.look - 3 - camLook.z) * kLook;
+      camera.lookAt(camLook.x, 1.0, camLook.z);
+
+      // ---- stage lights ----
+      heroLight.position.set(clp.x, Math.max(0, clp.y) + 7, clp.z + 2);
+      heroLight.intensity = 1.35 + (localFighter.tornadoT > 0 ? 0.8 : 0);
+      impactLight.intensity = Math.max(0, impactLight.intensity - rawDt * 22);
+      const rushK = match.finalRush ? 1 : 0;
+      stageSpots.forEach((sp, si) => {
+        const a = now * (0.00028 + rushK * 0.0005) * (si ? -1 : 1) + si * Math.PI;
+        const rr = 9 + Math.sin(now * 0.0004 + si * 2) * 6;
+        sp.target.position.set(Math.cos(a) * rr, 0, Math.sin(a) * rr);
+        sp.light.color.setHex(rushK ? 0xff3b3b : sp.base);
+        sp.beamMat.color.setHex(rushK ? 0xff3b3b : sp.base);
+        const dir = sp.target.position.clone().sub(sp.light.position);
+        const len = dir.length();
+        sp.beam.scale.set(1, len, 1);
+        sp.beam.quaternion.setFromUnitVectors(BEAM_DOWN, dir.normalize());
+      });
 
       if (now - lastNetBroadcast > 66 || netEvent) {
         lastNetBroadcast = now;
@@ -7487,7 +7779,10 @@ function App() {
         setCooldowns({
           call: Number(cdState.call.toFixed(1)),
           smash: Number(cdState.smash.toFixed(1)),
-          swarm: Number(cdState.swarm.toFixed(1))
+          swarm: Number(cdState.swarm.toFixed(1)),
+          dash: Number(cdState.dash.toFixed(1)),
+          cannon: Number(cdState.cannon.toFixed(1)),
+          ult: Math.floor(ult.v)
         });
         setActiveBeatdownAlert(currentBeatdownBanner);
         setMyDmg(Math.round(localFighter.dmg));
@@ -8342,12 +8637,18 @@ function App() {
 
               {/* ---------- action cluster (right thumb) ---------- */}
               <div className="absolute right-0 bottom-0 safe-bottom safe-x pointer-events-auto">
-                <div className="relative w-[196px] h-[196px]">
+                <div className="relative w-[244px] h-[244px]">
+                  {cooldowns.ult >= 100 ? null : (
+                    <div className="absolute right-[124px] bottom-[218px] text-[9px] font-black text-sky-200 pointer-events-none whitespace-nowrap">🌪️ {cooldowns.ult}%</div>
+                  )}
                   {[
                     { key: 'jump', icon: '🦘', label: 'JUMP', cls: 'w-[84px] h-[84px] right-0 bottom-0 bg-sky-500 border-sky-200', cd: 0, max: 1 },
-                    { key: 'smash', icon: '💍', label: 'SMASH', cls: 'w-[66px] h-[66px] right-[92px] bottom-[4px] bg-amber-400 border-yellow-100', cd: cooldowns.smash, max: CD_MAX.smash },
-                    { key: 'swarm', icon: '🔥', label: 'SWARM', cls: 'w-[66px] h-[66px] right-[78px] bottom-[78px] bg-rose-500 border-rose-200', cd: cooldowns.swarm, max: CD_MAX.swarm },
-                    { key: 'call', icon: '📱', label: 'GANG', cls: 'w-[66px] h-[66px] right-[6px] bottom-[96px] bg-emerald-500 border-emerald-200', cd: cooldowns.call, max: CD_MAX.call }
+                    { key: 'smash', icon: '💍', label: 'SMASH', cls: 'w-[62px] h-[62px] right-[112px] bottom-[8px] bg-amber-400 border-yellow-100', cd: cooldowns.smash, max: CD_MAX.smash },
+                    { key: 'dash', icon: '🐂', label: 'DASH', cls: 'w-[62px] h-[62px] right-[96px] bottom-[70px] bg-orange-400 border-orange-100', cd: cooldowns.dash, max: CD_MAX.dash },
+                    { key: 'cannon', icon: '🐼', label: 'THROW', cls: 'w-[62px] h-[62px] right-[54px] bottom-[110px] bg-yellow-300 border-yellow-50', cd: cooldowns.cannon, max: CD_MAX.cannon },
+                    { key: 'call', icon: '📱', label: 'GANG', cls: 'w-[62px] h-[62px] right-[4px] bottom-[96px] bg-emerald-500 border-emerald-200', cd: cooldowns.call, max: CD_MAX.call },
+                    { key: 'swarm', icon: '🔥', label: 'SWARM', cls: 'w-[58px] h-[58px] right-[180px] bottom-[52px] bg-rose-500 border-rose-200', cd: cooldowns.swarm, max: CD_MAX.swarm },
+                    { key: 'ult', icon: '🌪️', label: 'TORNADO', cls: `w-[68px] h-[68px] right-[132px] bottom-[140px] border-sky-100 ${cooldowns.ult >= 100 ? 'bg-sky-400 animate-pulse ring-4 ring-sky-300/60' : 'bg-slate-700'}`, cd: 0, max: 1, fill: cooldowns.ult }
                   ].map(b => (
                     <button
                       key={b.key}
@@ -8357,8 +8658,9 @@ function App() {
                       }}
                       className={`touch-btn absolute rounded-full border-2 shadow-xl flex flex-col items-center justify-center overflow-hidden ${b.cls} ${b.cd > 0 ? 'grayscale brightness-50' : ''}`}
                     >
-                      <span className="text-2xl leading-none">{b.icon}</span>
-                      <span className="text-[9px] font-black text-slate-950 mt-0.5">{b.label}</span>
+                      {b.fill !== undefined && b.fill < 100 && <span className="absolute inset-x-0 bottom-0 bg-sky-400/70" style={{ height: `${b.fill}%` }} />}
+                      <span className="relative text-2xl leading-none">{b.icon}</span>
+                      <span className="relative text-[8px] font-black text-slate-950 mt-0.5">{b.label}</span>
                       {b.cd > 0 && (
                         <span className="absolute inset-0 flex items-center justify-center font-game text-xl text-white bg-black/40">{Math.ceil(b.cd)}</span>
                       )}
@@ -8368,17 +8670,20 @@ function App() {
               </div>
             </>
           ) : (
-            <div className="absolute right-0 bottom-0 safe-bottom safe-x pointer-events-auto flex items-end gap-2 md:gap-3">
+            <div className="absolute right-0 bottom-0 safe-bottom safe-x pointer-events-auto flex flex-wrap justify-end items-end gap-1.5 md:gap-2 max-w-[calc(100vw-12px)] lg:max-w-none">
               {[
                 { key: 'jump', keyLabel: 'SPACE', title: '🦘 JUMP', desc: 'Double jump · dodge smashes · save yourself at the edge', bg: 'bg-sky-500', border: 'border-sky-300', text: 'text-slate-950', cd: 0, max: 1 },
                 { key: 'call', keyLabel: 'R', title: '📱 CALL GANG', desc: 'Recruit nearby grey pandas into your gang', bg: 'bg-emerald-500', border: 'border-emerald-300', text: 'text-slate-950', cd: cooldowns.call, max: CD_MAX.call },
                 { key: 'smash', keyLabel: 'E', title: '💍 RING SMASH', desc: 'Blast everyone near you away · in the air = ground pound', bg: 'bg-amber-400', border: 'border-yellow-200', text: 'text-slate-950', cd: cooldowns.smash, max: CD_MAX.smash },
-                { key: 'swarm', keyLabel: 'Q', title: '🔥 SWARM', desc: '3.6s: gang punches 2x faster & you run faster', bg: 'bg-rose-500', border: 'border-rose-300', text: 'text-white', cd: cooldowns.swarm, max: CD_MAX.swarm }
+                { key: 'swarm', keyLabel: 'Q', title: '🔥 SWARM', desc: '3.6s: gang punches 2x faster & you run faster', bg: 'bg-rose-500', border: 'border-rose-300', text: 'text-white', cd: cooldowns.swarm, max: CD_MAX.swarm },
+                { key: 'dash', keyLabel: 'SHIFT', title: '🐂 DASH', desc: 'Burst forward and bulldoze anyone in the way', bg: 'bg-orange-400', border: 'border-orange-200', text: 'text-slate-950', cd: cooldowns.dash, max: CD_MAX.dash },
+                { key: 'cannon', keyLabel: 'C', title: '🐼 THROW', desc: 'Throw one of your gang at the nearest rival', bg: 'bg-yellow-300', border: 'border-yellow-100', text: 'text-slate-950', cd: cooldowns.cannon, max: CD_MAX.cannon },
+                { key: 'ult', keyLabel: 'T', title: '🌪️ TORNADO', desc: cooldowns.ult >= 100 ? 'READY! Your gang becomes a spinning wall' : `Charging ${cooldowns.ult}% · land hits & K.O.s`, bg: cooldowns.ult >= 100 ? 'bg-sky-400 animate-pulse' : 'bg-slate-800', border: 'border-sky-300', text: cooldowns.ult >= 100 ? 'text-slate-950' : 'text-sky-200', cd: 0, max: 1 }
               ].map(b => (
                 <button
                   key={b.key}
                   onClick={() => (actionTriggerRef.current[b.key] = true)}
-                  className={`relative overflow-hidden w-[118px] lg:w-[150px] text-left px-3 py-2.5 rounded-2xl border-2 transition cursor-pointer ${
+                  className={`relative overflow-hidden w-[104px] lg:w-[132px] text-left px-2.5 py-2 rounded-2xl border-2 transition cursor-pointer ${
                     b.cd > 0 ? 'bg-slate-900/85 border-slate-700 text-slate-400' : `${b.bg} ${b.border} ${b.text} shadow-lg hover:brightness-110`
                   }`}
                 >
