@@ -5668,6 +5668,41 @@ function App() {
   const myIdRef = useRef(`peer_${Math.random().toString(36).slice(2, 9)}`);
   const keysRef = useRef({});
   const joystickRef = useRef({ active: false, dx: 0, dy: 0 });
+  const [joyHint, setJoyHint] = useState(false);
+  // one place that fully releases the stick (also called when iOS drops the touch-end event)
+  const releaseJoy = () => {
+    joyPtrRef.current = null;
+    joystickRef.current = { active: false, dx: 0, dy: 0 };
+    if (joyBaseRef.current) {
+      joyBaseRef.current.style.left = '';
+      joyBaseRef.current.style.top = '';
+      joyBaseRef.current.style.opacity = '';
+    }
+    if (joyKnobRef.current) joyKnobRef.current.style.transform = 'translate(-50%, -50%)';
+  };
+  useEffect(() => {
+    if (screen !== 'playing' || !IS_TOUCH) return undefined;
+    setJoyHint(true);
+    const hintT = setTimeout(() => setJoyHint(false), 5000);
+    const onUp = e => { if (joyPtrRef.current !== null && e.pointerId === joyPtrRef.current) releaseJoy(); };
+    const onTouchEnd = e => { if (e.touches && e.touches.length === 0 && joyPtrRef.current !== null) releaseJoy(); };
+    const onHide = () => releaseJoy();
+    window.addEventListener('pointerup', onUp, true);
+    window.addEventListener('pointercancel', onUp, true);
+    window.addEventListener('touchend', onTouchEnd, true);
+    window.addEventListener('touchcancel', onTouchEnd, true);
+    window.addEventListener('blur', onHide);
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      clearTimeout(hintT);
+      window.removeEventListener('pointerup', onUp, true);
+      window.removeEventListener('pointercancel', onUp, true);
+      window.removeEventListener('touchend', onTouchEnd, true);
+      window.removeEventListener('touchcancel', onTouchEnd, true);
+      window.removeEventListener('blur', onHide);
+      document.removeEventListener('visibilitychange', onHide);
+    };
+  }, [screen]);
   const actionTriggerRef = useRef({ call: false, smash: false, swarm: false, jump: false });
   const [matchId, setMatchId] = useState(0);
   const [matchTime, setMatchTime] = useState(MATCH_SECONDS);
@@ -6866,17 +6901,13 @@ function App() {
       if (code === 'Space') {
         e.preventDefault();
         if (!e.repeat) actionTriggerRef.current.jump = true;
-      } else if (code === 'KeyR' || code === 'KeyF') {
-        actionTriggerRef.current.call = true;
       } else if (code === 'KeyE') {
         actionTriggerRef.current.smash = true;
-      } else if (code === 'KeyQ') {
-        actionTriggerRef.current.swarm = true;
       } else if (code === 'ShiftLeft' || code === 'ShiftRight') {
         if (!e.repeat) actionTriggerRef.current.dash = true;
       } else if (code === 'KeyC') {
         actionTriggerRef.current.cannon = true;
-      } else if (code === 'KeyT' || code === 'KeyX') {
+      } else if (code === 'KeyT' || code === 'KeyX' || code === 'KeyQ') {
         actionTriggerRef.current.ult = true;
       } else if (code === 'KeyM') {
         const m = !sfx.isMuted();
@@ -7223,7 +7254,7 @@ function App() {
           if (!netEvent) netEvent = 'cannon';
         } else {
           cdState.cannon = 0.6;
-          spawnMemeSprite(localFighter.mesh.position.x, 2.2, localFighter.mesh.position.z, 'NO GANG TO THROW 😅 · press GANG', '#94a3b8');
+          spawnMemeSprite(localFighter.mesh.position.x, 2.2, localFighter.mesh.position.z, 'NO GANG TO THROW 😅 · walk into grey pandas', '#94a3b8');
         }
       }
       actionTriggerRef.current.cannon = false;
@@ -7505,7 +7536,7 @@ function App() {
         }
 
         for (let w = wildMinions.length - 1; w >= 0; w--) {
-          if (wildMinions[w].mesh.position.distanceTo(f.mesh.position) < 2.6) {
+          if (wildMinions[w].mesh.position.distanceTo(f.mesh.position) < 3.4) {
             scene.remove(wildMinions[w].mesh);
             wildMinions.splice(w, 1);
             addMinionToFighter(f);
@@ -7539,7 +7570,7 @@ function App() {
 
               // gang punches: bigger gang + swarm = harder, faster hits
               if (f.punchCd <= 0 && f.stun <= 0) {
-                f.punchCd = f.swarmTimer > 0 ? 0.3 : 0.6;
+                f.punchCd = f.swarmTimer > 0 || f.tornadoT > 0 ? 0.3 : 0.6;
                 f.punchAnim = 0.2;
                 launch(enemy, f, dx / dist, dz / dist, 2.5 + 1.4 * surroundFactor, 3, 2 + 1.6 * surroundFactor);
               }
@@ -7703,9 +7734,16 @@ function App() {
         }
       }
 
+      const lpw = localFighter.mesh.position;
       wildMinions.forEach(wm => {
         wm.mesh.position.y = Math.abs(Math.sin(now * 0.005 + wm.bobOffset)) * 0.25;
-        wm.mesh.rotation.y += 1.2 * dt;
+        // grey pandas near you waddle over to join (no button needed)
+        const wdx = lpw.x - wm.mesh.position.x, wdz = lpw.z - wm.mesh.position.z, wd = Math.hypot(wdx, wdz);
+        if (wd < 9 && wd > 0.1 && lpw.y < 2) {
+          wm.mesh.position.x += (wdx / wd) * 5 * dt;
+          wm.mesh.position.z += (wdz / wd) * 5 * dt;
+          wm.mesh.rotation.y = Math.atan2(wdx, wdz);
+        } else wm.mesh.rotation.y += 1.2 * dt;
       });
 
       for (let i = shockwaves.length - 1; i >= 0; i--) {
@@ -8287,7 +8325,7 @@ function App() {
 
                   <div className="md:hidden border-t border-slate-700/70 pt-3 text-[12px] text-slate-200">
                     <div className="text-[10px] font-black tracking-widest text-slate-400 mb-1.5">TOUCH CONTROLS</div>
-                    👈 Left thumb anywhere: drag to move<br />👉 Right buttons: Jump · Smash · Gang · Swarm
+                    👈 Left thumb anywhere: drag to move<br />👉 Right: Jump · Smash · Dash · Throw · 🌪️ appears when charged<br />🐼 Walk into grey pandas to grow your gang
                   </div>
 
                   {mode === 'shootout' && (
@@ -8311,8 +8349,9 @@ function App() {
                       <span className="flex gap-1"><span className="keycap">W</span><span className="keycap">A</span><span className="keycap">S</span><span className="keycap">D</span></span><span>Move</span>
                       <span><span className="keycap">SPACE</span></span><span>Jump · double jump</span>
                       <span><span className="keycap">E</span></span><span>Ring Smash · air = ground pound</span>
-                      <span><span className="keycap">R</span></span><span>Call gang (recruit grey pandas)</span>
-                      <span><span className="keycap">Q</span></span><span>Swarm (gang goes berserk)</span>
+                      <span><span className="keycap">SHIFT</span></span><span>Dash · bulldoze through the crowd</span>
+                      <span><span className="keycap">C</span></span><span>Throw a gang member at a rival</span>
+                      <span><span className="keycap">T</span></span><span>🌪️ Tornado when the meter is full</span>
                       <span><span className="keycap">M</span></span><span>Mute</span>
                     </div>
                   </div>
@@ -8569,8 +8608,10 @@ function App() {
               {/* ---------- floating joystick: touch anywhere on the left side ---------- */}
               <div
                 className="absolute left-0 bottom-0 w-[55%] h-[62%] pointer-events-auto"
+                onLostPointerCapture={e => { if (joyPtrRef.current === e.pointerId) releaseJoy(); }}
                 onPointerDown={e => {
                   if (joyPtrRef.current !== null) return;
+                  setJoyHint(false);
                   joyPtrRef.current = e.pointerId;
                   try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {}
                   const rect = e.currentTarget.getBoundingClientRect();
@@ -8600,31 +8641,12 @@ function App() {
                   j.dy = dy / R;
                   if (joyKnobRef.current) joyKnobRef.current.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
                 }}
-                onPointerUp={e => {
-                  if (joyPtrRef.current !== e.pointerId) return;
-                  joyPtrRef.current = null;
-                  joystickRef.current = { active: false, dx: 0, dy: 0 };
-                  if (joyBaseRef.current) {
-                    joyBaseRef.current.style.left = '';
-                    joyBaseRef.current.style.top = '';
-                    joyBaseRef.current.style.opacity = '';
-                  }
-                  if (joyKnobRef.current) joyKnobRef.current.style.transform = 'translate(-50%, -50%)';
-                }}
-                onPointerCancel={e => {
-                  joyPtrRef.current = null;
-                  joystickRef.current = { active: false, dx: 0, dy: 0 };
-                  if (joyBaseRef.current) {
-                    joyBaseRef.current.style.left = '';
-                    joyBaseRef.current.style.top = '';
-                    joyBaseRef.current.style.opacity = '';
-                  }
-                  if (joyKnobRef.current) joyKnobRef.current.style.transform = 'translate(-50%, -50%)';
-                }}
+                onPointerUp={e => { if (joyPtrRef.current === e.pointerId) releaseJoy(); }}
+                onPointerCancel={() => releaseJoy()}
               >
                 <div
                   ref={joyBaseRef}
-                  className="absolute w-[120px] h-[120px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/25 bg-slate-900/40 opacity-60"
+                  className={`absolute w-[120px] h-[120px] -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/25 bg-slate-900/40 transition-opacity duration-150 ${joyHint ? 'opacity-50' : 'opacity-0'}`}
                   style={{ left: '90px', top: 'calc(100% - 100px)' }}
                 >
                   <div
@@ -8633,22 +8655,24 @@ function App() {
                     style={{ transform: 'translate(-50%, -50%)' }}
                   />
                 </div>
+                {joyHint && <div className="absolute left-[30px] bottom-[176px] text-[11px] font-black text-white/80 pointer-events-none whitespace-nowrap" style={{ textShadow: '0 1px 3px #000' }}>👆 touch &amp; drag anywhere here to move</div>}
               </div>
 
               {/* ---------- action cluster (right thumb) ---------- */}
               <div className="absolute right-0 bottom-0 safe-bottom safe-x pointer-events-auto">
-                <div className="relative w-[244px] h-[244px]">
-                  {cooldowns.ult >= 100 ? null : (
-                    <div className="absolute right-[124px] bottom-[218px] text-[9px] font-black text-sky-200 pointer-events-none whitespace-nowrap">🌪️ {cooldowns.ult}%</div>
+                <div className="relative w-[200px] h-[250px]">
+                  {cooldowns.ult < 100 && (
+                    <div className="absolute right-[96px] bottom-[176px] pointer-events-none flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-950/70 border border-sky-300/40">
+                      <span className="text-[11px]">🌪️</span>
+                      <span className="w-12 h-1.5 rounded-full bg-slate-700 overflow-hidden"><span className="block h-full bg-sky-400" style={{ width: `${cooldowns.ult}%` }} /></span>
+                    </div>
                   )}
                   {[
-                    { key: 'jump', icon: '🦘', label: 'JUMP', cls: 'w-[84px] h-[84px] right-0 bottom-0 bg-sky-500 border-sky-200', cd: 0, max: 1 },
-                    { key: 'smash', icon: '💍', label: 'SMASH', cls: 'w-[62px] h-[62px] right-[112px] bottom-[8px] bg-amber-400 border-yellow-100', cd: cooldowns.smash, max: CD_MAX.smash },
-                    { key: 'dash', icon: '🐂', label: 'DASH', cls: 'w-[62px] h-[62px] right-[96px] bottom-[70px] bg-orange-400 border-orange-100', cd: cooldowns.dash, max: CD_MAX.dash },
-                    { key: 'cannon', icon: '🐼', label: 'THROW', cls: 'w-[62px] h-[62px] right-[54px] bottom-[110px] bg-yellow-300 border-yellow-50', cd: cooldowns.cannon, max: CD_MAX.cannon },
-                    { key: 'call', icon: '📱', label: 'GANG', cls: 'w-[62px] h-[62px] right-[4px] bottom-[96px] bg-emerald-500 border-emerald-200', cd: cooldowns.call, max: CD_MAX.call },
-                    { key: 'swarm', icon: '🔥', label: 'SWARM', cls: 'w-[58px] h-[58px] right-[180px] bottom-[52px] bg-rose-500 border-rose-200', cd: cooldowns.swarm, max: CD_MAX.swarm },
-                    { key: 'ult', icon: '🌪️', label: 'TORNADO', cls: `w-[68px] h-[68px] right-[132px] bottom-[140px] border-sky-100 ${cooldowns.ult >= 100 ? 'bg-sky-400 animate-pulse ring-4 ring-sky-300/60' : 'bg-slate-700'}`, cd: 0, max: 1, fill: cooldowns.ult }
+                    { key: 'jump', icon: '🦘', label: 'JUMP', cls: 'w-[88px] h-[88px] right-0 bottom-0 bg-sky-500 border-sky-200', cd: 0, max: 1 },
+                    { key: 'smash', icon: '💍', label: 'SMASH', cls: 'w-[66px] h-[66px] right-[100px] bottom-[6px] bg-amber-400 border-yellow-100', cd: cooldowns.smash, max: CD_MAX.smash },
+                    { key: 'dash', icon: '🐂', label: 'DASH', cls: 'w-[66px] h-[66px] right-[84px] bottom-[86px] bg-orange-400 border-orange-100', cd: cooldowns.dash, max: CD_MAX.dash },
+                    { key: 'cannon', icon: '🐼', label: 'THROW', cls: `w-[66px] h-[66px] right-[6px] bottom-[104px] bg-yellow-300 border-yellow-50 ${myGangSize <= 1 ? 'opacity-50' : ''}`, cd: cooldowns.cannon, max: CD_MAX.cannon, badge: Math.max(0, myGangSize - 1) },
+                    ...(cooldowns.ult >= 100 ? [{ key: 'ult', icon: '🌪️', label: 'TORNADO', cls: 'w-[80px] h-[80px] right-[96px] bottom-[164px] bg-sky-400 border-white animate-pulse ring-4 ring-sky-300/70', cd: 0, max: 1 }] : [])
                   ].map(b => (
                     <button
                       key={b.key}
@@ -8658,9 +8682,9 @@ function App() {
                       }}
                       className={`touch-btn absolute rounded-full border-2 shadow-xl flex flex-col items-center justify-center overflow-hidden ${b.cls} ${b.cd > 0 ? 'grayscale brightness-50' : ''}`}
                     >
-                      {b.fill !== undefined && b.fill < 100 && <span className="absolute inset-x-0 bottom-0 bg-sky-400/70" style={{ height: `${b.fill}%` }} />}
                       <span className="relative text-2xl leading-none">{b.icon}</span>
-                      <span className="relative text-[8px] font-black text-slate-950 mt-0.5">{b.label}</span>
+                      <span className="relative text-[9px] font-black text-slate-950 mt-0.5">{b.label}</span>
+                      {b.badge !== undefined && <span className="absolute top-0.5 right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-slate-950 text-white text-[10px] font-black leading-[18px]">{b.badge}</span>}
                       {b.cd > 0 && (
                         <span className="absolute inset-0 flex items-center justify-center font-game text-xl text-white bg-black/40">{Math.ceil(b.cd)}</span>
                       )}
@@ -8673,17 +8697,15 @@ function App() {
             <div className="absolute right-0 bottom-0 safe-bottom safe-x pointer-events-auto flex flex-wrap justify-end items-end gap-1.5 md:gap-2 max-w-[calc(100vw-12px)] lg:max-w-none">
               {[
                 { key: 'jump', keyLabel: 'SPACE', title: '🦘 JUMP', desc: 'Double jump · dodge smashes · save yourself at the edge', bg: 'bg-sky-500', border: 'border-sky-300', text: 'text-slate-950', cd: 0, max: 1 },
-                { key: 'call', keyLabel: 'R', title: '📱 CALL GANG', desc: 'Recruit nearby grey pandas into your gang', bg: 'bg-emerald-500', border: 'border-emerald-300', text: 'text-slate-950', cd: cooldowns.call, max: CD_MAX.call },
                 { key: 'smash', keyLabel: 'E', title: '💍 RING SMASH', desc: 'Blast everyone near you away · in the air = ground pound', bg: 'bg-amber-400', border: 'border-yellow-200', text: 'text-slate-950', cd: cooldowns.smash, max: CD_MAX.smash },
-                { key: 'swarm', keyLabel: 'Q', title: '🔥 SWARM', desc: '3.6s: gang punches 2x faster & you run faster', bg: 'bg-rose-500', border: 'border-rose-300', text: 'text-white', cd: cooldowns.swarm, max: CD_MAX.swarm },
                 { key: 'dash', keyLabel: 'SHIFT', title: '🐂 DASH', desc: 'Burst forward and bulldoze anyone in the way', bg: 'bg-orange-400', border: 'border-orange-200', text: 'text-slate-950', cd: cooldowns.dash, max: CD_MAX.dash },
-                { key: 'cannon', keyLabel: 'C', title: '🐼 THROW', desc: 'Throw one of your gang at the nearest rival', bg: 'bg-yellow-300', border: 'border-yellow-100', text: 'text-slate-950', cd: cooldowns.cannon, max: CD_MAX.cannon },
-                { key: 'ult', keyLabel: 'T', title: '🌪️ TORNADO', desc: cooldowns.ult >= 100 ? 'READY! Your gang becomes a spinning wall' : `Charging ${cooldowns.ult}% · land hits & K.O.s`, bg: cooldowns.ult >= 100 ? 'bg-sky-400 animate-pulse' : 'bg-slate-800', border: 'border-sky-300', text: cooldowns.ult >= 100 ? 'text-slate-950' : 'text-sky-200', cd: 0, max: 1 }
+                { key: 'cannon', keyLabel: 'C', title: '🐼 THROW', desc: 'Throw a gang member at the nearest rival · walk into grey pandas to recruit', bg: 'bg-yellow-300', border: 'border-yellow-100', text: 'text-slate-950', cd: cooldowns.cannon, max: CD_MAX.cannon },
+                { key: 'ult', keyLabel: 'T', title: '🌪️ TORNADO', desc: cooldowns.ult >= 100 ? 'READY! Gang spins around you & punches 2x faster' : `Charging ${cooldowns.ult}% · land hits & K.O.s`, bg: cooldowns.ult >= 100 ? 'bg-sky-400 animate-pulse' : 'bg-slate-800', border: 'border-sky-300', text: cooldowns.ult >= 100 ? 'text-slate-950' : 'text-sky-200', cd: 0, max: 1 }
               ].map(b => (
                 <button
                   key={b.key}
                   onClick={() => (actionTriggerRef.current[b.key] = true)}
-                  className={`relative overflow-hidden w-[104px] lg:w-[132px] text-left px-2.5 py-2 rounded-2xl border-2 transition cursor-pointer ${
+                  className={`relative overflow-hidden w-[118px] lg:w-[142px] text-left px-3 py-2.5 rounded-2xl border-2 transition cursor-pointer ${
                     b.cd > 0 ? 'bg-slate-900/85 border-slate-700 text-slate-400' : `${b.bg} ${b.border} ${b.text} shadow-lg hover:brightness-110`
                   }`}
                 >
