@@ -38,6 +38,9 @@
     .rotate-hint { animation: fadeUp 0.4s ease-out both, rotHint 1.6s ease-in-out 0.4s 3; }
     @keyframes rotHint { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-5deg); } }
     .touch-btn:active { transform: scale(0.9); }
+    .act-btn { touch-action: none; -webkit-touch-callout: none; }
+    .act-btn::before { content: ''; position: absolute; inset: -7px; border-radius: 9999px; }
+    .act-btn.pressed { transform: scale(0.86); filter: brightness(1.25); }
     .preview-bob { animation: bob 2.4s ease-in-out infinite; }
     @keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
     .font-game { font-family: 'Bungee', 'Arial Black', sans-serif; }
@@ -1762,13 +1765,13 @@ const STORY_EPILOGUE = [
 const CHAPTERS = [
   {
     n: 1, title: 'THE RUG', emoji: '🧻', color: '#34d399', mode: 'beatdown', where: 'Beatdown',
-    goal: 'Ring out 3 rivals in one Beatdown match', check: s => s.game === 'beatdown' && s.kills >= 3, progress: s => `${s.kills || 0}/3 K.O.s`,
+    goal: 'Ring out 3 rivals in one Beatdown match', check: s => s.game === 'beatdown' && (s.ringouts ?? s.kills) >= 3, progress: s => `${s.ringouts ?? s.kills ?? 0}/3 ring-outs`,
     intro: [{ kicker: 'CHAPTER 1 · MOON ARENA', art: 'beatdown', color: '#34d399', text: 'Stranded on the Moon. Broke. Angry. Up here, scores get settled the old way: in the ring.', goal: 'Ring out 3 rivals in one Beatdown match' }],
     outro: [{ kicker: 'CHAPTER 1 · CLEARED', emoji: '🗺️', color: '#34d399', text: 'A K.O.’d panda spills it: “PaperHands is still up here on the Moon… and he’s building an army.”' }]
   },
   {
     n: 2, title: 'THE BOT ARMY', emoji: '🤖', color: '#fb7185', mode: 'beatdown', where: 'Beatdown',
-    goal: 'Ring out 5 rivals in one Beatdown match', check: s => s.game === 'beatdown' && s.kills >= 5, progress: s => `${s.kills || 0}/5 K.O.s`,
+    goal: 'Ring out 5 rivals in one Beatdown match', check: s => s.game === 'beatdown' && (s.ringouts ?? s.kills) >= 5, progress: s => `${s.ringouts ?? s.kills ?? 0}/5 ring-outs`,
     intro: [{ kicker: 'CHAPTER 2 · THE BOT ARMY', emoji: '🤖🤖🤖', color: '#fb7185', text: 'PaperHands heard you’re coming. He sends his whole bot gang to the Moon to stop you. Bad idea.', goal: 'Ring out 5 rivals in one Beatdown match' }],
     outro: [{ kicker: 'CHAPTER 2 · CLEARED', emoji: '📜', color: '#fb7185', text: 'A bot glitches out mid-air: “Boss is… hiding… behind the Diamond Hands… Fort HODL…”' }]
   },
@@ -1787,7 +1790,7 @@ const CHAPTERS = [
   {
     n: 5, title: 'THE LAST RING', emoji: '🌕', color: '#facc15', mode: 'beatdown', where: 'Beatdown',
     goal: 'Finish #1 in a Beatdown match', check: s => s.game === 'beatdown' && s.won, progress: s => (s.rank ? `finished #${s.rank}` : 'not #1'),
-    intro: [{ kicker: 'CHAPTER 5 · FINALE', emoji: '🌕🥊', color: '#facc15', text: 'One last ring. PaperHands and his whales are waiting on the Moon. Finish on top and the liquidity comes home.', goal: 'Finish #1 in a Beatdown match' }],
+    intro: [{ kicker: 'CHAPTER 5 · FINALE', emoji: '🌕🥊', color: '#facc15', text: 'One last ring. PaperHands and his bot army are waiting on the Moon. Finish on top and the liquidity comes home.', goal: 'Finish #1 in a Beatdown match' }],
     outro: [{ kicker: 'CHAPTER 5 · CLEARED', emoji: '🏆', color: '#facc15', text: 'PaperHands is rung out. The liquidity flows back. Every panda that held on… made it. GMI.' }]
   }
 ];
@@ -3555,7 +3558,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
 
     // ---------- network ----------
     const net = { isHost: true, hostId: myId, seen: {}, peers: {}, status: 'CONNECTING', client: null, pendingTr: [], pendingEx: [] };
-    const topic = `ngmipandas/shootout/v1/${String(room || 'NGMI-888').trim().toUpperCase()}`;
+    const topic = `ngmipandas/shootout/v1/${cleanRoom(room)}`;
     const send = obj => {
       const c = net.client;
       if (c && c.connected) {
@@ -5426,6 +5429,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
 // PLAYER PROFILE — XP, levels, cosmetics, settings (saved in this browser)
 // ============================================================================
 const PROFILE_KEY = 'ngmi_profile_v1';
+// network numbers are untrusted: clamp to a sane range, NaN/Infinity/strings become the default
+const netNum = (v, lo, hi, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
+const cleanRoom = r => (String(r || '').toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 16) || 'NGMI-888');
 const COSMETICS = [
   { id: 'none', name: 'None', icon: '🚫', lvl: 1 },
   { id: 'party', name: 'Party Hat', icon: '🎉', lvl: 2 },
@@ -5712,7 +5718,7 @@ function App() {
     try {
       const params = new URLSearchParams(window.location.search);
       const roomParam = params.get('room');
-      if (roomParam) setRoomCode(roomParam.toUpperCase());
+      if (roomParam) setRoomCode(cleanRoom(roomParam));
     } catch (e) {}
   }, []);
 
@@ -6070,6 +6076,46 @@ function App() {
     const wildMinions = [];
     const shockwaves = [];
     const floatingMemes = [];
+    // ---------- GPU memory: free what we throw away, recycle gang pandas ----------
+    // Each panda mesh carries ~60 geometries/materials. Recruits, throws and lost gang
+    // members used to be built fresh and dropped without freeing, so a long match kept
+    // growing GPU memory (iOS Safari reloads the page when it runs out).
+    const disposeObj = o => {
+      if (!o) return;
+      o.traverse(c => {
+        if (c.geometry) c.geometry.dispose();
+        const mats = Array.isArray(c.material) ? c.material : c.material ? [c.material] : [];
+        mats.forEach(mt => { if (mt.map) mt.map.dispose(); mt.dispose(); });
+      });
+    };
+    const pandaPool = {};
+    const takePanda = (cls, color) => {
+      const k = `${cls.id}|${color}`;
+      const list = pandaPool[k];
+      let m = list && list.pop();
+      if (m) {
+        m.rotation.set(0, 0, 0);
+        m.scale.copy(m.userData.baseScale);
+        m.visible = true;
+      } else {
+        m = buildNgmiPandaMesh(cls, true, color);
+        m.userData.poolKey = k;
+        m.userData.baseScale = m.scale.clone();
+      }
+      return m;
+    };
+    const releasePanda = m => {
+      if (!m) return;
+      scene.remove(m);
+      const k = m.userData.poolKey;
+      if (k) {
+        const l = pandaPool[k] || (pandaPool[k] = []);
+        if (l.length < 24 && !l.includes(m)) { l.push(m); return; }
+        if (l.includes(m)) return;
+      }
+      disposeObj(m);
+    };
+    const shockGeo = new THREE.RingGeometry(0.6, 1.25, 36);
 
     let gangColorIdx = 0;
     const createFighterEntity = (id, name, pandaClass, isLocal, isBot, startAngle, index) => {
@@ -6110,7 +6156,7 @@ function App() {
       const minions = [];
       const initialCount = isLocal ? 4 : 3 + (index % 3);
       for (let m = 0; m < initialCount; m++) {
-        const mMesh = buildNgmiPandaMesh(pandaClass, true, gangColor);
+        const mMesh = takePanda(pandaClass, gangColor);
         mMesh.position.set(x + (Math.random() - 0.5) * 3, 0, z + (Math.random() - 0.5) * 3);
         scene.add(mMesh);
         minions.push({ mesh: mMesh, angleOffset: (m * Math.PI * 2) / 6, punchTimer: 0 });
@@ -6174,7 +6220,11 @@ function App() {
     const removeFighter = f => {
       scene.remove(f.mesh);
       scene.remove(f.tag.sprite);
-      f.minions.forEach(m => scene.remove(m.mesh));
+      disposeObj(f.mesh);
+      disposeObj(f.tag.sprite);
+      if (f.tornadoFx) { scene.remove(f.tornadoFx); f.tornadoFx = null; }
+      f.minions.forEach(m => releasePanda(m.mesh));
+      f.minions = [];
       const i = fighters.indexOf(f);
       if (i !== -1) fighters.splice(i, 1);
     };
@@ -6185,7 +6235,7 @@ function App() {
         fighters.push(createFighterEntity(`${myIdRef.current}_b${i}`, RIVAL_NAMES[i % RIVAL_NAMES.length], botClass, false, true, angle, i + 1));
       }
     };
-    const net = { isHost: true, remoteSeen: {}, hostId: myIdRef.current };
+    const net = { isHost: true, remoteSeen: {}, hostId: myIdRef.current, hitRate: {} };
     const makeWhale = f => {
       f.isWhale = true;
       f.baseScale *= 1.75;
@@ -6195,25 +6245,28 @@ function App() {
       sfx.play('streak');
       pushKillFeed('🐋 Ring out the Whale for +3 K.O. and +4 pandas!', '#38bdf8');
     };
-    const whaleHunt = storyRunRef.current !== null && CHAPTERS[storyRunRef.current] && CHAPTERS[storyRunRef.current].whale;
+    const storyMode = storyRunRef.current !== null && !!CHAPTERS[storyRunRef.current];
+    const whaleHunt = storyMode && CHAPTERS[storyRunRef.current].whale;
+    // story chapters always have rivals to ring out, even if "Fill with bots" is off
+    const wantBots = fillWithBots || storyMode;
     let whaleTimer = whaleHunt ? 18 : 55;
-    if (fillWithBots) spawnBots(7);
+    if (wantBots) spawnBots(7);
 
     const spawnWildPanda = () => {
-      if (wildMinions.length >= 18) return;
+      if (wildMinions.length >= 14) return;
       const angle = Math.random() * Math.PI * 2;
       const r = 5 + Math.random() * (ARENA_RADIUS - 9);
       const randomClass = PANDA_CLASSES[Math.floor(Math.random() * 2)];
-      const mesh = buildNgmiPandaMesh(randomClass, true, WILD_COLOR);
+      const mesh = takePanda(randomClass, WILD_COLOR);
       mesh.position.set(Math.cos(angle) * r, 0, Math.sin(angle) * r);
       scene.add(mesh);
       wildMinions.push({ mesh, bobOffset: Math.random() * Math.PI * 2 });
     };
 
-    for (let i = 0; i < 14; i++) spawnWildPanda();
+    for (let i = 0; i < 9; i++) spawnWildPanda();
 
     const triggerShockwave = (x, z, colorHex, maxRadius = 8) => {
-      const geo = new THREE.RingGeometry(0.6, 1.25, 36);
+      const geo = shockGeo;
       const mat = new THREE.MeshBasicMaterial({
         color: colorHex,
         side: THREE.DoubleSide,
@@ -6239,7 +6292,7 @@ function App() {
 
     const addMinionToFighter = (fighter) => {
       if (fighter.minions.length >= 16) return;
-      const mMesh = buildNgmiPandaMesh(fighter.pandaClass, true, fighter.gangColor);
+      const mMesh = takePanda(fighter.pandaClass, fighter.gangColor);
       mMesh.position.copy(fighter.mesh.position);
       mMesh.position.y = Math.max(0, mMesh.position.y);
       scene.add(mMesh);
@@ -6605,7 +6658,7 @@ function App() {
     };
 
     let mqttScript = null;
-    const topic = `ngmipandas/beatdown3d/v3/${roomCode.trim().toUpperCase()}`;
+    const topic = `ngmipandas/beatdown3d/v3/${cleanRoom(roomCode)}`;
     const send = obj => {
       const c = mqttClientRef.current;
       if (c && c.connected) {
@@ -6625,20 +6678,21 @@ function App() {
       return f;
     };
     const applyRemoteState = (f, d) => {
+      if (!d || !Number.isFinite(d.x) || !Number.isFinite(d.z)) return;
       if (d.cos !== undefined && f.cosApplied !== d.cos) {
         applyCosmetic(f.mesh, d.cos);
         f.cosApplied = d.cos;
       }
-      f.targetX = d.x;
-      f.targetY = d.y || 0;
-      f.targetZ = d.z;
-      f.dmg = d.d || 0;
-      f.kos = d.k || 0;
-      f.deaths = d.dt || 0;
-      f.streak = d.st || 0;
-      const want = Math.min(16, d.m || 0);
+      f.targetX = netNum(d.x, -120, 120);
+      f.targetY = netNum(d.y, -60, 80);
+      f.targetZ = netNum(d.z, -120, 120);
+      f.dmg = netNum(d.d, 0, 999);
+      f.kos = Math.round(netNum(d.k, 0, 999));
+      f.deaths = Math.round(netNum(d.dt, 0, 999));
+      f.streak = Math.round(netNum(d.st, 0, 99));
+      const want = Math.round(netNum(d.m, 0, 16));
       while (f.minions.length < want) addMinionToFighter(f);
-      while (f.minions.length > want) scene.remove(f.minions.pop().mesh);
+      while (f.minions.length > want) releasePanda(f.minions.pop().mesh);
     };
 
     const initMultiplayer = () => {
@@ -6664,7 +6718,9 @@ function App() {
         } catch (err) {
           return;
         }
-        if (!data || data.id === myIdRef.current) return;
+        if (!data || typeof data !== 'object' || typeof data.id !== 'string' || data.id === myIdRef.current) return;
+        if (typeof data.name === 'string') data.name = data.name.slice(0, 24);
+        else if (data.t === 's') data.name = 'Panda';
 
         if (data.t === 's') {
           // full state from another human (and their bots if they are the host)
@@ -6673,15 +6729,16 @@ function App() {
           const f = upsertRemote(data.id, data.name, data.c);
           applyRemoteState(f, data);
           if (isNew) pushKillFeed(`🟢 ${data.name} joined Room ${roomCode}!`, '#38bdf8');
-          if (data.ev === 'dash') doDash(f, Math.sin(f.mesh.rotation.y), Math.cos(f.mesh.rotation.y));
-          if (data.ev === 'cannon') fireCannon(f);
-          if (data.ev === 'tornado') startTornado(f);
-          if (data.ev === 'smash') {
-            triggerShockwave(data.x, data.z, f.gangColor, 9);
+          const evs = typeof data.ev === 'string' ? data.ev.split(',') : [];
+          if (evs.includes('dash')) doDash(f, Math.sin(f.mesh.rotation.y), Math.cos(f.mesh.rotation.y));
+          if (evs.includes('cannon')) fireCannon(f);
+          if (evs.includes('tornado')) startTornado(f);
+          if (evs.includes('smash')) {
+            triggerShockwave(f.mesh.position.x, f.mesh.position.z, f.gangColor, 9);
             sfx.play('smash', volAt(f.mesh.position) * 0.6);
           }
           if (Array.isArray(data.b) && data.id === net.hostId) {
-            data.b.forEach(b => applyRemoteState(upsertRemote(b.i, b.n, b.c), b));
+            data.b.slice(0, 16).forEach(b => { if (b && typeof b.i === 'string') applyRemoteState(upsertRemote(b.i, String(b.n || 'Bot').slice(0, 24), b.c), b); });
           }
           if (data.id === net.hostId && typeof data.left === 'number' && Math.abs(match.left - data.left) > 1.5) {
             match.left = data.left;
@@ -6690,39 +6747,57 @@ function App() {
           // someone hit one of MY fighters: I own their physics, so I apply it
           const target = fighters.find(x => x.id === data.to && (x.isLocal || x.isBot));
           if (!target) return;
+          // rate limit per sender: real play never gets near 30 hits a second
+          const nowH = performance.now();
+          const rl = net.hitRate[data.id] || (net.hitRate[data.id] = { t: nowH, n: 0 });
+          if (nowH - rl.t > 1000) { rl.t = nowH; rl.n = 0; }
+          if (++rl.n > 30) return;
+          let hdx = netNum(data.dx, -1, 1), hdz = netNum(data.dz, -1, 1);
+          const hl = Math.hypot(hdx, hdz);
+          if (hl < 0.01) return;
+          hdx /= hl;
+          hdz /= hl;
           const src = fighters.find(x => x.id === data.from);
           const attacker = {
             id: data.from,
             name: src ? src.name : 'Someone',
             gangColor: src ? src.gangColor : '#ffffff',
-            pandaClass: { power: data.pw || 1 },
+            pandaClass: { power: netNum(data.pw, 0.3, 3, 1) },
             buffs: { pump: 0 },
             isLocal: false
           };
-          launch(target, attacker, data.dx, data.dz, data.b, data.u, data.dm);
+          launch(target, attacker, hdx, hdz, netNum(data.b, 0, 24), netNum(data.u, 0, 14), netNum(data.dm, 0, 28));
           if (src) target.lastHitBy = src;
           target.lastHitAt = performance.now();
           if (data.fl && Math.random() < 0.5) flingMinion(target, data.dx, data.dz);
         } else if (data.t === 'k') {
           // a fighter owned by someone else got ringed out by one of MINE
           const killer = fighters.find(x => x.id === data.killer && (x.isLocal || x.isBot));
-          if (killer) creditKO(killer, data.vn, data.vx || 0, data.vz || 0, data.vs || 0, !!data.vw);
+          if (killer) creditKO(killer, String(data.vn || 'someone').slice(0, 24), netNum(data.vx, -120, 120), netNum(data.vz, -120, 120), netNum(data.vs, 0, 99), !!data.vw);
           else pushKillFeed(`💥 ${data.kn}'s gang RINGED OUT ${data.vn}!`, '#facc15');
         }
       });
     };
 
-    if (window.mqtt) {
+    let netCancelled = false;
+    if (storyMode) {
+      // story chapters are single-player: never join a public room
+      setNetStatus('STORY · OFFLINE');
+    } else if (window.mqtt) {
       initMultiplayer();
     } else {
       mqttScript = document.createElement('script');
       mqttScript.src = 'https://unpkg.com/mqtt@5.3.4/dist/mqtt.min.js';
       mqttScript.async = true;
-      mqttScript.onload = initMultiplayer;
+      // the match may already be over (back to lobby) by the time the script loads
+      mqttScript.onload = () => { if (!netCancelled) initMultiplayer(); };
       document.body.appendChild(mqttScript);
     }
 
     const cdState = { call: 0, smash: 0, swarm: 0, dash: 0, cannon: 0 };
+    const pressBuf = { smash: -1e9, dash: -1e9, cannon: -1e9 };
+    const INPUT_BUFFER_MS = { smash: 320, dash: 380, cannon: 320 };
+    let lastDeniedAt = -1e9;
     const ult = { v: 0 }; // 🌪️ tornado meter: fills as your gang lands hits and K.O.s
     const camLook = new THREE.Vector3(0, 1, -3);
     // adaptive resolution: drop pixel ratio when the phone can't hold ~45fps, raise it back when it can
@@ -6741,6 +6816,7 @@ function App() {
 
     const creditKO = (killer, victimName, vx, vz, victimStreak = 0, victimWhale = false) => {
       killer.kos += 1;
+      killer.ringouts = (killer.ringouts || 0) + 1;
       addMinionToFighter(killer);
       if (victimStreak >= 3) {
         killer.kos += 1;
@@ -6853,7 +6929,7 @@ function App() {
     const startTornado = f => {
       f.tornadoT = 5;
       f.tornadoHit = {};
-      while (f.minions.length < 8) addMinionToFighter(f);
+      while (f.minions.length < 5) addMinionToFighter(f);
       triggerShockwave(f.mesh.position.x, f.mesh.position.z, 0x38bdf8, 11);
       spawnMemeSprite(f.mesh.position.x, 2.4, f.mesh.position.z, '🌪️ PANDA TORNADO!', '#38bdf8');
       sfx.play('tornado', f.isLocal ? 1 : volAt(f.mesh.position) * 0.7);
@@ -6984,7 +7060,7 @@ function App() {
           sfx.play(myRank === 1 ? 'streak' : 'ko');
           const xpRes = awardXp({ kills: localFighter.kos, deaths: localFighter.deaths || 0, won: myRank === 1, bestStreak: localFighter.maxStreak || 0 });
           sayLine(myRank === 1 ? 'Victory' : 'Time');
-          const storyRes = storyEval(storyRunRef.current, { game: 'beatdown', kills: localFighter.kos, bestStreak: localFighter.maxStreak || 0, won: myRank === 1, rank: myRank, whale: localFighter.whaleKOs || 0 });
+          const storyRes = storyEval(storyRunRef.current, { game: 'beatdown', kills: localFighter.kos, ringouts: localFighter.ringouts || 0, bestStreak: localFighter.maxStreak || 0, won: myRank === 1, rank: myRank, whale: localFighter.whaleKOs || 0 });
           setTimeout(() => setResults({ board, myRank, kos: localFighter.kos, ...stats, xp: xpRes, story: storyRes }), 1600);
         }
       }
@@ -7056,10 +7132,11 @@ function App() {
       }
 
       if (net.isHost && !frozen) {
-        whaleTimer -= dt;
-        if (whaleTimer <= 0) {
+        const whaleAlive = fighters.some(f => f.isWhale);
+        if (!whaleAlive) whaleTimer -= dt;
+        if (whaleTimer <= 0 && !whaleAlive) {
           whaleTimer = whaleHunt ? 35 : 75;
-          if (!fighters.some(f => f.isWhale)) {
+          {
             const w = createFighterEntity(`${myIdRef.current}_whale`, '🐋 THE WHALE', PANDA_CLASSES[2], false, true, Math.random() * 6.28, 3);
             w.mesh.position.set(0, 22, 0);
             makeWhale(w);
@@ -7081,6 +7158,7 @@ function App() {
         if (taker) {
           applyPowerup(taker, pu.type);
           scene.remove(pu.grp);
+          disposeObj(pu.grp);
           powerups.splice(i, 1);
         }
       }
@@ -7185,86 +7263,83 @@ function App() {
         localFighter.vz *= Math.pow(0.08, dt);
       }
 
-      let netEvent = null;
-      if (actionTriggerRef.current.call && cdState.call <= 0) {
-        cdState.call = 5.5;
-        const recruitRadius = localFighter.pandaClass.id === 'street_gm' ? 14 : 10;
-        triggerShockwave(localFighter.mesh.position.x, localFighter.mesh.position.z, 0x22c55e, recruitRadius);
-        spawnMemeSprite(localFighter.mesh.position.x, 1.5, localFighter.mesh.position.z, '📱 CALLING THE GANG!', '#4ade80');
-        sfx.play('call');
-        addMinionToFighter(localFighter);
+      // ---------- input buffer ----------
+      // A tap stays "live" for a short window, so a press made during the last bit of a
+      // cooldown, a hit-stun or a dropped frame still fires as soon as it can.
+      const netEvents = [];
+      const at = actionTriggerRef.current;
+      at.call = false;
+      at.swarm = false;
+      ['smash', 'dash', 'cannon'].forEach(k => {
+        if (at[k]) { pressBuf[k] = now; at[k] = false; }
+      });
+      const live = k => now - pressBuf[k] < INPUT_BUFFER_MS[k];
+      const used = k => { pressBuf[k] = -1e9; };
+      const tumbling = localFighter.stun > 0 && localAirborne;
 
-        for (let i = wildMinions.length - 1; i >= 0; i--) {
-          const wm = wildMinions[i];
-          if (wm.mesh.position.distanceTo(localFighter.mesh.position) <= recruitRadius) {
-            scene.remove(wm.mesh);
-            wildMinions.splice(i, 1);
-            addMinionToFighter(localFighter);
+      if (live('smash') && !frozen) {
+        if (localFighter.weapon) {
+          useWeapon(localFighter);
+          used('smash');
+        } else if (cdState.smash <= 0 && !tumbling) {
+          used('smash');
+          cdState.smash = CD_MAX.smash;
+          netEvents.push('smash');
+          if (localAirborne) {
+            // GROUND POUND: slam straight down, bigger blast on landing
+            localFighter.pounding = true;
+            localFighter.vy = -48;
+            localFighter.vx *= 0.15;
+            localFighter.vz *= 0.15;
+            sfx.play('fall', 0.6);
+          } else {
+            doSmash(localFighter, 12, 1, '💥 GMI SMASH!');
           }
         }
       }
-      actionTriggerRef.current.call = false;
 
-      if (actionTriggerRef.current.smash && localFighter.weapon && !frozen) {
-        useWeapon(localFighter);
-        actionTriggerRef.current.smash = false;
-      }
-      if (actionTriggerRef.current.smash && cdState.smash <= 0) {
-        cdState.smash = 4.0;
-        netEvent = 'smash';
-        if (localAirborne && localFighter.stun <= 0) {
-          // GROUND POUND: slam straight down, bigger blast on landing
-          localFighter.pounding = true;
-          localFighter.vy = -48;
-          localFighter.vx *= 0.15;
-          localFighter.vz *= 0.15;
-          sfx.play('fall', 0.6);
-        } else {
-          doSmash(localFighter, 12, 1, '💥 GMI SMASH!');
-        }
-      }
-      actionTriggerRef.current.smash = false;
-
-      if (actionTriggerRef.current.swarm && cdState.swarm <= 0) {
-        cdState.swarm = 7.0;
-        localFighter.swarmTimer = 3.6;
-        triggerShockwave(localFighter.mesh.position.x, localFighter.mesh.position.z, 0xef4444, 9);
-        spawnMemeSprite(localFighter.mesh.position.x, 1.8, localFighter.mesh.position.z, '🔥 360° GANG SWARM!', '#f87171');
-        sfx.play('swarm');
-        fighters.forEach(other => {
-          if (other.id === localFighter.id) return;
-          const dx = other.mesh.position.x - localFighter.mesh.position.x;
-          const dz = other.mesh.position.z - localFighter.mesh.position.z;
-          const dist = Math.hypot(dx, dz);
-          if (dist < 7 && dist > 0.01) launch(other, localFighter, dx / dist, dz / dist, 7, 6, 8);
-        });
-      }
-      actionTriggerRef.current.swarm = false;
-
-      if (actionTriggerRef.current.dash && cdState.dash <= 0 && localFighter.stun <= 0 && !frozen) {
+      if (live('dash') && !frozen && cdState.dash <= 0 && !tumbling) {
+        used('dash');
         cdState.dash = CD_MAX.dash;
+        // dashing out of a ground stun is allowed: it is your escape button
+        if (localFighter.stun > 0) localFighter.stun = Math.min(localFighter.stun, 0.05);
         let ddx = moveX, ddz = moveZ;
         const dl = Math.hypot(ddx, ddz);
         if (dl > 0.01) { ddx /= dl; ddz /= dl; } else [ddx, ddz] = forwardOf(localFighter);
         doDash(localFighter, ddx, ddz);
-        if (!netEvent) netEvent = 'dash';
+        netEvents.push('dash');
       }
-      actionTriggerRef.current.dash = false;
-      if (actionTriggerRef.current.cannon && cdState.cannon <= 0 && !frozen) {
+
+      if (live('cannon') && !frozen && cdState.cannon <= 0) {
+        used('cannon');
+        if (localFighter.minions.length > 0) {
+          // aim with the stick when it is held, otherwise the way you face
+          if (moveLen > 0.2) localFighter.mesh.rotation.y = Math.atan2(moveX, moveZ);
+        }
         if (fireCannon(localFighter)) {
           cdState.cannon = CD_MAX.cannon;
-          if (!netEvent) netEvent = 'cannon';
+          netEvents.push('cannon');
         } else {
           cdState.cannon = 0.6;
           spawnMemeSprite(localFighter.mesh.position.x, 2.2, localFighter.mesh.position.z, 'NO GANG TO THROW 😅 · walk into grey pandas', '#94a3b8');
         }
       }
-      actionTriggerRef.current.cannon = false;
+
+      // a press that ran out of time without firing: tell the player why, once
+      ['smash', 'dash', 'cannon'].forEach(k => {
+        if (pressBuf[k] > 0 && !live(k)) {
+          used(k);
+          if (frozen || now - lastDeniedAt < 700) return;
+          lastDeniedAt = now;
+          const why = tumbling ? 'STUNNED 💫' : `${k === 'cannon' ? 'THROW' : k.toUpperCase()} ${Math.max(0.1, cdState[k]).toFixed(1)}s ⏳`;
+          spawnMemeSprite(localFighter.mesh.position.x, 2.4, localFighter.mesh.position.z, why, '#cbd5e1');
+        }
+      });
       if (actionTriggerRef.current.ult && !frozen) {
         if (ult.v >= 100) {
           ult.v = 0;
           startTornado(localFighter);
-          netEvent = 'tornado';
+          netEvents.push('tornado');
         } else spawnMemeSprite(localFighter.mesh.position.x, 2.2, localFighter.mesh.position.z, `🌪️ ${Math.floor(ult.v)}% · keep brawling`, '#7dd3fc');
       }
       actionTriggerRef.current.ult = false;
@@ -7312,17 +7387,17 @@ function App() {
                 launch(o, f, (dx / d) * 0.75 + tx * 0.45, (dz / d) * 0.75 + tz * 0.45, 13, 12, 9);
               }
             });
-            for (let wi = wildMinions.length - 1; wi >= 0; wi--) {
+            for (let wi = wildMinions.length - 1; wi >= 0 && f.minions.length < 16; wi--) {
               const wm = wildMinions[wi];
               if (wm.mesh.position.distanceTo(fp) < 5.5) {
-                scene.remove(wm.mesh);
+                releasePanda(wm.mesh);
                 wildMinions.splice(wi, 1);
                 addMinionToFighter(f);
               }
             }
           }
         } else if (f.tornadoFx && f.tornadoFx.visible) f.tornadoFx.visible = false;
-        if (f.isBot && !frozen && f.stun <= 0 && f.minions.length >= 3 && Math.random() < 0.0016) fireCannon(f);
+        if (f.isBot && !frozen && f.stun <= 0 && f.minions.length >= 3 && Math.random() < 0.1 * dt) fireCannon(f);
         if (f.punchAnim > 0) f.punchAnim -= dt;
         if (f.stun > 0) f.stun -= dt;
         if (f.punchCd > 0) f.punchCd -= dt;
@@ -7345,7 +7420,7 @@ function App() {
             });
             if (near && ((f.weapon.kind === 'hammer' && nd < 5) || (f.weapon.kind === 'launcher' && nd < 26 && nd > 5))) {
               f.mesh.rotation.y = Math.atan2(near.mesh.position.x - f.mesh.position.x, near.mesh.position.z - f.mesh.position.z);
-              if (Math.random() < 0.08) useWeapon(f);
+              if (Math.random() < 4.8 * dt) useWeapon(f);
             }
           }
         }
@@ -7389,6 +7464,22 @@ function App() {
               const l = Math.hypot(dx, dz) || 1;
               f.aiDirX = dx / l;
               f.aiDirZ = dz / l;
+
+              // bots use the new moves too (the Whale is too heavy to dash or spin)
+              if (!f.isWhale && f.stun <= 0) {
+                if (f.botUltAt === undefined) f.botUltAt = now + 25000 + Math.random() * 25000;
+                if (!(f.dashT > 0) && now > (f.botDashAt || 0) && minDist > 3 && minDist < 11 && Math.random() < Math.min(0.5, BOT_AGGRO * 0.9)) {
+                  f.botDashAt = now + 2600 + Math.random() * 2400;
+                  doDash(f, f.aiDirX, f.aiDirZ);
+                }
+                if (!(f.tornadoT > 0) && now > f.botUltAt) {
+                  const close = fighters.filter(o => o.id !== f.id && o.mesh.position.distanceTo(f.mesh.position) < 5.5).length;
+                  if (close >= 2 || (close >= 1 && Math.random() < 0.25)) {
+                    startTornado(f);
+                    f.botUltAt = now + 40000 + Math.random() * 25000;
+                  }
+                }
+              }
 
               if (minDist < 6.5 && Math.random() < BOT_AGGRO && f.stun <= 0) {
                 f.punchAnim = 0.35;
@@ -7537,9 +7628,9 @@ function App() {
           ud.ringSpark.rotation.y += 4 * dt;
         }
 
-        for (let w = wildMinions.length - 1; w >= 0; w--) {
-          if (wildMinions[w].mesh.position.distanceTo(f.mesh.position) < 3.4) {
-            scene.remove(wildMinions[w].mesh);
+        for (let w = wildMinions.length - 1; w >= 0 && (f.isLocal || f.isBot) && f.minions.length < 16; w--) {
+          if (wildMinions[w].mesh.position.distanceTo(f.mesh.position) < 2.6) {
+            releasePanda(wildMinions[w].mesh);
             wildMinions.splice(w, 1);
             addMinionToFighter(f);
             if (f.isLocal) {
@@ -7577,7 +7668,7 @@ function App() {
                 launch(enemy, f, dx / dist, dz / dist, 2.5 + 1.4 * surroundFactor, 3, 2 + 1.6 * surroundFactor);
               }
 
-              if (gangCount >= enemyCount + 2 && Math.random() < 0.035) {
+              if (gangCount >= enemyCount + 2 && Math.random() < 2.1 * dt) {
                 const callout = MEME_CALLOUTS[Math.floor(Math.random() * MEME_CALLOUTS.length)];
                 spawnMemeSprite(enemy.mesh.position.x, 1.5, enemy.mesh.position.z, callout, '#facc15');
                 triggerShockwave(enemy.mesh.position.x, enemy.mesh.position.z, f.pandaClass.accent, 4.5);
@@ -7610,6 +7701,11 @@ function App() {
           m.mesh.rotation.y = spin ? m.mesh.rotation.y + 14 * dt : f.mesh.rotation.y;
         });
 
+        if ((f.isLocal || f.isBot) && !Number.isFinite(f.mesh.position.x + f.mesh.position.y + f.mesh.position.z + f.vx + f.vy + f.vz)) {
+          // safety net: a bad number must never make a fighter vanish forever
+          f.mesh.position.set(0, 16, 0);
+          f.vx = 0; f.vy = 0; f.vz = 0;
+        }
         const fellOut = (f.isLocal || f.isBot) && f.mesh.position.y < -14;
         if (fellOut) {
           // credit only goes to whoever hit you in the last 5 seconds; otherwise it's a self-destruct
@@ -7653,7 +7749,7 @@ function App() {
           const lose = Math.floor(f.minions.length / 2);
           for (let k = 0; k < lose; k++) {
             const gone = f.minions.pop();
-            scene.remove(gone.mesh);
+            releasePanda(gone.mesh);
           }
           if (f.isLocal) setMyGangSize(f.minions.length + 1);
         }
@@ -7701,6 +7797,7 @@ function App() {
         if (hit || pr.life <= 0) {
           explode(pr.mesh.position.x, pr.mesh.position.z, pr.owner);
           scene.remove(pr.mesh);
+          disposeObj(pr.mesh);
           projectiles.splice(i, 1);
         }
       }
@@ -7731,7 +7828,7 @@ function App() {
         d.mesh.rotation.z += 7 * dt;
         d.life -= dt;
         if (d.life <= 0 || d.mesh.position.y < -20) {
-          scene.remove(d.mesh);
+          releasePanda(d.mesh);
           debris.splice(i, 1);
         }
       }
@@ -7755,6 +7852,7 @@ function App() {
         sw.mat.opacity -= 1.9 * dt;
         if (sw.mat.opacity <= 0) {
           scene.remove(sw.mesh);
+          sw.mat.dispose();
           shockwaves.splice(i, 1);
         }
       }
@@ -7766,6 +7864,8 @@ function App() {
         fm.mat.opacity = Math.max(0, fm.life);
         if (fm.life <= 0) {
           scene.remove(fm.sprite);
+          if (fm.mat.map) fm.mat.map.dispose();
+          fm.mat.dispose();
           floatingMemes.splice(i, 1);
         }
       }
@@ -7802,11 +7902,11 @@ function App() {
         sp.beam.quaternion.setFromUnitVectors(BEAM_DOWN, dir.normalize());
       });
 
-      if (now - lastNetBroadcast > 66 || netEvent) {
+      if (now - lastNetBroadcast > 66 || netEvents.length) {
         lastNetBroadcast = now;
         const r2 = v => Math.round(v * 100) / 100;
         const lp = localFighter.mesh.position;
-        const pkt = { t: 's', id: myIdRef.current, name: playerName, c: selectedClass.id, cos: prof.cosmetic, x: r2(lp.x), y: r2(lp.y), z: r2(lp.z), d: Math.round(localFighter.dmg), m: localFighter.minions.length, k: localFighter.kos, dt: localFighter.deaths, st: localFighter.streak || 0, ev: netEvent };
+        const pkt = { t: 's', id: myIdRef.current, name: playerName, c: selectedClass.id, cos: prof.cosmetic, x: r2(lp.x), y: r2(lp.y), z: r2(lp.z), d: Math.round(localFighter.dmg), m: localFighter.minions.length, k: localFighter.kos, dt: localFighter.deaths, st: localFighter.streak || 0, ev: netEvents.length ? netEvents.join(',') : null };
         if (net.isHost) {
           pkt.left = Math.round(match.left * 10) / 10;
           pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.pandaClass.id, x: r2(b.mesh.position.x), y: r2(b.mesh.position.y), z: r2(b.mesh.position.z), d: Math.round(b.dmg), m: b.minions.length, k: b.kos, dt: b.deaths, st: b.streak || 0 }));
@@ -7874,7 +7974,7 @@ function App() {
             pushKillFeed('🔗 Synced with room host', '#38bdf8');
           }
         }
-        if (net.isHost && fillWithBots && !fighters.some(f => f.isBot)) {
+        if (net.isHost && wantBots && !fighters.some(f => f.isBot)) {
           spawnBots(Math.max(0, 7 - peers.length));
         }
         setOnlinePeersCount(1 + Object.keys(remotePlayersRef.current).length);
@@ -7929,6 +8029,7 @@ function App() {
     window.addEventListener('orientationchange', handleResize);
 
     return () => {
+      netCancelled = true;
       cancelAnimationFrame(animationFrameId);
       if (bdClipRef.current) { bdClipRef.current.destroy(); bdClipRef.current = null; }
       sfx.stopMusic();
@@ -7943,6 +8044,7 @@ function App() {
         try {
           mqttClientRef.current.end();
         } catch (e) {}
+        mqttClientRef.current = null;
       }
       if (post) post.dispose();
       envRT.dispose();
@@ -8313,7 +8415,7 @@ function App() {
                         type="text"
                         maxLength={12}
                         value={roomCode}
-                        onChange={e => setRoomCode(e.target.value.toUpperCase())}
+                        onChange={e => setRoomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 16))}
                         className="w-full px-3 py-2 rounded-xl bg-slate-950/80 border border-slate-700 text-emerald-300 font-black tracking-wider uppercase focus:outline-none focus:border-emerald-400"
                       />
                       <button
@@ -8680,9 +8782,15 @@ function App() {
                       key={b.key}
                       onPointerDown={e => {
                         e.preventDefault();
+                        e.stopPropagation();
                         actionTriggerRef.current[b.key] = true;
+                        const el = e.currentTarget;
+                        el.classList.add('pressed');
+                        setTimeout(() => el.classList.remove('pressed'), 110);
+                        buzz(6);
                       }}
-                      className={`touch-btn absolute rounded-full border-2 shadow-xl flex flex-col items-center justify-center ${b.cls} ${b.cd > 0 ? 'grayscale brightness-50' : ''}`}
+                      onContextMenu={e => e.preventDefault()}
+                      className={`touch-btn act-btn absolute rounded-full border-2 shadow-xl flex flex-col items-center justify-center ${b.cls} ${b.cd > 0 ? 'grayscale brightness-50' : ''}`}
                     >
                       <span className="relative text-2xl leading-none">{b.icon}</span>
                       <span className="relative text-[9px] font-black text-slate-950 mt-0.5">{b.label}</span>

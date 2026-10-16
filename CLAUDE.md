@@ -10,7 +10,9 @@ Single-file game: `index.html` (React 18 UMD + Babel standalone + Three.js r149 
 - Profile: `defaultProfile`, `loadProfile`, `saveProfile`, `awardXp`, key `PROFILE_KEY` (localStorage `ngmi_profile_v1`).
 - Lobby: `App` component (screens: lobby, playing, shootout). `LobbyBackdrop`, `Showcase`, `ClipGallery`.
 - Shootout: `ShootoutGame`. Match init `const match = { left: SHOOT_SECONDS ...}`, `endMatch`.
-- Beatdown: effect inside `App` with `const match = { left: MATCH_SECONDS ...}`. Gang logic: `addMinionToFighter`, `spawnWildPanda`, `wildMinions`. Moves: `doDash`, `fireCannon`, `startTornado`, `doSmash`. Action flags: `actionTriggerRef.current.{jump,smash,dash,cannon,ult}`. The `call` flag is dead code.
+- Beatdown: effect inside `App` with `const match = { left: MATCH_SECONDS ...}`. Gang logic: `addMinionToFighter`, `spawnWildPanda`, `wildMinions`. Moves: `doDash`, `fireCannon`, `startTornado`, `doSmash`. Action flags: `actionTriggerRef.current.{jump,smash,dash,cannon,ult}`. SMASH/DASH/THROW go through an input buffer (`pressBuf`, `INPUT_BUFFER_MS`) so a tap stays live for ~0.3 s. The `call` and `swarm` flags are dead code.
+- GPU memory: gang/wild panda meshes come from `takePanda` and go back with `releasePanda` (pooled). Use `disposeObj` for anything else you remove from the scene.
+- Network input is untrusted: clamp numbers with `netNum`, room codes with `cleanRoom`. Story chapters never connect to MQTT (`storyMode`).
 - Mobile controls: the `[ {key:'jump'...}, {key:'smash'...} ]` array in the action cluster, plus the floating joystick and `releaseJoy()`.
 - Desktop ability cards: the array with `keyLabel` (E, SHIFT, C, T).
 - Clips: `createClipper`, `clipDB` (IndexedDB `ngmi_clips`), `clipStore`, `shareClip`, `downloadClip`.
@@ -27,5 +29,6 @@ Single-file game: `index.html` (React 18 UMD + Babel standalone + Three.js r149 
 ## Known open items
 
 - Real-device feel for dash, tornado, throw and the joystick is not verified.
-- Grey-panda auto-recruit can grow gangs fast (5 to 8 in 4 seconds in tests).
+- Gang growth was tuned down (9 starting grey pandas, pickup radius 2.6, Tornado tops up to 5). Needs real-play feedback.
+- iPhone has no vibration API, so `buzz()` only works on Android.
 - Story chapters 2–4 are Beatdown-only by design. Shootout is deferred until mobile shooting feels fun.
