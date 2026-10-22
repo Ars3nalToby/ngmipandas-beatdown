@@ -267,6 +267,7 @@ function makeSuitTexture(suit) {
 const sfx = (() => {
   let ctx = null, master = null, sfxBus = null, musicBus = null, noiseBuf = null, recDest = null;
   let muted = false, lastHit = 0, musicTimer = null, nextStepTime = 0, step = 0, intensity = 0;
+  let curBus = null; // when set, sounds route through a panner + muffle filter (positional audio)
 
   const ensure = () => {
     if (!ctx) {
@@ -322,7 +323,7 @@ const sfx = (() => {
     } else {
       o.connect(g);
     }
-    g.connect(bus || sfxBus);
+    g.connect(bus || curBus || sfxBus);
     o.start(t);
     o.stop(t + dur + 0.05);
   };
@@ -339,14 +340,28 @@ const sfx = (() => {
     env(g, t, vol, dur);
     n.connect(f);
     f.connect(g);
-    g.connect(bus || sfxBus);
+    g.connect(bus || curBus || sfxBus);
     n.start(t, Math.random() * 0.5);
     n.stop(t + dur + 0.05);
   };
 
-  const play = (name, vol = 1, p = 1) => {
+  const play = (name, vol = 1, p = 1, pan = null, muffle = 0) => {
     if (!ctx || muted || vol <= 0.02) return;
     const now = ctx.currentTime;
+    if (pan !== null || muffle > 0) {
+      // left/right by direction, duller with distance or through walls
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = Math.max(450, 16000 * Math.pow(1 - Math.min(0.9, muffle), 2.2));
+      if (ctx.createStereoPanner) {
+        const sp = ctx.createStereoPanner();
+        sp.pan.value = Math.max(-1, Math.min(1, pan || 0));
+        lp.connect(sp);
+        sp.connect(sfxBus);
+      } else lp.connect(sfxBus);
+      curBus = lp;
+    }
+    try {
     switch (name) {
       case 'hit':
         if (now - lastHit < 0.045) return;
@@ -514,8 +529,52 @@ const sfx = (() => {
         [392, 494, 587, 784].forEach(f => tone('sawtooth', f, 0, 0.6, 0.09 * vol, null, now, 3000));
         tone('sine', 98, 49, 0.6, 0.6 * vol);
         break;
+      case 'zstep':
+        hiss(0.1, 0.3 * vol, 'lowpass', 900 * p, 220, null, now);
+        tone('sine', 90 * p, 48, 0.09, 0.32 * vol);
+        break;
+      case 'zstomp':
+        tone('sine', 62 * p, 28, 0.32, 0.85 * vol);
+        hiss(0.22, 0.45 * vol, 'lowpass', 500, 120);
+        break;
+      case 'scrape':
+        hiss(0.45 * p, 0.2 * vol, 'bandpass', 950, 420);
+        hiss(0.3, 0.08 * vol, 'highpass', 3000, null, null, now + 0.1);
+        break;
+      case 'zbreath':
+        hiss(0.55, 0.16 * vol, 'bandpass', 650 * p, 320);
+        tone('sawtooth', 72 * p, 58, 0.5, 0.06 * vol, null, null, 320);
+        break;
+      case 'zswipe':
+        hiss(0.13, 0.28 * vol, 'bandpass', 1100, 3200);
+        break;
+      case 'can':
+        tone('triangle', 1900 * p, 1300, 0.07, 0.13 * vol);
+        tone('square', 2700 * p, 0, 0.03, 0.04 * vol);
+        tone('triangle', 1500 * p, 1100, 0.05, 0.08 * vol, null, now + 0.09);
+        hiss(0.05, 0.08 * vol, 'highpass', 4200);
+        break;
+      case 'bottle':
+        tone('sine', 2500 * p, 2380, 0.14, 0.1 * vol);
+        tone('sine', 3300 * p, 3200, 0.08, 0.05 * vol, null, now + 0.11);
+        break;
+      case 'paper':
+        hiss(0.2, 0.12 * vol, 'bandpass', 3200 * p, 1400);
+        break;
+      case 'box':
+        tone('sine', 150 * p, 70, 0.1, 0.32 * vol);
+        hiss(0.1, 0.12 * vol, 'lowpass', 900, 200);
+        break;
+      case 'hordeRumble':
+        for (let i = 0; i < 3; i++) tone('sawtooth', (80 + Math.random() * 50) * p, 55, 0.9, 0.05 * vol, null, now + i * 0.13, 380);
+        hiss(1.1, 0.22 * vol, 'lowpass', 520, 180);
+        for (let i = 0; i < 5; i++) hiss(0.07, 0.12 * vol, 'lowpass', 700, 250, null, now + 0.12 + i * 0.17 + Math.random() * 0.05);
+        break;
       default:
         break;
+    }
+    } finally {
+      curBus = null;
     }
   };
 
@@ -527,9 +586,88 @@ const sfx = (() => {
     { name: 'BULL RUN DISCO', bpm: 118, roots: [41.2, 46.25, 55, 49], chords: [[0, 4, 7, 10], [0, 3, 7, 10], [0, 3, 7], [0, 4, 7]], kick: [0, 4, 8, 12], snare: [4, 12], openHat: true, bass: [0, 2, 4, 6, 8, 10, 12, 14], octaveJump: true, bassWave: 'sawtooth', arpWave: 'square', arpEvery: 2, scale: [0, 2, 4, 7, 9] }
   ];
   const RUSH = { name: 'FINAL RUSH', bpm: 160, roots: [55, 55, 43.65, 49], chords: [[0, 3, 7], [0, 3, 7], [0, 4, 7], [0, 4, 7]], kick: [0, 4, 8, 12], snare: [4, 12], openHat: true, bass: [0, 2, 4, 6, 8, 10, 12, 14], bassWave: 'sawtooth', arpWave: 'sawtooth', arpEvery: 1, scale: [0, 2, 3, 5, 7, 8, 10] };
+  // zombie mode has its own horror soundtrack (Beatdown / lobby keep the playlist above)
+  const ZTRACKS = [
+    { name: 'DEAD CITY', bpm: 72, roots: [55, 51.91, 55, 46.25], scale: [0, 1, 3, 5, 7, 8], beat: [0, 3], bell: true },
+    { name: 'NO SIGNAL', bpm: 86, roots: [49, 49, 46.25, 51.91], scale: [0, 1, 3, 6, 7, 10], beat: [0, 6, 10], pulse: true, ticker: true },
+    { name: 'LAST LIGHT', bpm: 64, roots: [43.65, 41.2, 43.65, 38.89], scale: [0, 2, 3, 7, 8], beat: [0, 8], keys: true, wind: true }
+  ];
+  const ZRUSH = { name: "THEY'RE HERE", bpm: 150, roots: [55, 55, 51.91, 49], scale: [0, 1, 3, 5, 6, 8], hard: true };
   const BARS_PER_SONG = 32;
-  let trackIdx = 0, rush = false, songBar = 0, melody = [], onTrackChange = null;
-  const cur = () => (rush ? RUSH : TRACKS[trackIdx]);
+  let trackIdx = 0, rush = false, songBar = 0, melody = [], onTrackChange = null, theme = 'main';
+  const list = () => (theme === 'zombie' ? ZTRACKS : TRACKS);
+  const cur = () => (theme === 'zombie' ? (rush ? ZRUSH : ZTRACKS[trackIdx % ZTRACKS.length]) : rush ? RUSH : TRACKS[trackIdx % TRACKS.length]);
+  const pad = (type, f, dur, vol, at, filterHz, detune = 0) => {
+    const o = ctx.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(f, at);
+    o.detune.value = detune;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(vol, at + dur * 0.35);
+    g.gain.linearRampToValueAtTime(0.0001, at + dur);
+    const fl = ctx.createBiquadFilter();
+    fl.type = 'lowpass';
+    fl.frequency.value = filterHz;
+    o.connect(fl);
+    fl.connect(g);
+    g.connect(musicBus);
+    o.start(at);
+    o.stop(at + dur + 0.05);
+  };
+  const scheduleHorror = (tr, st, t) => {
+    const STEP = 60 / tr.bpm / 4;
+    const s16 = st % 16, bar = Math.floor(st / 16) % 4, root = tr.roots[bar];
+    const section = songBar < 2 ? 0 : songBar < 8 ? 1 : 2;
+    if (tr.hard) {
+      // the horde is here: pounding toms, a grinding saw ostinato, shrieking string stabs
+      if ([0, 3, 6, 8, 10, 11, 14].includes(s16)) tone('sine', s16 % 8 === 0 ? 120 : 175, 48, 0.22, 0.85, musicBus, t);
+      if (s16 % 2 === 0) tone('sawtooth', root * (s16 % 8 === 6 ? 2 : 1), 0, STEP * 1.1, 0.22, musicBus, t, 800 + intensity * 700);
+      if (s16 % 2 === 1) hiss(0.03, 0.08 + intensity * 0.05, 'highpass', 8000, null, musicBus, t);
+      if (s16 === 4 || s16 === 12) hiss(0.18, 0.33, 'bandpass', 1500, 600, musicBus, t);
+      if (s16 === 0 && bar % 2 === 0) {
+        pad('sawtooth', semis(root * 8, 1), STEP * 7, 0.05, t, 3600);
+        pad('sawtooth', semis(root * 8, 0), STEP * 7, 0.05, t, 3600, 12);
+      }
+      if (s16 === 15 && bar === 3) tone('sawtooth', semis(root * 16, 6), semis(root * 8, 0), STEP * 3, 0.05, musicBus, t, 4000);
+      return;
+    }
+    // drone bed every bar: detuned saws under a low sine
+    if (s16 === 0) {
+      const L = STEP * 16;
+      pad('sawtooth', root, L * 1.05, 0.07, t, 340 + intensity * 400);
+      pad('sawtooth', root, L * 1.05, 0.06, t, 300, 9);
+      pad('sine', root / 2, L * 1.05, 0.16, t, 200);
+      if (bar === 0 && songBar % 4 === 0) tone('sine', 46, 28, 2.2, 0.55, musicBus, t); // far-off boom
+    }
+    // heartbeat; it quickens when zombies get close
+    const beats = intensity > 0.6 ? [0, 3, 8, 11] : tr.beat;
+    if (beats.includes(s16)) tone('sine', 72, 38, 0.2, 0.7, musicBus, t);
+    if (tr.pulse && s16 % 2 === 0) tone('square', root * 2, 0, STEP * 0.7, 0.05 + intensity * 0.04, musicBus, t, 420 + intensity * 1400);
+    if (tr.ticker && s16 % 4 === 0) hiss(0.015, 0.09, 'highpass', 9000, null, musicBus, t);
+    if (intensity > 0.4 && s16 % 2 === 1) hiss(0.02, 0.04 + intensity * 0.05, 'highpass', 9500, null, musicBus, t);
+    if (tr.keys && (s16 === 0 || s16 === 8) && section > 0) [0, 3, 7].forEach((n, i) => tone('triangle', semis(root * 4, n), 0, STEP * 7, 0.035, musicBus, t + i * 0.03, 1800));
+    if (tr.wind && s16 === 0 && bar % 2 === 0) hiss(STEP * 24, 0.05, 'bandpass', 260, 900, musicBus, t);
+    // music box: a lonely bell line with an echo
+    if ((tr.bell || section === 2) && section > 0 && s16 % 4 === 0 && Math.random() < 0.55) {
+      const m = melody[(s16 / 4 + bar * 4) % 8];
+      if (m !== null) {
+        const f = semis(root * 16, m);
+        tone('triangle', f, 0, STEP * 6, 0.035, musicBus, t, 5000);
+        tone('triangle', f, 0, STEP * 5, 0.014, musicBus, t + STEP * 3, 4000);
+      }
+    }
+    // a dissonant string swell now and then
+    if (section === 2 && bar === 3 && s16 === 8) {
+      pad('sawtooth', semis(root * 4, 1), STEP * 10, 0.035, t, 2200);
+      pad('sawtooth', semis(root * 4, 0), STEP * 10, 0.035, t, 2200, -8);
+    }
+    // something metal clanks somewhere in the dark
+    if (Math.random() < 0.012) {
+      tone('square', 500 + Math.random() * 900, 180, 0.09, 0.025, musicBus, t, 2500);
+      hiss(0.12, 0.03, 'bandpass', 2000, 800, musicBus, t);
+    }
+  };
   const semis = (f, n) => f * Math.pow(2, n / 12);
   const newMelody = tr => {
     // 8-step phrase from the song's scale; repeats so it becomes a hook
@@ -545,12 +683,16 @@ const sfx = (() => {
       songBar++;
       if (!rush && songBar >= BARS_PER_SONG) {
         songBar = 0;
-        trackIdx = (trackIdx + 1) % TRACKS.length;
-        newMelody(TRACKS[trackIdx]);
-        if (onTrackChange) onTrackChange(TRACKS[trackIdx].name);
+        trackIdx = (trackIdx + 1) % list().length;
+        newMelody(list()[trackIdx]);
+        if (onTrackChange) onTrackChange(list()[trackIdx].name);
       } else if (songBar % 8 === 0) {
         newMelody(tr);
       }
+    }
+    if (theme === 'zombie') {
+      scheduleHorror(tr, st, t);
+      return;
     }
     const bar = Math.floor(st / 16) % 4;
     const root = tr.roots[bar];
@@ -617,15 +759,21 @@ const sfx = (() => {
     },
     onTrack(fn) { onTrackChange = fn; },
     trackName() { return cur().name; },
-    startMusic() {
-      if (!ensure() || musicTimer) return;
-      nextStepTime = ctx.currentTime + 0.1;
-      step = 0;
+    startMusic(th = 'main') {
+      if (!ensure()) return;
+      if (musicTimer && theme === th) return;
+      theme = th;
       rush = false;
       songBar = 0;
-      trackIdx = Math.floor(Math.random() * TRACKS.length);
-      newMelody(TRACKS[trackIdx]);
-      musicTimer = setInterval(tick, 25);
+      intensity = 0;
+      trackIdx = Math.floor(Math.random() * list().length);
+      newMelody(list()[trackIdx]);
+      if (!musicTimer) {
+        nextStepTime = ctx.currentTime + 0.1;
+        step = 0;
+        musicTimer = setInterval(tick, 25);
+      }
+      if (onTrackChange && th === 'zombie') onTrackChange(list()[trackIdx].name);
     },
     stopMusic() {
       if (musicTimer) clearInterval(musicTimer);
@@ -4291,8 +4439,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       booms.push({ ring, glow, t: 0, s: scale });
       const dme = me.pos.distanceTo(point);
       me.shake = Math.max(me.shake, Math.max(0, (1.3 - dme / (22 * scale)) * Math.min(1.5, scale)));
-      sfx.play('explode', Math.max(0.15, 1 - dme / 90));
-      if (scale > 1.2) sfx.play('roar', Math.max(0.05, 0.35 - dme / 120), 2.2);
+      const spx = spatial(point, 90);
+      sfx.play('explode', Math.max(0.15, 1 - dme / 90), 1, spx.pan, Math.min(0.6, dme / 140));
+      if (scale > 1.2) sfx.play('roar', Math.max(0.05, 0.35 - dme / 120), 2.2, spx.pan, 0);
       if (point.y < 3) inkSplat(new THREE.Vector3(point.x, Math.max(0.02, point.y - 0.6), point.z), new THREE.Vector3(0, 1, 0), 3.2 * scale);
       if (visualOnly) return;
       net.pendingEx.push([r1(point.x), r1(point.y), r1(point.z), Math.round(scale * 10)]);
@@ -4387,7 +4536,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       spawnTracer(muzzle, res.point, b.golden ? 0xffc93c : 0xfff1a8);
       queueTracer(muzzle, res.point);
       const vol = Math.max(0, 1 - me.pos.distanceTo(b.pos) / 70);
-      sfx.play('shot_ak', vol * 0.5);
+      play3d('shot_ak', b.pos, 0.5, 1, 70);
       b.protT = 0;
       if (res.zombie) {
         // squad bots hit zombies harder so they pull their weight
@@ -6058,10 +6207,162 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       g.fillText('N', nx, ny);
     };
 
+    // ---- positional audio: where is that sound coming from? ----
+    const spatial = (pos, range = 45) => {
+      const dx = pos.x - camera.position.x, dz = pos.z - camera.position.z, d = Math.hypot(dx, dz) || 1;
+      const rx = Math.cos(me.yaw), rz = -Math.sin(me.yaw), fx = -Math.sin(me.yaw), fz = -Math.cos(me.yaw);
+      const pan = ((dx * rx + dz * rz) / d) * Math.min(1, d / 3);
+      const behind = (dx * fx + dz * fz) / d < -0.2 ? 0.18 : 0;
+      return { vol: Math.max(0, 1 - d / range), pan, muffle: Math.min(0.85, (d / range) * 0.75 + behind), d };
+    };
+    const play3d = (name, pos, vol = 1, p = 1, range = 45, occlude = false) => {
+      const sp = spatial(pos, range);
+      if (sp.vol * vol < 0.03) return;
+      let muffle = sp.muffle;
+      if (occlude && !hasLOS(camera.position, new THREE.Vector3(pos.x, pos.y + 1.4, pos.z))) muffle = Math.min(0.92, muffle + 0.45);
+      sfx.play(name, sp.vol * vol, p, sp.pan, muffle);
+    };
+    let stepBudget = 0, rumbleT = 0;
+    const zStep = zz => {
+      if (stepBudget <= 0) return;
+      const big = zz.def.boss || zz.kind === 'brute';
+      const sp = spatial(zz.pos, zz.def.boss ? 80 : big ? 40 : 30);
+      if (sp.vol < 0.05) return;
+      stepBudget -= 1;
+      const pr = 0.85 + Math.random() * 0.3;
+      if (zz.def.boss) {
+        sfx.play('zstomp', sp.vol, 0.6, sp.pan, sp.muffle);
+        me.shake = Math.max(me.shake, sp.vol * 0.25);
+      } else if (zz.kind === 'brute') sfx.play('zstomp', sp.vol * 0.7, pr, sp.pan, sp.muffle);
+      else if (zz.def.crawl) sfx.play('scrape', sp.vol * 0.8, pr, sp.pan, sp.muffle);
+      else {
+        // limping zombies drag one foot
+        const drag = zz.mesh && zz.mesh.userData.limp < 1 && (zz.stepN = (zz.stepN || 0) + 1) % 2 === 0;
+        sfx.play(drag ? 'scrape' : 'zstep', sp.vol * (zz.kind === 'runner' || zz.rush ? 0.9 : 0.6), drag ? 0.7 : pr * (zz.kind === 'runner' ? 1.25 : 1), sp.pan, sp.muffle);
+      }
+    };
+    // ---- litter on the floor that gets kicked around ----
+    const LITTER = [
+      { n: 46, geo: new THREE.CylinderGeometry(0.1, 0.1, 0.26, 8), mat: new THREE.MeshStandardMaterial({ color: 0xc0c7d1, metalness: 0.8, roughness: 0.35 }), snd: 'can', lie: true, g: 22 },
+      { n: 26, geo: new THREE.CylinderGeometry(0.06, 0.1, 0.38, 8), mat: new THREE.MeshStandardMaterial({ color: 0x2f7d4a, roughness: 0.15, metalness: 0.1, transparent: true, opacity: 0.85 }), snd: 'bottle', lie: true, g: 22 },
+      { n: 44, geo: new THREE.BoxGeometry(0.42, 0.015, 0.3), mat: new THREE.MeshStandardMaterial({ color: 0xe7e5e4, roughness: 1, side: THREE.DoubleSide }), snd: 'paper', g: 5 },
+      { n: 16, geo: new THREE.BoxGeometry(0.55, 0.4, 0.45), mat: new THREE.MeshStandardMaterial({ color: 0xa47148, roughness: 0.9 }), snd: 'box', g: 22 }
+    ];
+    const litter = [];
+    const litterMeshes = [];
+    if (zombie) {
+      const dummy = new THREE.Object3D();
+      const clear = (x, z) => !colliders.some(c => !c.off && c.bottom < 1 && x > c.minX - 0.4 && x < c.maxX + 0.4 && z > c.minZ - 0.4 && z < c.maxZ + 0.4);
+      LITTER.forEach((L, k) => {
+        const im = new THREE.InstancedMesh(L.geo, L.mat, L.n);
+        im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        for (let i = 0; i < L.n; i++) {
+          let x = 0, z = 0;
+          for (let tries = 0; tries < 20; tries++) {
+            // half in the streets, the rest inside the rooms
+            const room = map.rooms && map.rooms.length && Math.random() < 0.4 ? map.rooms[Math.floor(Math.random() * map.rooms.length)] : null;
+            x = room ? room.minX + 0.5 + Math.random() * (room.maxX - room.minX - 1) : (Math.random() - 0.5) * 160;
+            z = room ? room.minZ + 0.5 + Math.random() * (room.maxZ - room.minZ - 1) : (Math.random() - 0.5) * 160;
+            if (clear(x, z)) break;
+          }
+          const it = { k, i, im, L, x, y: L.lie ? 0.1 : L.snd === 'box' ? 0.2 : 0.02, z, vx: 0, vy: 0, vz: 0, ry: Math.random() * 6.28, rx: L.lie ? Math.PI / 2 : 0, spin: 0, moving: false, sndT: 0 };
+          dummy.position.set(it.x, it.y, it.z);
+          dummy.rotation.set(it.rx, it.ry, 0, 'YXZ');
+          dummy.updateMatrix();
+          im.setMatrixAt(i, dummy.matrix);
+          litter.push(it);
+        }
+        im.instanceMatrix.needsUpdate = true;
+        scene.add(im);
+        litterMeshes.push(im);
+      });
+    }
+    const litterDummy = new THREE.Object3D();
+    const tickLitter = dt => {
+      if (!litter.length || dt <= 0) return;
+      const movers = [];
+      fighters.forEach(f => { if (!f.dead) movers.push([f.pos, f.isMe ? me.vel : f.vel, 0.8]); });
+      zombies.forEach(zz => { if (!zz.dead && zz.rise <= 0) movers.push([zz.pos, zz.vel, zz.def.crawl ? 1 : 0.45 * zz.s]); });
+      const dirty = new Set();
+      for (const it of litter) {
+        it.sndT -= dt;
+        it.kickT = (it.kickT || 0) - dt;
+        if (it.kickT <= 0) for (const [p, v, r] of movers) {
+          const dx = it.x - p.x, dz = it.z - p.z;
+          if (Math.abs(dx) > r || Math.abs(dz) > r || Math.abs(p.y - it.y) > 1.2) continue;
+          const sp = Math.hypot(v.x, v.z);
+          if (sp < 1 || dx * dx + dz * dz > r * r) continue;
+          const l = Math.hypot(dx, dz) || 1;
+          const kick = it.L.snd === 'box' ? 0.45 : it.L.snd === 'paper' ? 0.5 : 0.9;
+          it.vx = (v.x * 1.15 + (dx / l) * sp * 0.45) * kick;
+          it.vz = (v.z * 1.15 + (dz / l) * sp * 0.45) * kick;
+          it.kickT = 0.4;
+          it.vy = (it.L.snd === 'paper' ? 1.2 : 1.5 + Math.random() * 2) * kick;
+          it.spin = (Math.random() - 0.5) * 18;
+          it.moving = true;
+          it.kicks = (it.kicks || 0) + 1;
+          if (it.sndT <= 0) {
+            it.sndT = 0.35;
+            play3d(it.L.snd, { x: it.x, y: it.y, z: it.z }, it.L.snd === 'paper' ? 0.6 : 1, 0.85 + Math.random() * 0.3, 26);
+          }
+          break;
+        }
+        if (!it.moving) continue;
+        it.vy -= it.L.g * dt;
+        const drag = it.L.snd === 'paper' ? Math.exp(-dt * 3) : 1;
+        it.vx *= drag;
+        it.vz *= drag;
+        const nx = it.x + it.vx * dt, nz = it.z + it.vz * dt;
+        if (colliders.some(c => !c.off && c.bottom < 0.5 && c.top > it.y && nx > c.minX && nx < c.maxX && nz > c.minZ && nz < c.maxZ)) {
+          it.vx *= -0.4;
+          it.vz *= -0.4;
+          if (it.sndT <= 0 && it.L.snd !== 'paper') {
+            it.sndT = 0.3;
+            play3d(it.L.snd, { x: it.x, y: it.y, z: it.z }, 0.6, 1.1, 22);
+          }
+        } else {
+          it.x = nx;
+          it.z = nz;
+        }
+        it.y += it.vy * dt;
+        const rest = it.L.lie ? 0.1 : it.L.snd === 'box' ? 0.2 : 0.02;
+        it.ry += it.spin * dt;
+        if (it.L.lie) it.rx += it.spin * dt * 0.5;
+        if (it.y <= rest) {
+          it.y = rest;
+          if (it.vy < -2.5 && it.sndT <= 0 && it.L.snd !== 'paper') {
+            it.sndT = 0.25;
+            play3d(it.L.snd, { x: it.x, y: it.y, z: it.z }, 0.5, 1.2, 22);
+          }
+          it.vy = Math.abs(it.vy) > 2.5 ? -it.vy * 0.3 : 0;
+          it.vx *= 0.82;
+          it.vz *= 0.82;
+          it.spin *= 0.8;
+          if (Math.hypot(it.vx, it.vz) < 0.15 && it.vy === 0) {
+            it.moving = false;
+            if (it.L.lie) it.rx = Math.PI / 2;
+          }
+        }
+        litterDummy.position.set(it.x, it.y, it.z);
+        litterDummy.rotation.set(it.rx, it.ry, 0, 'YXZ');
+        litterDummy.updateMatrix();
+        it.im.setMatrixAt(it.i, litterDummy.matrix);
+        dirty.add(it.im);
+      }
+      dirty.forEach(im => { im.instanceMatrix.needsUpdate = true; });
+    };
+
     // ---- per-frame: simulate (host) or follow (clients), then animate ----
     let groanT = 0;
     const animZombies = (dt, now, frozen) => {
       groanT -= dt;
+      stepBudget = 4;
+      rumbleT -= dt;
+      if (zd.horde === 2 && rumbleT <= 0 && dt > 0) {
+        // you hear the horde before you see it
+        rumbleT = 0.7;
+        play3d('hordeRumble', { x: zd.hordeAt[0], y: 0, z: zd.hordeAt[1] }, 1, 0.9 + Math.random() * 0.2, 140);
+      }
       for (let i = zombies.length - 1; i >= 0; i--) {
         const zz = zombies[i];
         if (!zz || !zz.mesh) continue;
@@ -6087,6 +6388,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         const sp = Math.hypot(zz.vel.x, zz.vel.z);
         zz.walk += dt * (2 + sp * 1.5);
         const gait = Math.min(1, sp / 2);
+        const ss = Math.sin(zz.walk);
+        if ((zz.stepS || 0) * ss < 0 && gait > 0.3 && dt > 0) zStep(zz);
+        zz.stepS = ss;
+        if (dt > 0 && !zz.def.boss && Math.random() < dt * 0.35 && zz.pos.distanceTo(camera.position) < 7) play3d('zbreath', zz.pos, 0.8, 0.8 + Math.random() * 0.4, 9);
+        if (zz.swing > 0.95 && dt > 0) play3d('zswipe', zz.pos, 0.9, 1, 14);
         zz.flinch = Math.max(0, zz.flinch - dt * 1.6);
         zz.swing = Math.max(0, zz.swing - dt * 3.5);
         const riseOff = zz.rise > 0 ? -Math.min(1, zz.rise / 0.9) * s0 * 1.6 : 0;
@@ -6116,10 +6422,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           sfx.play('roar');
         }
         if (groanT <= 0 && Math.random() < dt * 0.6) {
-          const vol = Math.max(0, 1 - me.pos.distanceTo(zz.pos) / 32);
-          if (vol > 0.1) {
-            sfx.play(def.boss ? 'roar' : 'groan', vol * (def.boss ? 0.4 : 0.7), def.boss ? 1 : 0.75 + Math.random() * 0.5 + (zz.kind === 'runner' ? 0.3 : 0) - (zz.kind === 'brute' ? 0.25 : 0));
-            groanT = 0.45;
+          const d0 = zz.pos.distanceTo(camera.position);
+          if (d0 < (def.boss ? 70 : 34)) {
+            play3d(def.boss ? 'roar' : 'groan', zz.pos, def.boss ? 0.45 : 0.75, def.boss ? 1 : 0.75 + Math.random() * 0.5 + (zz.kind === 'runner' ? 0.3 : 0) - (zz.kind === 'brute' ? 0.25 : 0), def.boss ? 80 : 34, true);
+            groanT = 0.4;
           }
         }
       }
@@ -6578,8 +6884,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     };
     window.addEventListener('resize', onResize);
 
-    sfx.startMusic();
     sfx.onTrack(n => pushFeed(`🎵 ${n}`, '#c084fc'));
+    sfx.startMusic(zombie ? 'zombie' : 'main');
 
     // ---------- main loop ----------
     let raf, prev = performance.now(), lastNet = 0, lastHud = 0, bob = 0;
@@ -6957,6 +7263,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (zombie) {
         animZombies(paused ? 0 : dt, now, frozen);
         tickBarrels(paused ? 0 : dt);
+        tickLitter(paused ? 0 : dt);
       }
       updateThrowables(paused ? 0 : dt);
       fighters.forEach(f => {
@@ -7265,6 +7572,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         let zHud = null, squad = [], zmarks = [], reviving = null;
         if (zombie) {
           drawMini(now);
+          let nz = 1e9;
+          zombies.forEach(o => { const dd = Math.hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z); if (dd < nz) nz = dd; });
+          sfx.setIntensity(me.dead ? 0.2 : nz < 9 ? 1 : nz < 20 ? 0.65 : nz < 40 ? 0.3 : 0.05);
           const boss = zombies.find(o => o.def.boss);
           const left = Math.max(0, zd.toSpawn - zd.spawned) + (zd.horde < 3 ? zd.hordeLeft : 0) + zombies.length;
           zHud = { wave: zd.wave, phase: zd.phase, t: Math.max(0, Math.ceil(zd.t)), left, horde: zd.horde, bossWave: zd.bossWave, final: isFinalWave(zd.wave), mode: zmode, boss: boss ? { hp: Math.max(0, boss.hp), max: boss.maxHp, enraged: !!boss.enraged } : null };
