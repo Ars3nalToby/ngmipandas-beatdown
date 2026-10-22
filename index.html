@@ -460,8 +460,38 @@ const sfx = (() => {
         tone('sine', 150, 28, 0.55, 1.0 * vol);
         tone('square', 1700, 300, 0.05, 0.18 * vol);
         break;
+      case 'shot_revolver':
+        hiss(0.22, 0.75 * vol, 'lowpass', 4200, 260);
+        tone('sine', 120, 34, 0.32, 0.9 * vol);
+        tone('square', 900, 200, 0.04, 0.16 * vol);
+        break;
+      case 'shot_flame':
+        if (now - lastHit < 0.08) return;
+        lastHit = now;
+        hiss(0.16, 0.32 * vol, 'bandpass', 700 * p, 260);
+        break;
+      case 'siren':
+        for (let i = 0; i < 3; i++) tone('sawtooth', 420, 880, 0.55, 0.13 * vol, null, now + i * 0.6, 2200);
+        tone('sine', 70, 40, 1.6, 0.5 * vol);
+        break;
+      case 'groan':
+        tone('sawtooth', 95 * p, 62 * p, 0.7, 0.16 * vol, null, null, 520);
+        hiss(0.6, 0.12 * vol, 'bandpass', 380 * p, 160);
+        break;
+      case 'roar':
+        tone('sawtooth', 70, 34, 1.4, 0.55 * vol, null, null, 700);
+        tone('square', 52, 30, 1.2, 0.3 * vol, null, null, 400);
+        hiss(1.3, 0.6 * vol, 'lowpass', 1400, 120);
+        break;
+      case 'splat':
+        hiss(0.18, 0.45 * vol, 'lowpass', 1200 * p, 200);
+        tone('sine', 140 * p, 50, 0.16, 0.35 * vol);
+        break;
+      case 'revive':
+        [523, 659, 784, 1047, 1319].forEach((f, i) => tone('triangle', f, 0, 0.14, 0.16 * vol, null, now + i * 0.07));
+        break;
       case 'reload':
-        [0, 0.22, 0.48].forEach((d, i) => tone('square', i === 2 ? 950 : 480, 0, 0.035, 0.14 * vol, null, now + d));
+        [0, 0.12, 0.26].forEach((d, i) => tone('square', i === 2 ? 950 : 480, 0, 0.035, 0.14 * vol, null, now + d));
         break;
       case 'hitmark':
         tone('square', 1900, 0, 0.035, 0.11 * vol);
@@ -2263,24 +2293,119 @@ function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
 // ============================================================================
 const SHOOT_SECONDS = 180;
 const KILL_TARGET = 25;
+// reloads are ~45% quicker and every mag holds about 50% more than launch day
 const SHOOT_WEAPONS = {
-  rifle: { name: 'MOON RIFLE', short: 'RIFLE', icon: '🌙', dmg: 24, rate: 0.115, mag: 30, reload: 1.5, spread: 0.012, moveSpread: 0.03, pellets: 1, auto: true, recoil: 0.016, snd: 'shot_rifle', zoom: 1.4 },
-  pistol: { name: 'GM PISTOL', short: 'PISTOL', icon: '🔫', dmg: 27, rate: 0.2, mag: 12, reload: 1.0, spread: 0.01, moveSpread: 0.02, pellets: 1, auto: false, recoil: 0.03, snd: 'shot_pistol', zoom: 1.25 },
-  ak: { name: 'AK-47', short: 'AK-47', icon: '🔥', dmg: 31, rate: 0.1, mag: 30, reload: 1.8, spread: 0.016, moveSpread: 0.035, pellets: 1, auto: true, recoil: 0.024, snd: 'shot_ak', zoom: 1.45 },
-  smg: { name: 'DEGEN SMG', short: 'SMG', icon: '⚡', dmg: 15, rate: 0.068, mag: 40, reload: 1.4, spread: 0.028, moveSpread: 0.025, pellets: 1, auto: true, recoil: 0.011, snd: 'shot_pistol', zoom: 1.25 },
-  shotgun: { name: 'FLOOR SWEEPER', short: 'SHOTGUN', icon: '💥', dmg: 13, rate: 0.8, mag: 6, reload: 1.9, spread: 0.085, moveSpread: 0.02, pellets: 9, auto: false, recoil: 0.07, snd: 'shot_shotgun', zoom: 1.15 },
-  gatling: { name: 'WOODEN GATLING', short: 'GATLING', icon: '🌀', dmg: 13, rate: 0.04, slowRate: 0.17, mag: 120, reload: 2.6, spread: 0.03, moveSpread: 0.03, pellets: 1, auto: true, recoil: 0.005, snd: 'shot_gatling', zoom: 1.1, spinUp: true, vmScale: 0.48, hip: [0.3, -0.36, -0.62] },
-  rpg: { name: 'RPG-7', short: 'RPG', icon: '🚀', dmg: 100, rate: 0.9, mag: 1, reload: 2.3, spread: 0.003, moveSpread: 0.01, pellets: 1, auto: false, recoil: 0.11, snd: 'shot_rpg', zoom: 1.3, rocket: true, vmScale: 0.6, hip: [0.3, -0.24, -0.5] },
-  golden: { name: 'GOLDEN AK', short: 'GOLD AK', icon: '👑', dmg: 55, rate: 0.09, mag: 45, reload: 1.3, spread: 0.01, moveSpread: 0.025, pellets: 1, auto: true, recoil: 0.016, snd: 'shot_ak', zoom: 1.5 }
+  rifle: { name: 'MOON RIFLE', short: 'RIFLE', icon: '🌙', dmg: 24, rate: 0.115, mag: 45, reload: 0.8, spread: 0.012, moveSpread: 0.03, pellets: 1, auto: true, recoil: 0.016, snd: 'shot_rifle', zoom: 1.4 },
+  pistol: { name: 'GM PISTOL', short: 'PISTOL', icon: '🔫', dmg: 27, rate: 0.2, mag: 18, reload: 0.55, spread: 0.01, moveSpread: 0.02, pellets: 1, auto: false, recoil: 0.03, snd: 'shot_pistol', zoom: 1.25 },
+  ak: { name: 'AK-47', short: 'AK-47', icon: '🔥', dmg: 31, rate: 0.1, mag: 45, reload: 0.95, spread: 0.016, moveSpread: 0.035, pellets: 1, auto: true, recoil: 0.024, snd: 'shot_ak', zoom: 1.45 },
+  smg: { name: 'DEGEN SMG', short: 'SMG', icon: '⚡', dmg: 15, rate: 0.068, mag: 60, reload: 0.75, spread: 0.028, moveSpread: 0.025, pellets: 1, auto: true, recoil: 0.011, snd: 'shot_pistol', zoom: 1.25 },
+  shotgun: { name: 'FLOOR SWEEPER', short: 'SHOTGUN', icon: '💥', dmg: 13, rate: 0.8, mag: 10, reload: 1.0, spread: 0.085, moveSpread: 0.02, pellets: 9, auto: false, recoil: 0.07, snd: 'shot_shotgun', zoom: 1.15 },
+  gatling: { name: 'WOODEN GATLING', short: 'GATLING', icon: '🌀', dmg: 13, rate: 0.04, slowRate: 0.17, mag: 200, reload: 1.4, spread: 0.03, moveSpread: 0.03, pellets: 1, auto: true, recoil: 0.005, snd: 'shot_gatling', zoom: 1.1, spinUp: true, vmScale: 0.48, hip: [0.3, -0.36, -0.62] },
+  rpg: { name: 'RPG-7', short: 'RPG', icon: '🚀', dmg: 100, rate: 0.9, mag: 3, reload: 1.2, spread: 0.003, moveSpread: 0.01, pellets: 1, auto: false, recoil: 0.11, snd: 'shot_rpg', zoom: 1.3, rocket: true, vmScale: 0.6, hip: [0.3, -0.24, -0.5] },
+  golden: { name: 'GOLDEN AK', short: 'GOLD AK', icon: '👑', dmg: 55, rate: 0.09, mag: 75, reload: 0.7, spread: 0.01, moveSpread: 0.025, pellets: 1, auto: true, recoil: 0.016, snd: 'shot_ak', zoom: 1.5 },
+  sniper: { name: 'MOON SNIPER', short: 'SNIPER', icon: '🎯', dmg: 95, rate: 1.0, mag: 8, reload: 1.1, spread: 0.002, moveSpread: 0.05, pellets: 1, auto: false, recoil: 0.09, snd: 'shot_sniper', zoom: 3.6, pierce: 4 },
+  flamer: { name: 'DRAGON BREATH', short: 'FLAMER', icon: '🐉', dmg: 9, rate: 0.05, mag: 160, reload: 1.1, spread: 0.075, moveSpread: 0.02, pellets: 3, auto: true, recoil: 0.002, snd: 'shot_flame', zoom: 1.1, flame: true, range: 14 },
+  revolver: { name: 'DIAMOND REVOLVER', short: 'REVOLVER', icon: '💎', dmg: 62, rate: 0.32, mag: 8, reload: 0.8, spread: 0.006, moveSpread: 0.02, pellets: 1, auto: false, recoil: 0.065, snd: 'shot_revolver', zoom: 1.35 }
 };
 const SHOOT_PICKUPS = {
   ak: { icon: '🔥', label: 'AK-47', color: '#f97316' },
   gatling: { icon: '🌀', label: 'WOODEN GATLING · hold fire to spin up', color: '#d6a76a' },
-  rpg: { icon: '🚀', label: 'RPG-7 · direct hit = 100 damage', color: '#84cc16' },
+  rpg: { icon: '🚀', label: 'RPG-7 · 3 rockets per load', color: '#84cc16' },
   shotgun: { icon: '💥', label: 'FLOOR SWEEPER (shotgun)', color: '#fb7185' },
   smg: { icon: '⚡', label: 'DEGEN SMG', color: '#a3e635' },
+  sniper: { icon: '🎯', label: 'MOON SNIPER · right click to scope · pierces', color: '#38bdf8' },
+  flamer: { icon: '🐉', label: 'DRAGON BREATH · short-range flamethrower', color: '#fb923c' },
+  revolver: { icon: '💎', label: 'DIAMOND REVOLVER · 62 dmg a shot', color: '#67e8f9' },
   burger: { icon: '🍔', label: '+50 HP', color: '#facc15' }
 };
+
+// ============================================================================
+// ZOMBIE MODE — co-op survivors vs the NGMI undead
+// ============================================================================
+const ZOMBIE_KINDS = {
+  walker: { name: 'NGMI ZOMBIE', hp: 70, spd: [3.4, 4.6], dmg: 8, reach: 2.3, cd: 1.0, s: 1.45, w: 1, color: '#8fbf7a', shirt: 0x4b5563 },
+  runner: { name: 'PAPER-HAND RUNNER', hp: 45, spd: [8, 9.2], dmg: 6, reach: 2.1, cd: 0.8, s: 1.3, w: 0.85, color: '#b5d99c', shirt: 0xe5e7eb },
+  brute: { name: 'BAG HOLDER', hp: 420, spd: [3.0, 3.5], dmg: 24, reach: 3.0, cd: 1.4, s: 2.1, w: 1.45, color: '#6b8f5e', shirt: 0x7c2d12 },
+  bloater: { name: 'RUG BLOATER', hp: 60, spd: [2.7, 3.1], dmg: 0, reach: 2.6, cd: 1, s: 1.7, w: 1.7, color: '#a3e635', shirt: 0x3f6212, pop: true },
+  boss: { name: 'THE RUG LORD', hp: 3500, spd: [5.2, 5.2], dmg: 32, reach: 4.6, cd: 1.6, s: 4.2, w: 1.35, color: '#a855f7', shirt: 0x2e1065, boss: true }
+};
+const ZKIND_IDS = ['walker', 'runner', 'brute', 'bloater', 'boss'];
+const ZOMBIE_RAID_WAVES = 5;
+let zombieKit = null;
+function buildZombieMesh(kind) {
+  if (!zombieKit) {
+    const std = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, ...extra });
+    zombieKit = {
+      body: new THREE.SphereGeometry(0.5, 14, 10),
+      head: new THREE.SphereGeometry(0.42, 16, 12),
+      ear: new THREE.SphereGeometry(0.14, 10, 8),
+      patch: new THREE.SphereGeometry(0.13, 10, 8),
+      eye: new THREE.SphereGeometry(0.055, 8, 6),
+      limb: new THREE.CapsuleGeometry(0.11, 0.42, 4, 8),
+      leg: new THREE.CapsuleGeometry(0.13, 0.26, 4, 8),
+      wart: new THREE.SphereGeometry(0.12, 8, 6),
+      crown: new THREE.CylinderGeometry(0.3, 0.26, 0.2, 8, 1, true),
+      spike: new THREE.ConeGeometry(0.06, 0.2, 6),
+      fur: std(0xc9dcb8),
+      dark: std(0x1d241b),
+      mouth: new THREE.MeshBasicMaterial({ color: 0x3b0a0a }),
+      eyeM: new THREE.MeshBasicMaterial({ color: 0xff2d2d }),
+      bossEye: new THREE.MeshBasicMaterial({ color: 0xfacc15 }),
+      wartM: std(0xa3e635, { emissive: 0x4d7c0f, emissiveIntensity: 0.9 }),
+      gold: std(0xd4a640, { metalness: 1, roughness: 0.25, emissive: 0x4a2f00, emissiveIntensity: 0.5, side: THREE.DoubleSide }),
+      shirts: {}
+    };
+  }
+  const K = zombieKit, def = ZOMBIE_KINDS[kind];
+  if (!K.shirts[kind]) K.shirts[kind] = new THREE.MeshStandardMaterial({ color: def.shirt, roughness: 0.85 });
+  const root = new THREE.Group();
+  const add = (geo, mat, x, y, z, sx = 1, sy = 1, sz = 1, parent = root) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.scale.set(sx, sy, sz);
+    parent.add(m);
+    return m;
+  };
+  add(K.body, K.shirts[kind], 0, 0.66, 0, def.w, 1.12, def.w * 0.9);
+  const head = new THREE.Group();
+  head.position.set(0, 1.36, 0.05);
+  root.add(head);
+  add(K.head, K.fur, 0, 0, 0, 1, 0.95, 1, head);
+  add(K.ear, K.dark, -0.3, 0.33, -0.02, 1, 1, 0.7, head);
+  add(K.ear, K.dark, 0.31, 0.3, -0.02, 1, 1, 0.7, head);
+  add(K.patch, K.dark, -0.15, 0.05, 0.33, 1, 1.25, 0.55, head);
+  add(K.patch, K.dark, 0.15, 0.05, 0.33, 1, 1.25, 0.55, head);
+  add(K.eye, def.boss ? K.bossEye : K.eyeM, -0.15, 0.06, 0.4, 1, 1, 1, head);
+  add(K.eye, def.boss ? K.bossEye : K.eyeM, 0.15, 0.06, 0.4, 1, 1, 1, head);
+  add(K.patch, K.mouth, 0, -0.18, 0.36, 1.3, 0.55, 0.4, head);
+  head.rotation.z = (Math.random() - 0.5) * 0.5; // the classic zombie head tilt
+  const arms = [-1, 1].map(sd => {
+    const g = new THREE.Group();
+    g.position.set(sd * 0.48 * def.w, 0.98, 0.05);
+    add(K.limb, K.dark, 0, 0, 0.32, 1, 1, 1, g).rotation.x = Math.PI / 2;
+    root.add(g);
+    return g;
+  });
+  const legs = [-1, 1].map(sd => {
+    const g = new THREE.Group();
+    g.position.set(sd * 0.2 * def.w, 0.36, 0);
+    add(K.leg, K.dark, 0, -0.16, 0, 1, 1, 1, g);
+    root.add(g);
+    return g;
+  });
+  if (def.pop) [[0.3, 0.8, 0.38], [-0.34, 0.55, 0.3], [0.05, 1.0, 0.45], [-0.1, 0.4, -0.45], [0.38, 0.5, -0.3]].forEach(([x, y, z]) => add(K.wart, K.wartM, x * def.w, y, z * def.w));
+  if (def.boss) {
+    add(K.crown, K.gold, 0, 0.42, 0, 1, 1, 1, head);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      add(K.spike, K.gold, Math.cos(a) * 0.28, 0.6, Math.sin(a) * 0.28, 1, 1, 1, head);
+    }
+    [-1, 1].forEach(sd => add(K.spike, K.gold, sd * 0.5, 1.2, -0.05, 2, 2, 2).rotation.z = -sd * 0.6);
+  }
+  root.scale.setScalar(def.s);
+  root.userData = { head, arms, legs };
+  return root;
+}
 
 function makeInkTexture() {
   const c = document.createElement('canvas');
@@ -2338,7 +2463,36 @@ function makeGunModel(key, view) {
   const gold = key === 'golden';
   const goldMat = mat(0xd4a640, { metalness: 1, roughness: 0.22, emissive: 0x4a2f00, emissiveIntensity: 0.5 });
   const dark = gold ? goldMat : mat(0x2a2d35), body = gold ? goldMat : mat(key === 'shotgun' ? 0x8a5a2b : key === 'sniper' ? 0x3c4a3a : key === 'smg' ? 0x45404f : 0x4b4a63), accent = mat(0x9aa3b5, { metalness: 0.8, roughness: 0.3 });
-  if (key === 'pistol') {
+  if (key === 'revolver') {
+    const steel = mat(0xc7d2fe, { metalness: 0.95, roughness: 0.2 }), gem = mat(0x67e8f9, { metalness: 0.2, roughness: 0.1, emissive: 0x0e7490, emissiveIntensity: 0.8 });
+    part(0.075, 0.2, 0.1, 0, -0.11, 0.07, mat(0x5b3a1e, { metalness: 0, roughness: 0.7 })).rotation.x = -0.25;
+    part(0.08, 0.1, 0.18, 0, 0, -0.02, steel);
+    const drum = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.14, 12), steel);
+    drum.rotation.x = Math.PI / 2;
+    drum.position.set(0, -0.01, -0.12);
+    if (view) drum.renderOrder = order++;
+    g.add(drum);
+    part(0.045, 0.05, 0.32, 0, 0.02, -0.34, steel);
+    part(0.05, 0.05, 0.05, 0, 0.06, -0.12, gem).rotation.set(0.6, 0.6, 0);
+  } else if (key === 'flamer') {
+    const tank = mat(0xb91c1c, { metalness: 0.5, roughness: 0.4 }), brass = mat(0xd4a640, { metalness: 0.9, roughness: 0.3 });
+    part(0.1, 0.16, 0.36, 0, -0.02, 0.18, dark);
+    part(0.06, 0.18, 0.08, 0, -0.14, 0.12, dark).rotation.x = -0.3;
+    const t1 = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.42, 14), tank);
+    t1.rotation.x = Math.PI / 2;
+    t1.position.set(0, -0.17, -0.12);
+    if (view) t1.renderOrder = order++;
+    g.add(t1);
+    const nozzle = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.06, 0.62, 12), brass);
+    nozzle.rotation.x = Math.PI / 2;
+    nozzle.position.set(0, 0.02, -0.4);
+    if (view) nozzle.renderOrder = order++;
+    g.add(nozzle);
+    const pilot = new THREE.Mesh(new THREE.SphereGeometry(0.03, 8, 6), new THREE.MeshBasicMaterial({ color: 0x60a5fa, depthTest: !view, fog: false }));
+    pilot.position.set(0, -0.03, -0.72);
+    if (view) pilot.renderOrder = order++;
+    g.add(pilot);
+  } else if (key === 'pistol') {
     part(0.07, 0.18, 0.09, 0, -0.1, 0.05, dark);
     part(0.08, 0.11, 0.34, 0, 0, -0.08, body);
     part(0.04, 0.04, 0.1, 0, 0.01, -0.29, accent);
@@ -2452,10 +2606,10 @@ function makeGunModel(key, view) {
     g.add(dot);
   }
   const muzzle = new THREE.Object3D();
-  muzzle.position.set(0, 0.03, key === 'pistol' ? -0.36 : key === 'shotgun' ? -0.88 : key === 'sniper' ? -1.15 : key === 'smg' ? -0.55 : key === 'ak' || key === 'golden' ? -0.84 : key === 'gatling' ? -0.86 : key === 'rpg' ? -1.15 : -0.75);
+  muzzle.position.set(0, 0.03, key === 'revolver' ? -0.52 : key === 'flamer' ? -0.74 : key === 'pistol' ? -0.36 : key === 'shotgun' ? -0.88 : key === 'sniper' ? -1.15 : key === 'smg' ? -0.55 : key === 'ak' || key === 'golden' ? -0.84 : key === 'gatling' ? -0.86 : key === 'rpg' ? -1.15 : -0.75);
   g.add(muzzle);
   g.userData.muzzle = muzzle;
-  g.userData.sightY = key === 'pistol' ? 0.03 : key === 'shotgun' ? 0.04 : key === 'sniper' ? 0.12 : key === 'ak' || key === 'golden' || key === 'rpg' ? 0.1 : key === 'gatling' ? 0.3 : 0.165;
+  g.userData.sightY = key === 'revolver' ? 0.07 : key === 'flamer' ? 0.1 : key === 'pistol' ? 0.03 : key === 'shotgun' ? 0.04 : key === 'sniper' ? 0.12 : key === 'ak' || key === 'golden' || key === 'rpg' ? 0.1 : key === 'gatling' ? 0.3 : 0.165;
   return g;
 }
 
@@ -2781,7 +2935,7 @@ function buildShootoutMap(scene, cinematic) {
   });
 
   const spawns = [[-48, -22], [48, 22], [-48, 22], [48, -22], [-20, -46], [20, 46], [0, 0], [-40, 0], [40, 0], [0, -40], [0, 40], [-24, 34], [24, -34]];
-  const pickupSpots = [[-24, -8, 'ak'], [24, 8, 'ak'], [14, -14, 'gatling'], [-44, 12, 'rpg'], [0, -40, 'gatling'], [44, -12, 'rpg'], [-14, -42, 'smg'], [30, 44, 'shotgun'], [-16, 30, 'shotgun'], [12, -36, 'smg'], [-38, -24, 'burger'], [38, 24, 'burger'], [-40, -38, 'ak', 9], [42, 38, 'rpg', 10], [-42, 40, 'burger', 7]];
+  const pickupSpots = [[-24, -8, 'ak'], [24, 8, 'ak'], [14, -14, 'gatling'], [-44, 12, 'rpg'], [0, -40, 'gatling'], [44, -12, 'rpg'], [-14, -42, 'smg'], [30, 44, 'shotgun'], [-16, 30, 'shotgun'], [12, -36, 'smg'], [-38, -24, 'burger'], [38, 24, 'burger'], [-40, -38, 'ak', 9], [42, 38, 'rpg', 10], [-42, 40, 'burger', 7], [0, 22, 'sniper'], [-30, -44, 'flamer'], [34, -26, 'revolver'], [8, 30, 'flamer'], [-6, -22, 'revolver']];
   return { colliders, solids, spawns, pickupSpots, clouds, pads };
 }
 
@@ -3056,13 +3210,13 @@ function buildSiegeMap(scene, cinematic) {
     atkFwd: [[-32, 22], [-20, 26], [0, 24], [16, 22], [30, 26]],
     def: [[-22, -54], [-10, -57], [30, -54], [-30, -40], [32, -36]]
   };
-  const pickupSpots = [[0, 30, 'ak'], [-30, 26, 'gatling'], [32, 24, 'rpg'], [-18, -4, 'burger'], [20, 0, 'ak'], [0, -34, 'gatling'], [-28, -48, 'rpg'], [32, -44, 'burger'], [-10, 46, 'burger'], [24, -38, 'ak']];
+  const pickupSpots = [[0, 30, 'ak'], [-30, 26, 'gatling'], [32, 24, 'rpg'], [-18, -4, 'burger'], [20, 0, 'ak'], [0, -34, 'gatling'], [-28, -48, 'rpg'], [32, -44, 'burger'], [-10, 46, 'burger'], [24, -38, 'ak'], [10, 40, 'sniper'], [-22, 10, 'revolver'], [26, -20, 'flamer']];
   const objectives = [{ key: 'A', name: 'SERVER FARM', x: -18, z: 6, r: 8 }, { key: 'B', name: 'MOON VAULT', x: 12, z: -36, r: 7 }];
   const dropSpots = [[0, 14], [-12, 0], [16, 6], [0, -30], [-26, 20], [24, 26]];
   return { colliders, solids, spawns, pickupSpots, clouds: [], pads: [], objectives, dropSpots, sunset: true, anim: { searchlights, barrels, ledMat, wheel, flags } };
 }
 
-function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant = 'ffa', team = 'auto', story = null }) {
+function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant = 'ffa', team = 'auto', zmode = 'raid', story = null }) {
   const sensRef = useRef(loadProfile().sens || 1);
   const touchSensRef = useRef(loadProfile().touchSens || 1);
   const autoFireRef = useRef(loadProfile().autoFire !== false);
@@ -3085,7 +3239,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
   const joyKnobRef = useRef(null);
   const ctl = useRef({ firing: false, ads: false, jump: false, reload: false, swap: false, mx: 0, mz: 0, joyPtr: null, jox: 0, joy: 0, lookPtr: null, lx: 0, ly: 0, firePtr: null, fx: 0, fy: 0, lookDX: 0, lookDY: 0 });
   const lockRef = useRef(null);
-  const [hud, setHud] = useState({ prot: false, hurt: null, siege: false, team: null, obj: null, marker: null, weapons: [], moon: 0, bull: 0, started: false, hp: 100, mag: 30, reserve: Infinity, wname: 'AK-47', wkey: 'ak', reloading: 0, kills: 0, deaths: 0, left: SHOOT_SECONDS, feed: [], dead: null, board: [], aim: null, scope: false, locked: false, peers: 1, net: 'CONNECTING' });
+  const [hud, setHud] = useState({ zombie: null, squad: [], downed: null, reviving: null, zmarks: [], prot: false, hurt: null, siege: false, team: null, obj: null, marker: null, weapons: [], moon: 0, bull: 0, started: false, hp: 100, mag: 45, reserve: Infinity, wname: 'AK-47', wkey: 'ak', reloading: 0, kills: 0, deaths: 0, left: SHOOT_SECONDS, feed: [], dead: null, board: [], aim: null, scope: false, locked: false, peers: 1, net: 'CONNECTING' });
   const [announce, setAnnounce] = useState(null);
   const [results, setResults] = useState(null);
   const clipRef = useRef(null);
@@ -3151,6 +3305,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     scene.add(sun.target);
 
     const siege = variant === 'siege';
+    const zombie = variant === 'zombie';
+    const teamPlay = siege || zombie; // no friendly fire
     const map = siege ? buildSiegeMap(scene, cinematic) : buildShootoutMap(scene, cinematic);
     if (map.sunset) {
       sun.color.set(0xffa868);
@@ -3160,7 +3316,28 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       hemi.groundColor.set(0x5a3a2a);
       hemi.intensity = 0.8;
     }
-    const myTeam = siege ? (team === 'atk' || team === 'def' ? team : Math.random() < 0.5 ? 'atk' : 'def') : null;
+    const myTeam = zombie ? 'surv' : siege ? (team === 'atk' || team === 'def' ? team : Math.random() < 0.5 ? 'atk' : 'def') : null;
+    // zombie mode: Cartoon Town after dark, with a flashlight on your gun
+    let flashlight = null;
+    if (zombie) {
+      scene.background = new THREE.Color(0x070b18);
+      scene.fog = new THREE.Fog(0x070b18, 16, 105);
+      sun.color.set(0x9db4ff);
+      sun.intensity = 0.75;
+      hemi.color.set(0x6f86c9);
+      hemi.groundColor.set(0x1a2016);
+      hemi.intensity = 0.6;
+      (map.clouds || []).forEach(c => { c.visible = false; });
+      const moonSp = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(235,240,255,1)', 'rgba(120,150,255,0)'), transparent: true, depthWrite: false, fog: false }));
+      moonSp.position.set(-90, 80, -120);
+      moonSp.scale.set(44, 44, 1);
+      scene.add(moonSp);
+      flashlight = new THREE.SpotLight(0xfff4d6, 3.2, 55, 0.42, 0.55, 1.2);
+      flashlight.position.set(0.25, -0.2, 0);
+      flashlight.target.position.set(0, -0.6, -10);
+      camera.add(flashlight);
+      camera.add(flashlight.target);
+    }
     const obj = { stage: 0, prog: 0, contested: false, capturing: false, warnAt: 0 };
     const { colliders, solids } = map;
     const raycaster = new THREE.Raycaster();
@@ -3239,20 +3416,31 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const h = wallHit(a, d, len);
       return !h || h.distance > len - 0.4;
     };
-    const traceShot = (o, d, shooter, assist = 1) => {
-      const wh = wallHit(o, d, 260);
-      let best = wh ? wh.distance : 260;
-      let hitF = null, head = false;
+    const traceShot = (o, d, shooter, assist = 1, range = 260, skip = null) => {
+      const wh = wallHit(o, d, range);
+      let best = wh ? wh.distance : range;
+      let hitF = null, hitZ = null, head = false;
       for (const f of fighters) {
-        if (f === shooter || f.dead || (siege && shooter && f.team === shooter.team)) continue;
+        if (f === shooter || f.dead || (teamPlay && shooter && f.team === shooter.team) || (skip && skip.has(f))) continue;
         const p = f.pos;
         const th = raySphere(o, d, p.x, p.y + 2.1, p.z, 0.72 * assist);
         const tb = raySphere(o, d, p.x, p.y + 1.0, p.z, 0.88 * assist);
         if (th > 0 && th < best) { best = th; hitF = f; head = true; }
         if (tb > 0 && tb < best - 0.01) { best = tb; hitF = f; head = false; }
       }
+      if (zombie && (!shooter || !shooter.isZombie)) {
+        for (const zz of zombies) {
+          if (zz.dead || zz.hp <= 0 || (skip && skip.has(zz))) continue;
+          const zs = zz.def.s, p = zz.pos;
+          const th = raySphere(o, d, p.x, p.y + zs * 1.36, p.z, zs * 0.46 * assist);
+          const tb = raySphere(o, d, p.x, p.y + zs * 0.66, p.z, zs * 0.6 * zz.def.w * assist);
+          if (th > 0 && th < best) { best = th; hitF = null; hitZ = zz; head = true; }
+          if (tb > 0 && tb < best - 0.01) { best = tb; hitF = null; hitZ = zz; head = false; }
+        }
+      }
       const point = o.clone().addScaledVector(d, best);
-      return { point, fighter: hitF, head, normal: !hitF && wh && wh.face ? wh.face.normal.clone().transformDirection(wh.object.matrixWorld) : null, wall: !hitF && !!wh };
+      const solid = !hitF && !hitZ;
+      return { point, fighter: hitF, zombie: hitZ, head, normal: solid && wh && wh.face ? wh.face.normal.clone().transformDirection(wh.object.matrixWorld) : null, wall: solid && !!wh };
     };
 
     // ---------- FX pools ----------
@@ -3516,6 +3704,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     scene.add(myMesh);
     const myHolder = {};
     const pickSpawn = self => {
+      if (zombie) {
+        // the squad always regroups at the town square
+        const a = Math.random() * Math.PI * 2, rr = 2 + Math.random() * 5;
+        return freeSpot(Math.cos(a) * rr, Math.sin(a) * rr);
+      }
       const list = siege ? (self.team === 'atk' ? (obj.stage > 0 ? map.spawns.atkFwd : map.spawns.atk) : map.spawns.def) : map.spawns;
       let best = list[0], bd = -1;
       list.forEach(([x, z]) => {
@@ -3532,7 +3725,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const me = createFighter(myId, name || 'Panda', cls, { isMe: true, team: myTeam });
     me.yaw = 0;
     me.pitch = 0;
-    me.weapons = [{ key: 'ak', mag: 30 }, { key: 'pistol', mag: 12 }];
+    me.weapons = [{ key: 'ak', mag: SHOOT_WEAPONS.ak.mag }, { key: 'pistol', mag: SHOOT_WEAPONS.pistol.mag }];
     me.slot = 0;
     me.reloadT = 0;
     me.shotCd = 0;
@@ -3550,6 +3743,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       me.pitch = 0;
       me.hp = 100;
       me.dead = false;
+      me.downed = false;
+      me.revive = 0;
       me.protT = 2.5;
       el.style.filter = '';
     };
@@ -3557,8 +3752,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     equipModel('ak');
 
     // ---------- network ----------
-    const net = { isHost: true, hostId: myId, seen: {}, peers: {}, status: 'CONNECTING', client: null, pendingTr: [], pendingEx: [] };
-    const topic = `ngmipandas/shootout/v1/${cleanRoom(room)}`;
+    const net = { isHost: true, hostId: myId, seen: {}, peers: {}, status: 'CONNECTING', client: null, pendingTr: [], pendingEx: [], pendingZfx: [] };
+    const topic = zombie ? `ngmipandas/shootout/v1/zombie/${cleanRoom(room)}` : `ngmipandas/shootout/v1/${cleanRoom(room)}`;
     const send = obj => {
       const c = net.client;
       if (c && c.connected) {
@@ -3595,7 +3790,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     };
     const handleDeath = ev => {
       const selfKill = !ev.kid || ev.kid === ev.vid;
-      pushFeed(selfKill ? `💥 ${ev.vn} self-destructed` : `${ev.kn} ${ev.hs ? '🎯' : '🔫'} ${ev.vn}`, ev.kid === myId && !selfKill ? '#4ade80' : ev.vid === myId ? '#f87171' : '#ffffff');
+      if (zombie) pushFeed(`💀 ${ev.vn} didn't make it · back next wave`, '#f87171');
+      else pushFeed(selfKill ? `💥 ${ev.vn} self-destructed` : `${ev.kn} ${ev.hs ? '🎯' : '🔫'} ${ev.vn}`, ev.kid === myId && !selfKill ? '#4ade80' : ev.vid === myId ? '#f87171' : '#ffffff');
       const vf = fighters.find(x => x.id === ev.vid);
       if (vf && vf.mesh) {
         const kp = new THREE.Vector3(vf.pos.x, vf.pos.y + 1.6, vf.pos.z);
@@ -3634,10 +3830,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     };
     const die = (f, killerId, killerName, hs) => {
       f.dead = true;
+      f.downed = false;
       f.hp = 0;
       f.deaths += 1;
       f.streak = 0;
-      f.respawnT = 3.5;
+      f.respawnT = zombie ? 9999 : 3.5; // zombie mode: you come back when the next wave starts
       const ev = { vid: f.id, vn: f.name, kid: killerId, kn: killerName, hs: hs ? 1 : 0 };
       handleDeath(ev);
       send({ t: 'x', id: myId, ...ev });
@@ -3652,17 +3849,66 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     };
     const applyDamage = (f, fromId, fromName, dmg, hs) => {
       if (!f || f.dead || match.over || match.countdown > 0 || f.protT > 0) return;
-      f.hp -= dmg;
       f.lastHitBy = { id: fromId, name: fromName };
+      if (zombie && f.downed) {
+        // zombies chewing on a downed survivor speed up the bleed-out
+        f.bleed -= dmg * 0.12;
+        if (f.isMe) hurtFx(dmg * 0.5);
+        return;
+      }
+      f.hp -= dmg;
       if (f.isMe) {
         hurtFx(dmg);
         sfx.play('hurt', 0.7);
-        const src = fighters.find(x => x.id === fromId);
+        const src = fighters.find(x => x.id === fromId) || (zombie ? zById.get(fromId) : null);
         if (src) me.hurtFrom = Math.atan2(src.pos.x - me.pos.x, src.pos.z - me.pos.z);
         buzz(22);
         me.hurtAt = performance.now();
       }
-      if (f.hp <= 0) die(f, fromId, fromName, hs);
+      if (f.hp <= 0) {
+        if (zombie) goDown(f);
+        else die(f, fromId, fromName, hs);
+      }
+    };
+    // ---------- downed / revive (zombie co-op) ----------
+    const REVIVE_TIME = 2.6;
+    const goDown = f => {
+      f.downed = true;
+      f.hp = 0;
+      f.bleed = 28;
+      f.revive = 0;
+      f.downs = (f.downs || 0) + 1;
+      pushFeed(`🆘 ${f.name} is down!`, '#f87171');
+      if (f.isMe) {
+        me.dancing = false;
+        el.style.filter = 'saturate(0.35) contrast(1.1)';
+        announceNow("🆘 YOU'RE DOWN · A TEAMMATE CAN REVIVE YOU", '#f87171');
+        sfx.play('ko', 0.6);
+        buzz([40, 30, 80]);
+      }
+    };
+    const reviveFighter = (f, how) => {
+      f.downed = false;
+      f.revive = 0;
+      f.hp = how === 'wave' ? 50 : 40;
+      f.protT = 1.2;
+      pushFeed(`💚 ${f.name} is back up`, '#4ade80');
+      if (f.isMe) {
+        el.style.filter = '';
+        announceNow('💚 REVIVED · BACK IN THE FIGHT', '#4ade80');
+      }
+      if (f.isMe || me.pos.distanceTo(f.pos) < 6) sfx.play('revive');
+    };
+    // runs on whoever owns the survivor (you on your client, bots on the host)
+    const tickDowned = (f, dt) => {
+      f.bleed -= dt;
+      const helper = fighters.some(o => o !== f && !o.dead && !o.downed && Math.hypot(o.pos.x - f.pos.x, o.pos.z - f.pos.z) < 2.8 && Math.abs(o.pos.y - f.pos.y) < 2.2);
+      f.revive = helper ? (f.revive || 0) + dt / REVIVE_TIME : Math.max(0, (f.revive || 0) - dt * 0.6);
+      if (f.revive >= 1) reviveFighter(f, 'mate');
+      else if (f.bleed <= 0) {
+        const by = f.lastHitBy || {};
+        die(f, by.id, by.name, false);
+      }
     };
     const damage = (target, attacker, dmg, hs) => {
       if (target.isMe || target.isBot) applyDamage(target, attacker.id, attacker.name, dmg, hs);
@@ -3709,34 +3955,59 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (w.mag === 0) startReload();
         return;
       }
-      let hitAny = false, headAny = false;
+      if (def.flame) {
+        // a roaring cone of fire out of the nozzle
+        for (let k = 0; k < 2; k++) {
+          spawnFx({ pos: muzzle.clone(), size: 0.22, grow: 2.4, life: 0.34 + Math.random() * 0.16, color: [0xffb347, 0xff6a1a, 0xffe08a][(k + Math.floor(Math.random() * 3)) % 3], add: true, opacity: 0.9, vx: fwd.x * 24 + rnd() * 4, vy: fwd.y * 24 + rnd() * 3 + 1, vz: fwd.z * 24 + rnd() * 4, drag: 2.4 });
+        }
+        if (Math.random() < 0.3) spawnFx({ pos: muzzle.clone().addScaledVector(fwd, 4), size: 0.6, grow: 2.5, life: 1.1, color: 0x2b2522, smoke: true, opacity: 0.4, vx: fwd.x * 6, vy: 1.6, vz: fwd.z * 6, drag: 1.4 });
+      }
+      let hitAny = false, headAny = false, killAny = false;
       for (let i = 0; i < def.pellets; i++) {
         const d = fwd.clone();
         d.x += (Math.random() - 0.5) * 2 * spread;
         d.y += (Math.random() - 0.5) * 2 * spread;
         d.z += (Math.random() - 0.5) * 2 * spread;
         d.normalize();
-        const res = traceShot(origin, d, me, IS_TOUCH ? 1.25 : 1);
-        spawnTracer(muzzle, res.point, w.key === 'golden' ? 0xffc93c : 0xfff1a8);
-        queueTracer(muzzle, res.point);
-        if (res.fighter) {
-          damage(res.fighter, me, def.dmg * (res.head ? 2 : 1), res.head);
-          hitFx(res.fighter, res.point, res.head);
-          const prevHit = hitTally.get(res.fighter);
-          hitTally.set(res.fighter, { dmg: (prevHit ? prevHit.dmg : 0) + def.dmg * (res.head ? 2 : 1), head: res.head || (prevHit && prevHit.head), p: res.point });
+        let from = origin, skipSet = null, last = null;
+        // the sniper punches through up to `pierce` bodies in a line
+        for (let pc = 0; pc < (def.pierce || 1); pc++) {
+          const res = traceShot(from, d, me, IS_TOUCH ? 1.25 : def.flame ? 1.3 : 1, def.range || 260, skipSet);
+          last = res;
+          const tgt = res.fighter || res.zombie;
+          if (!tgt) {
+            if (res.wall && res.normal && !def.flame) {
+              inkSplat(res.point, res.normal, w.key === 'shotgun' ? 0.45 : 0.75);
+              impactFx(res.point, res.normal);
+              if (i === 0) puff(res.point, '#3a2f2a', 3, 2);
+            }
+            break;
+          }
+          const dmg = def.dmg * (res.head ? 2 : 1);
+          if (res.zombie) {
+            const was = res.zombie.hp > 0;
+            hurtZombie(res.zombie, dmg, res.head, me, def.flame);
+            if (was && res.zombie.hp <= 0) killAny = true;
+          } else damage(res.fighter, me, dmg, res.head);
+          if (!def.flame || Math.random() < 0.25) hitFx(tgt, res.point, res.head);
+          const prevHit = hitTally.get(tgt);
+          hitTally.set(tgt, { dmg: (prevHit ? prevHit.dmg : 0) + dmg, head: res.head || (prevHit && prevHit.head), p: res.point });
           hitAny = true;
           headAny = headAny || res.head;
-        } else if (res.wall && res.normal) {
-          inkSplat(res.point, res.normal, w.key === 'shotgun' ? 0.45 : 0.75);
-          impactFx(res.point, res.normal);
-          if (i === 0) puff(res.point, '#3a2f2a', 3, 2);
+          if (!def.pierce) break;
+          (skipSet = skipSet || new Set()).add(tgt);
+          from = res.point.clone().addScaledVector(d, 0.05);
+        }
+        if (!def.flame && last) {
+          spawnTracer(muzzle, last.point, w.key === 'golden' ? 0xffc93c : w.key === 'sniper' ? 0x9be7ff : 0xfff1a8);
+          queueTracer(muzzle, last.point);
         }
       }
-      hitTally.forEach(v => dmgNumber(v.p, Math.round(v.dmg), v.head));
+      if (!def.flame || Math.random() < 0.3) hitTally.forEach(v => dmgNumber(v.p, Math.round(v.dmg), v.head));
       hitTally.clear();
       if (hitAny) {
-        showHit(headAny, false);
-        sfx.play(headAny ? 'headshot' : 'hitmark');
+        showHit(headAny, killAny);
+        if (!def.flame || Math.random() < 0.25) sfx.play(headAny ? 'headshot' : 'hitmark');
       }
       if (w.mag === 0) startReload();
     };
@@ -3798,7 +4069,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (start) queueTracer(start, point);
       fighters.forEach(f => {
         if (f.dead) return;
-        if (siege && owner && f !== owner && f.team === owner.team) return;
+        if (teamPlay && owner && f !== owner && f.team === owner.team) return;
         const cx = f.pos.x, cy = f.pos.y + 1.2, cz = f.pos.z;
         const d = Math.hypot(cx - point.x, cy - point.y, cz - point.z);
         if (d > 7) return;
@@ -3814,6 +4085,23 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         damage(f, owner, Math.round(dmg), false);
         if (owner && owner.isMe && f !== owner) dmgNumber(new THREE.Vector3(f.pos.x, f.pos.y + 2.6, f.pos.z), Math.round(dmg), false, true);
       });
+      if (zombie) {
+        zombies.slice().forEach(zz => {
+          if (zz.dead || zz.hp <= 0) return;
+          const d = Math.max(0, Math.hypot(zz.pos.x - point.x, zz.pos.y + zz.def.s * 0.66 - point.y, zz.pos.z - point.z) - zz.def.s * 0.3);
+          if (d > 7) return;
+          const dmg = (d < 1.6 ? 100 : 100 * (1 - (d - 1.6) / 5.4)) * 1.3;
+          if (dmg < 1) return;
+          if (net.isHost && !zz.def.boss) {
+            const kx = (zz.pos.x - point.x) / (d || 1), kz = (zz.pos.z - point.z) / (d || 1), kb = 14 * (1 - d / 7);
+            zz.vel.x += kx * kb;
+            zz.vel.z += kz * kb;
+            zz.vel.y = Math.max(zz.vel.y, 5 + 8 * (1 - d / 7));
+          }
+          hurtZombie(zz, Math.round(dmg), false, owner);
+          if (owner && owner.isMe) dmgNumber(new THREE.Vector3(zz.pos.x, zz.pos.y + zz.def.s * 1.8, zz.pos.z), Math.round(dmg), false, true);
+        });
+      }
     };
     const strikes = [];
     const callStrike = () => {
@@ -3863,7 +4151,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const d0 = Math.hypot(t.pos.x - b.pos.x, t.pos.z - b.pos.z);
       const movingT = Math.hypot(t.vel.x, t.vel.z) > 2;
       const err = (0.35 + d0 * 0.028) * (movingT ? 1.35 : 1) * b.skill * BOT.err;
-      const aim = new THREE.Vector3(t.pos.x + (Math.random() - 0.5) * err * 2, t.pos.y + 1.3 + (Math.random() - 0.5) * err * 2, t.pos.z + (Math.random() - 0.5) * err * 2);
+      const aimY = t.isZombie ? t.def.s * 0.85 : 1.3;
+      const aim = new THREE.Vector3(t.pos.x + (Math.random() - 0.5) * err * 2, t.pos.y + aimY + (Math.random() - 0.5) * err * 2, t.pos.z + (Math.random() - 0.5) * err * 2);
       const dir = aim.sub(muzzle).normalize();
       const res = traceShot(muzzle, dir, b);
       spawnTracer(muzzle, res.point, b.golden ? 0xffc93c : 0xfff1a8);
@@ -3871,7 +4160,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const vol = Math.max(0, 1 - me.pos.distanceTo(b.pos) / 70);
       sfx.play('shot_ak', vol * 0.5);
       b.protT = 0;
-      if (res.fighter) {
+      if (res.zombie) {
+        // squad bots hit zombies harder so they pull their weight
+        hurtZombie(res.zombie, (b.golden ? 30 : b.wkey === 'gatling' ? 10 : 18) * (res.head ? 1.6 : 1), res.head, b);
+        if (vol > 0.2) hitFx(res.zombie, res.point, res.head);
+      } else if (res.fighter) {
         damage(res.fighter, b, (b.golden ? 20 : b.wkey === 'gatling' ? 6 : 11) * (res.head ? 1.6 : 1) * BOT.dmg, res.head);
         if (!res.fighter.isMe) hitFx(res.fighter, res.point, res.head);
       } else if (res.wall && res.normal) {
@@ -3885,9 +4178,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       for (let i = 0; i < count; i++) {
         const klass = PANDA_CLASSES[Math.floor(Math.random() * PANDA_CLASSES.length)];
         const nAtk = fighters.filter(f => f.team === 'atk').length, nDef = fighters.filter(f => f.team === 'def').length;
-        const b = createFighter(`${myId}_b${i}`, RIVAL_NAMES[i % RIVAL_NAMES.length], klass, { isBot: true, team: siege ? (nAtk <= nDef ? 'atk' : 'def') : null });
+        const b = createFighter(`${myId}_b${i}`, RIVAL_NAMES[i % RIVAL_NAMES.length], klass, { isBot: true, team: zombie ? 'surv' : siege ? (nAtk <= nDef ? 'atk' : 'def') : null });
         b.skill = 0.85 + Math.random() * 0.5;
-        b.wkey = ['ak', 'ak', 'ak', 'gatling', 'rpg'][Math.floor(Math.random() * 5)];
+        b.wkey = zombie ? ['ak', 'gatling', 'ak', 'rpg'][i % 4] : ['ak', 'ak', 'ak', 'gatling', 'rpg'][Math.floor(Math.random() * 5)];
         swapGun(b, b.mesh, b.wkey);
         b.dropSeeker = Math.random() < 0.5;
         const [x, z] = pickSpawn(b);
@@ -3948,22 +4241,52 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         b.onGround = moveBody(b.pos, b.vel, 0.7, dt);
         return;
       }
+      if (b.downed) {
+        tickDowned(b, dt);
+        if (b.dead) return;
+      }
+      b.mesh.rotation.x += ((b.downed ? -1.15 : 0) - b.mesh.rotation.x) * Math.min(1, dt * 6);
       b.thinkT -= dt;
       if (b.thinkT <= 0) {
         b.thinkT = 0.25 + Math.random() * 0.25;
         let best = null, bd = 1e9;
         const eye = eyeOf(b);
         for (const f of fighters) {
-          if (f === b || f.dead || (siege && f.team === b.team)) continue;
+          if (f === b || f.dead || (teamPlay && f.team === b.team)) continue;
           const d = f.pos.distanceTo(b.pos);
           if (d < 75 && d < bd && hasLOS(eye, chestOf(f))) { bd = d; best = f; }
+        }
+        if (zombie) {
+          // nearest few zombies first, only raycast those
+          const cand = [];
+          for (const zz of zombies) {
+            if (zz.dead || zz.hp <= 0 || zz.rise > 0) continue;
+            const d = zz.pos.distanceTo(b.pos);
+            if (d < 55) cand.push([d, zz]);
+          }
+          cand.sort((x, y) => x[0] - y[0]);
+          for (let ci = 0; ci < Math.min(4, cand.length); ci++) {
+            const zz = cand[ci][1];
+            if (hasLOS(eye, new THREE.Vector3(zz.pos.x, zz.pos.y + zz.def.s * 0.9, zz.pos.z))) { best = zz; bd = cand[ci][0]; break; }
+          }
+          // a downed teammate nearby? go and pick them up
+          b.mate = fighters.find(f => f !== b && f.downed && !f.dead && Math.hypot(f.pos.x - b.pos.x, f.pos.z - b.pos.z) < 40) || null;
+          b.leader = fighters.find(f => !f.isBot && !f.dead && !f.downed) || null;
         }
         if (best !== b.target) {
           b.target = best;
           b.react = Math.max(0.1, 0.4 + BOT.react + Math.random() * 0.4);
         }
         if (Math.random() < 0.25) b.strafe = -b.strafe;
-        if (!best && (!b.goal || b.goal.distanceTo(b.pos) < 3 || b.stuckT > 1.2)) {
+        if (zombie) {
+          if (b.mate && (!best || bd > 7)) b.goal = new THREE.Vector3(b.mate.pos.x, 0, b.mate.pos.z);
+          else if (b.leader && Math.hypot(b.leader.pos.x - b.pos.x, b.leader.pos.z - b.pos.z) > 9) b.goal = new THREE.Vector3(b.leader.pos.x + (Math.random() - 0.5) * 6, 0, b.leader.pos.z + (Math.random() - 0.5) * 6);
+          else if (!b.goal || b.goal.distanceTo(b.pos) < 2 || b.stuckT > 1.2) {
+            const cx = b.leader ? b.leader.pos.x : 0, cz = b.leader ? b.leader.pos.z : 0;
+            b.goal = new THREE.Vector3(cx + (Math.random() - 0.5) * 12, 0, cz + (Math.random() - 0.5) * 12);
+            b.stuckT = 0;
+          }
+        } else if (!best && (!b.goal || b.goal.distanceTo(b.pos) < 3 || b.stuckT > 1.2)) {
           b.goal = siege ? siegeGoal(b) : randomGoal();
           b.stuckT = 0;
         }
@@ -3972,10 +4295,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (!b.target && drop && b.dropSeeker) b.goal = new THREE.Vector3(drop.x, 0, drop.z);
       let dx = 0, dz = 0, speed = 6.5 * (world.bullT > 0 ? 1.4 : 1);
       const t = b.target;
-      if (t && !t.dead) {
+      const reviving = zombie && b.mate && b.mate.downed && (!t || t.dead || t.pos.distanceTo(b.pos) > 7);
+      if (t && !t.dead && t.hp > 0 && !reviving) {
         const tx = t.pos.x - b.pos.x, tz = t.pos.z - b.pos.z, d = Math.hypot(tx, tz) || 1;
         const ux = tx / d, uz = tz / d;
-        const want = d > 30 ? 0.9 : d < 10 ? -0.5 : 0.1;
+        const want = zombie ? (d > 22 ? 0.6 : d < 9 ? -0.9 : 0) : d > 30 ? 0.9 : d < 10 ? -0.5 : 0.1;
         dx = ux * want - uz * b.strafe * 0.8;
         dz = uz * want + ux * b.strafe * 0.8;
         b.face = Math.atan2(tx, tz);
@@ -4006,14 +4330,16 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             botShoot(b, t);
           }
         }
-        if (b.onGround && Math.random() < 0.004) b.vel.y = 10;
+        if (b.onGround && Math.random() < 0.004 && !b.downed) b.vel.y = 10;
       } else if (b.goal) {
         const gx = b.goal.x - b.pos.x, gz = b.goal.z - b.pos.z, d = Math.hypot(gx, gz) || 1;
         dx = gx / d;
         dz = gz / d;
-        b.face = Math.atan2(dx, dz);
+        if (reviving && d < 1.6) { dx = 0; dz = 0; }
+        b.face = Math.atan2(gx, gz);
       }
       if (frozen) { dx = 0; dz = 0; }
+      if (b.downed) { dx *= 0.2; dz *= 0.2; }
       if (dx || dz) {
         const blocked = (ax, az) => colliders.some(c => c.top > b.pos.y + 0.6 && c.bottom < b.pos.y + 2 && ax > c.minX - 0.6 && ax < c.maxX + 0.6 && az > c.minZ - 0.6 && az < c.maxZ + 0.6);
         const ll = Math.hypot(dx, dz) || 1;
@@ -4045,7 +4371,678 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const moved = Math.hypot(b.pos.x - ox, b.pos.z - oz);
       if (l > 0.3 && moved < speed * dt * 0.3) b.stuckT += dt;
       else b.stuckT = Math.max(0, b.stuckT - dt);
-      if (b.stuckT > 0.6 && b.onGround) b.vel.y = 10;
+      if (b.stuckT > 0.6 && b.onGround && !b.downed) b.vel.y = 10;
+    };
+
+    // ============ ZOMBIES: the host runs the horde, everyone else renders it ============
+    const zombies = [];
+    const zById = new Map();
+    let zSeq = 1;
+    const zPool = {};
+    const ZMAX = IS_TOUCH ? 16 : 26;
+    const ZPHASES = ['boot', 'prep', 'wave', 'clear', 'over', 'won'];
+    // phase: boot → prep → wave → clear → prep … ; ends in over (squad wiped) or won (raid boss down)
+    // horde: 0 not yet · 1 siren warning · 2 pouring in · 3 done
+    const zd = { wave: 0, phase: 'boot', t: 2, toSpawn: 0, spawned: 0, horde: 0, hordeT: 0, hordeLeft: 0, hordeAt: [0, 0], bossWave: false, bossDown: false, brutes: 0, hpMul: 1, dmgMul: 1 };
+    const takeZMesh = kind => {
+      const pl = zPool[kind] || (zPool[kind] = []);
+      const m = pl.pop() || buildZombieMesh(kind);
+      m.visible = true;
+      m.rotation.set(0, 0, 0);
+      scene.add(m);
+      return m;
+    };
+    const makeZombie = (kind, x, z, id, hp) => {
+      const def = ZOMBIE_KINDS[kind] || ZOMBIE_KINDS.walker;
+      const zz = {
+        id: id || zSeq++, kind, def, isZombie: true, name: def.name, color: def.color,
+        pos: new THREE.Vector3(x, 0, z), vel: new THREE.Vector3(), face: Math.random() * 6.28,
+        hp: hp || def.hp, maxHp: hp || def.hp, dead: false, atkCd: 0.6, thinkT: 0, target: null,
+        spd: def.spd[0] + Math.random() * (def.spd[1] - def.spd[0]), walk: Math.random() * 6, stuckT: 0, avoid: 0,
+        act: 0, actT: 0, swing: 0, rush: false, rise: 0, slamCd: 6, rockCd: 4, onGround: true, burnT: 0, predT: 0
+      };
+      zz.mesh = takeZMesh(def === ZOMBIE_KINDS[kind] ? kind : 'walker');
+      zz.mesh.position.copy(zz.pos);
+      zombies.push(zz);
+      zById.set(zz.id, zz);
+      if (zz.id >= zSeq) zSeq = zz.id + 1;
+      return zz;
+    };
+    const dropZombie = zz => {
+      const i = zombies.indexOf(zz);
+      if (i >= 0) zombies.splice(i, 1);
+      zById.delete(zz.id);
+      if (zz.mesh) {
+        scene.remove(zz.mesh);
+        (zPool[zz.kind] || (zPool[zz.kind] = [])).push(zz.mesh);
+        zz.mesh = null;
+      }
+    };
+    const crowd = () => 0.8 + 0.2 * Math.max(1, fighters.length);
+    const isBossWave = w => (zmode === 'incoming' ? w > 0 && w % 5 === 0 : w >= ZOMBIE_RAID_WAVES);
+    const zSpawnPoint = (minD = 26) => {
+      const alive = fighters.filter(f => !f.dead);
+      const far = ([x, z]) => Math.min(...alive.map(f => Math.hypot(f.pos.x - x, f.pos.z - z)), 999);
+      const ok = map.spawns.filter(sp => far(sp) > minD);
+      if (ok.length) return ok[Math.floor(Math.random() * ok.length)];
+      return map.spawns.reduce((a, b) => (far(b) > far(a) ? b : a), map.spawns[0]);
+    };
+    const pickKind = horde => {
+      const w = zd.wave, r = Math.random();
+      if (horde) return r < 0.55 ? 'runner' : 'walker';
+      if (w >= 2 && r < 0.04 + w * 0.01) return 'bloater';
+      if (w >= 2 && zd.brutes < 1 + Math.floor(w / 2) && r < 0.1 + w * 0.012) return 'brute';
+      return r < 0.18 + w * 0.05 ? 'runner' : 'walker';
+    };
+    const spawnZ = (kind, x, z, hp) => {
+      const [fx, fz] = freeSpot(x + rnd() * 6, z + rnd() * 6);
+      const def = ZOMBIE_KINDS[kind];
+      const zz = makeZombie(kind, fx, fz, null, hp || Math.round(def.hp * zd.hpMul));
+      zz.rise = def.boss ? 0 : 0.9;
+      if (kind === 'brute') zd.brutes += 1;
+      return zz;
+    };
+
+    // ---- FX ----
+    const zGreen = new THREE.Color(0x7bd389);
+    const zombieDeathFx = (zz, head) => {
+      const s0 = zz.def.s;
+      const kp = new THREE.Vector3(zz.pos.x, zz.pos.y + s0 * 0.9, zz.pos.z);
+      const col = new THREE.Color(zz.color);
+      const n = me.pos.distanceTo(kp) < 40 ? (zz.def.boss ? 40 : 14) : 5;
+      for (let i = 0; i < n; i++) spawnFx({ pos: kp, size: (0.12 + Math.random() * 0.14) * Math.min(2, s0 / 1.4), life: 0.7 + Math.random() * 0.5, color: i % 2 ? col : zGreen, vx: rnd() * 8, vy: 3 + Math.random() * 6, vz: rnd() * 8, g: 16, drag: 1 });
+      spawnFx({ pos: kp.clone(), size: 0.9 * s0, grow: 2 * s0, life: 1.1, color: 0x9fbf8a, smoke: true, opacity: 0.4, vy: 1.2, drag: 1 });
+      if (head) spawnFx({ pos: new THREE.Vector3(zz.pos.x, zz.pos.y + s0 * 1.36, zz.pos.z), size: 0.4, grow: 2.2, life: 0.25, color: 0xfacc15, add: true, opacity: 0.8 });
+      const vol = Math.max(0, 1 - me.pos.distanceTo(zz.pos) / 45);
+      if (vol > 0.05) sfx.play('splat', vol * 0.8, 0.8 + Math.random() * 0.5);
+    };
+    const bloaterPop = (pos, auth) => {
+      const p = new THREE.Vector3(pos.x, pos.y + 1.1, pos.z);
+      spawnFx({ pos: p, size: 2, grow: 7, life: 0.25, color: 0xbef264, add: true, opacity: 0.85 });
+      for (let i = 0; i < 14; i++) spawnFx({ pos: p.clone().add(new THREE.Vector3(rnd() * 2, Math.random(), rnd() * 2)), size: 1.4, grow: 5, life: 1.8 + Math.random(), color: i % 2 ? 0x65a30d : 0x84cc16, smoke: true, opacity: 0.75, vx: rnd() * 4, vy: 1 + Math.random() * 2, vz: rnd() * 4, drag: 1.2 });
+      for (let i = 0; i < 20; i++) spawnFx({ pos: p, size: 0.16, life: 0.8 + Math.random() * 0.5, color: 0xa3e635, vx: rnd() * 16, vy: 4 + Math.random() * 9, vz: rnd() * 16, g: 18, drag: 0.6 });
+      const dme = me.pos.distanceTo(p);
+      me.shake = Math.max(me.shake, Math.max(0, 0.9 - dme / 20));
+      sfx.play('explode', Math.max(0.1, 0.7 - dme / 80));
+      sfx.play('splat', Math.max(0.1, 1 - dme / 50), 0.6);
+      if (!auth) return;
+      fighters.forEach(f => {
+        if (f.dead) return;
+        const d = Math.hypot(f.pos.x - p.x, f.pos.y + 1.2 - p.y, f.pos.z - p.z);
+        if (d < 5.5) damage(f, { id: 'zbloat', name: 'RUG BLOATER' }, Math.round((26 * (1 - d / 5.5) + 8) * zd.dmgMul), false);
+      });
+      zombies.slice().forEach(o => {
+        if (o.dead || o.hp <= 0 || o.def.pop) return;
+        const d = Math.hypot(o.pos.x - p.x, o.pos.z - p.z);
+        if (d < 5.5) applyZDamage(o, 90 * (1 - d / 5.5) + 20, false, null, '');
+      });
+    };
+    const slamFx = (x, y, z) => {
+      const point = new THREE.Vector3(x, y + 0.2, z);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1.4, 48), new THREE.MeshBasicMaterial({ color: 0xc084fc, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(x, y + 0.15, z);
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(216,180,254,1)', 'rgba(120,40,200,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      glow.position.copy(point);
+      scene.add(ring, glow);
+      booms.push({ ring, glow, t: 0 });
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        spawnFx({ pos: new THREE.Vector3(x + Math.cos(a) * 2, y + 0.3, z + Math.sin(a) * 2), size: 1.4, grow: 4, life: 1.4 + Math.random() * 0.6, color: 0x6b5a4a, smoke: true, opacity: 0.7, vx: Math.cos(a) * 9, vy: 1 + Math.random() * 2, vz: Math.sin(a) * 9, drag: 1.8 });
+      }
+      const dme = me.pos.distanceTo(point);
+      me.shake = Math.max(me.shake, Math.max(0, 1.4 - dme / 25));
+      sfx.play('explode', Math.max(0.2, 1 - dme / 70));
+    };
+    const rockGeo = new THREE.IcosahedronGeometry(0.95, 0);
+    const rockMat = new THREE.MeshStandardMaterial({ color: 0x6b5a4a, roughness: 1, flatShading: true });
+    const zRocks = [];
+    const throwRock = (from, vel, auth) => {
+      const m = new THREE.Mesh(rockGeo, rockMat);
+      m.position.copy(from);
+      scene.add(m);
+      zRocks.push({ m, v: vel.clone(), auth, life: 4 });
+    };
+    const rockImpact = (p, auth) => {
+      spawnFx({ pos: p, size: 1.4, grow: 4, life: 0.18, color: 0xffe0b0, add: true, opacity: 0.7 });
+      for (let i = 0; i < 12; i++) spawnFx({ pos: p.clone().add(new THREE.Vector3(rnd() * 1.5, Math.random(), rnd() * 1.5)), size: 1.2, grow: 4.5, life: 1.6 + Math.random(), color: i % 2 ? 0x6b5a4a : 0x8a7560, smoke: true, opacity: 0.8, vx: rnd() * 5, vy: 1.5 + Math.random() * 2, vz: rnd() * 5, drag: 1.3 });
+      puff(p, '#6b5a4a', 10, 9);
+      const dme = me.pos.distanceTo(p);
+      me.shake = Math.max(me.shake, Math.max(0, 1.1 - dme / 22));
+      sfx.play('explode', Math.max(0.15, 0.9 - dme / 80));
+      if (!auth) return;
+      const boss = zombies.find(o => o.def.boss) || { id: 'zboss', name: 'THE RUG LORD' };
+      fighters.forEach(f => {
+        if (f.dead) return;
+        const d = Math.hypot(f.pos.x - p.x, f.pos.y + 1 - p.y, f.pos.z - p.z);
+        if (d > 5) return;
+        damage(f, boss, Math.round((38 * (1 - d / 5) + 8) * zd.dmgMul), false);
+        if (f.isMe || f.isBot) {
+          f.vel.x += ((f.pos.x - p.x) / (d || 1)) * 10;
+          f.vel.z += ((f.pos.z - p.z) / (d || 1)) * 10;
+          f.vel.y = Math.max(f.vel.y, 7);
+        }
+      });
+    };
+    const zfxPlay = e => {
+      if (!Array.isArray(e)) return;
+      const n = i => netNum(e[i], -400, 400, 0);
+      if (e[0] === 1) slamFx(n(1), n(2), n(3));
+      else if (e[0] === 2) throwRock(new THREE.Vector3(n(1), n(2), n(3)), new THREE.Vector3(n(4), n(5), n(6)), false);
+    };
+
+    // ---- damage + kills ----
+    const applyZDamage = (zz, dmg, head, kid, kname) => {
+      if (!zz || zz.dead || zz.hp <= 0 || match.over) return;
+      zz.hp -= dmg;
+      if (kid) zz.lastBy = { id: kid, name: kname };
+      if (zz.def.boss && !zz.enraged && zz.hp < zz.maxHp * 0.5) zz.enraged = true;
+      if (zz.hp <= 0) killZombie(zz, kid, kname, head);
+    };
+    const hurtZombie = (zz, dmg, head, src, burn) => {
+      if (!zz || zz.dead || zz.hp <= 0 || match.over || match.countdown > 0) return;
+      if (burn) {
+        zz.burnT = 2.5;
+        zz.burnBy = src ? { id: src.id, name: src.name } : null;
+      }
+      if (!net.isHost) {
+        // predicted locally so hits feel instant; the host has the final say
+        zz.hp -= dmg;
+        zz.predT = performance.now();
+        send({ t: 'zh', id: myId, z: zz.id, d: Math.round(dmg), hs: head ? 1 : 0, b: burn ? 1 : 0 });
+        return;
+      }
+      applyZDamage(zz, dmg, head, src ? src.id : null, src ? src.name : '');
+    };
+    const multi = { n: 0, t: 0 };
+    const creditZombieKill = (kid, def, head) => {
+      const k = fighters.find(f => f.id === kid);
+      if (!k) return;
+      if (k.isMe || k.isBot) k.kills += 1; // remote players report their own totals
+      if (def.boss || def.pop || def === ZOMBIE_KINDS.brute) pushFeed(`${k.name} ${def.boss ? '👑' : '💀'} ${def.name}`, k.isMe ? '#4ade80' : '#d9f99d');
+      if (!k.isMe) return;
+      me.headshots = (me.headshots || 0) + (head ? 1 : 0);
+      showHit(head, true);
+      sfx.play('ko', def.boss ? 1 : 0.3);
+      const now = performance.now();
+      multi.n = now - multi.t < 1600 ? multi.n + 1 : 1;
+      multi.t = now;
+      me.maxStreak = Math.max(me.maxStreak || 0, multi.n);
+      if (multi.n === 4 || multi.n === 8) {
+        announceNow(multi.n === 4 ? '🧟 ZOMBIE SHREDDER' : '🔥 HORDE BREAKER', '#a3e635');
+        if (clipRef.current) clipRef.current.highlight(multi.n === 4 ? 'ZOMBIE SHREDDER' : 'HORDE BREAKER');
+      }
+      if (me.kills > 0 && me.kills % 30 === 0 && !me.strikeReady) {
+        me.strikeReady = true;
+        setTimeout(() => announceNow(IS_TOUCH ? '☄️ MOON STRIKE READY · TAP ☄️' : '☄️ MOON STRIKE READY · PRESS G', '#f87171'), 700);
+      }
+      if (def.boss) {
+        announceNow('👑 YOU SLEW THE RUG LORD', '#facc15');
+        if (clipRef.current) clipRef.current.highlight('RUG LORD SLAIN');
+      } else if (def === ZOMBIE_KINDS.brute) announceNow('💀 BAG HOLDER DOWN', '#d9f99d');
+    };
+    const bossDown = () => {
+      announceNow('👹 THE RUG LORD IS DOWN!', '#c084fc');
+      sfx.play('roar', 0.8);
+      sfx.play('streak');
+      if (!net.isHost) return;
+      zd.bossDown = true;
+      if (zmode !== 'incoming') {
+        // raid finale: the horde collapses with its lord
+        zombies.slice().forEach(o => { zombieDeathFx(o, false); dropZombie(o); });
+        zd.spawned = zd.toSpawn;
+        zd.horde = 3;
+        zd.hordeLeft = 0;
+      }
+    };
+    const killZombie = (zz, kid, kname, head) => {
+      if (zz.dead) return;
+      zz.dead = true;
+      zz.hp = 0;
+      zombieDeathFx(zz, head);
+      send({ t: 'zk', id: myId, z: zz.id, k: kid || '', hs: head ? 1 : 0, kd: ZKIND_IDS.indexOf(zz.kind) });
+      creditZombieKill(kid, zz.def, head);
+      const pos = zz.pos.clone();
+      dropZombie(zz);
+      if (zz.def.pop) bloaterPop(pos, true);
+      if (zz.def.boss) bossDown();
+    };
+
+    // ---- AI (host only) ----
+    const zBlocked = (x, z, y) => colliders.some(c => c.top > y + 0.6 && c.bottom < y + 2 && x > c.minX - 0.6 && x < c.maxX + 0.6 && z > c.minZ - 0.6 && z < c.maxZ + 0.6);
+    const bossAct = zz => {
+      if (zz.act === 2) {
+        slamFx(zz.pos.x, zz.pos.y, zz.pos.z);
+        net.pendingZfx.push([1, r1(zz.pos.x), r1(zz.pos.y), r1(zz.pos.z)]);
+        fighters.forEach(f => {
+          if (f.dead) return;
+          const d = Math.hypot(f.pos.x - zz.pos.x, f.pos.z - zz.pos.z);
+          if (d > 11 || f.pos.y - zz.pos.y > 3) return;
+          damage(f, zz, Math.round((30 * (1 - d / 11) + 8) * zd.dmgMul), false);
+          if (f.isMe || f.isBot) {
+            const k = 14 * (1 - d / 11);
+            f.vel.x += ((f.pos.x - zz.pos.x) / (d || 1)) * k;
+            f.vel.z += ((f.pos.z - zz.pos.z) / (d || 1)) * k;
+            f.vel.y = Math.max(f.vel.y, 9);
+          }
+        });
+      } else if (zz.act === 3 && zz.rockTarget && !zz.rockTarget.dead) {
+        const t = zz.rockTarget;
+        const from = new THREE.Vector3(zz.pos.x + Math.sin(zz.face) * 2, zz.pos.y + zz.def.s * 1.6, zz.pos.z + Math.cos(zz.face) * 2);
+        const to = new THREE.Vector3(t.pos.x + t.vel.x * 0.45, t.pos.y + 1, t.pos.z + t.vel.z * 0.45);
+        const T = Math.max(0.5, from.distanceTo(to) / 34);
+        const v = new THREE.Vector3((to.x - from.x) / T, (to.y - from.y) / T + 0.5 * 20 * T, (to.z - from.z) / T);
+        throwRock(from, v, true);
+        net.pendingZfx.push([2, r1(from.x), r1(from.y), r1(from.z), r1(v.x), r1(v.y), r1(v.z)]);
+      }
+      zz.act = 0;
+    };
+    const updateZombie = (zz, dt, frozen) => {
+      const def = zz.def;
+      if (zz.rise > 0) {
+        zz.rise -= dt;
+        return;
+      }
+      if (zz.burnT > 0) {
+        zz.burnT -= dt;
+        applyZDamage(zz, (def.boss ? 30 : 14) * dt, false, zz.burnBy && zz.burnBy.id, zz.burnBy && zz.burnBy.name);
+        if (zz.dead) return;
+      }
+      zz.atkCd -= dt;
+      zz.thinkT -= dt;
+      if (zz.thinkT <= 0) {
+        zz.thinkT = 0.3 + Math.random() * 0.3;
+        let best = null, bd = 1e9;
+        for (const f of fighters) {
+          if (f.dead) continue;
+          const d = Math.hypot(f.pos.x - zz.pos.x, f.pos.z - zz.pos.z) + (f.downed ? 5 : 0) + (f.protT > 0 ? 12 : 0);
+          if (d < bd) { bd = d; best = f; }
+        }
+        zz.target = best;
+      }
+      const t = zz.target && !zz.target.dead ? zz.target : null;
+      let dx = 0, dz = 0, spd = zz.spd * (zz.rush ? 1.2 : 1) * (zz.enraged ? 1.35 : 1) * (world.bullT > 0 ? 1.2 : 1);
+      if (zz.actT > 0) {
+        zz.actT -= dt;
+        spd *= zz.act >= 2 ? 0 : 0.35;
+        if (zz.actT <= 0 && zz.act >= 2) bossAct(zz);
+        else if (zz.actT <= 0) zz.act = 0;
+      }
+      if (t) {
+        const tx = t.pos.x - zz.pos.x, tz = t.pos.z - zz.pos.z, d = Math.hypot(tx, tz) || 1;
+        const dy = t.pos.y - zz.pos.y;
+        dx = tx / d;
+        dz = tz / d;
+        let df = Math.atan2(tx, tz) - zz.face;
+        df = Math.atan2(Math.sin(df), Math.cos(df));
+        zz.face += df * Math.min(1, dt * 8);
+        if (!frozen && d < def.reach && Math.abs(dy) < 2.6 && zz.atkCd <= 0 && zz.actT <= 0) {
+          if (def.pop) {
+            killZombie(zz, null, '', false); // bloaters burst in your face
+            return;
+          }
+          zz.atkCd = def.cd * (zz.enraged ? 0.7 : 1);
+          zz.act = 1;
+          zz.actT = 0.3;
+          zz.swing = 1;
+          damage(t, zz, Math.round(def.dmg * zd.dmgMul), false);
+          if (def.boss && (t.isMe || t.isBot)) {
+            t.vel.x += dx * 16;
+            t.vel.z += dz * 16;
+            t.vel.y = Math.max(t.vel.y, 8);
+          }
+        }
+        if (d < def.reach * 0.6) { dx = 0; dz = 0; }
+        if (def.boss && !frozen && zz.actT <= 0) {
+          zz.slamCd -= dt;
+          zz.rockCd -= dt;
+          if (zz.slamCd <= 0 && d < 10) {
+            zz.act = 2;
+            zz.actT = 0.85;
+            zz.slamCd = (zz.enraged ? 5 : 7) + Math.random() * 3;
+            sfx.play('roar', Math.max(0.2, 1 - me.pos.distanceTo(zz.pos) / 60));
+          } else if (zz.rockCd <= 0 && d > 13) {
+            zz.act = 3;
+            zz.actT = 0.7;
+            zz.rockCd = (zz.enraged ? 3.5 : 5.5) + Math.random() * 2.5;
+            zz.rockTarget = t;
+          }
+        }
+        // survivors camping a rooftop? zombies climb the wall after them
+        if (dy > 2 && zz.stuckT > 0.5 && zz.onGround && !def.boss) {
+          zz.vel.y = Math.sqrt(2 * 26 * (dy + 1.8));
+          zz.stuckT = 0;
+        }
+      }
+      if (frozen) { dx = 0; dz = 0; }
+      if (dx || dz) {
+        const ux = dx, uz = dz;
+        if (zBlocked(zz.pos.x + ux * 2, zz.pos.z + uz * 2, zz.pos.y)) {
+          const side = zz.avoid || (Math.random() < 0.5 ? 1 : -1);
+          let found = false;
+          for (const ang of [0.8, 1.5, 2.2]) {
+            const ca = Math.cos(ang * side), sa = Math.sin(ang * side);
+            const nx = ux * ca - uz * sa, nz = ux * sa + uz * ca;
+            if (!zBlocked(zz.pos.x + nx * 2, zz.pos.z + nz * 2, zz.pos.y)) {
+              dx = nx;
+              dz = nz;
+              zz.avoid = side;
+              found = true;
+              break;
+            }
+          }
+          if (!found) zz.avoid = -side;
+        } else zz.avoid = 0;
+      }
+      // shove apart so the horde doesn't stack into one blob
+      let sx = 0, sz = 0;
+      for (const o of zombies) {
+        if (o === zz) continue;
+        const ox = zz.pos.x - o.pos.x, oz = zz.pos.z - o.pos.z;
+        const rr = (def.s + o.def.s) * 0.4;
+        const dd = ox * ox + oz * oz;
+        if (dd < rr * rr && dd > 1e-4) {
+          const l = Math.sqrt(dd);
+          sx += (ox / l) * (rr - l);
+          sz += (oz / l) * (rr - l);
+        }
+      }
+      zz.vel.x += (dx * spd + sx * 3 - zz.vel.x) * Math.min(1, dt * 6);
+      zz.vel.z += (dz * spd + sz * 3 - zz.vel.z) * Math.min(1, dt * 6);
+      zz.vel.y -= (world.moonT > 0 ? 9 : 26) * dt;
+      const ox = zz.pos.x, oz = zz.pos.z;
+      zz.onGround = moveBody(zz.pos, zz.vel, Math.min(1.6, 0.42 * def.s * def.w), dt);
+      const moved = Math.hypot(zz.pos.x - ox, zz.pos.z - oz);
+      if ((dx || dz) && moved < spd * dt * 0.3) zz.stuckT += dt;
+      else zz.stuckT = Math.max(0, zz.stuckT - dt);
+      if (zz.stuckT > 1.2 && zz.onGround) {
+        zz.vel.y = 9;
+        zz.stuckT = 0.6;
+      }
+      if (Math.abs(zz.pos.x) > 140 || Math.abs(zz.pos.z) > 140 || zz.pos.y < -5) {
+        const [rx, rz] = zSpawnPoint(20);
+        zz.pos.set(rx, 0, rz);
+        zz.vel.set(0, 0, 0);
+      }
+    };
+
+    // ---- director (host) ----
+    const onHorde = hs => {
+      if (hs === 1) {
+        announceNow('⚠️ HORDE INCOMING!', '#f87171');
+        sfx.play('siren');
+        sfx.setRush(true);
+        pushFeed('🚨 A horde is coming · group up and face the marker', '#f87171');
+        buzz([60, 40, 60]);
+      } else if (hs === 2) announceNow('🧟 HERE THEY COME!', '#fb923c');
+    };
+    const onPhase = ph => {
+      if (ph === 'prep') {
+        const n = zd.wave;
+        announceNow(isBossWave(n) ? '👹 BOSS WAVE NEXT · STOCK UP' : `🧟 WAVE ${n} · GET READY`, isBossWave(n) ? '#c084fc' : '#a3e635');
+        sfx.setRush(false);
+        // the squad regroups between waves: the fallen come back, the downed get up
+        if (me.dead) spawnMe();
+        else if (me.downed) reviveFighter(me, 'wave');
+        else me.hp = Math.min(100, me.hp + 40);
+        if (net.isHost) fighters.forEach(f => {
+          if (!f.isBot) return;
+          if (f.dead) f.respawnT = 0;
+          else if (f.downed) reviveFighter(f, 'wave');
+          else f.hp = Math.min(100, f.hp + 40);
+        });
+        if (n >= 2) pushFeed('💚 Squad regrouped · fallen teammates are back', '#4ade80');
+        if (n >= 2 && n % 2 === 0) {
+          match.evIdx = n;
+          spawnAirdrop();
+        }
+      } else if (ph === 'wave') {
+        if (isBossWave(zd.wave)) {
+          announceNow('👹 THE RUG LORD AWAKENS', '#c084fc');
+          sfx.play('roar');
+          sfx.setRush(true);
+        } else {
+          announceNow(`🧟 WAVE ${zd.wave}${zmode === 'incoming' ? '' : ` / ${ZOMBIE_RAID_WAVES}`}`, '#a3e635');
+          sfx.play('streak', 0.6);
+        }
+      } else if (ph === 'clear') {
+        announceNow(`✅ WAVE ${zd.wave} CLEARED`, '#4ade80');
+        sfx.play('streak');
+        sfx.setRush(false);
+      } else if (ph === 'over') endMatch('over');
+      else if (ph === 'won') endMatch('won');
+    };
+    const setPhase = (ph, t) => {
+      zd.phase = ph;
+      zd.t = t;
+      onPhase(ph);
+    };
+    const startWave = () => {
+      const w = zd.wave, c = crowd();
+      zd.bossWave = isBossWave(w);
+      zd.hpMul = 1 + (w - 1) * (zmode === 'incoming' ? 0.14 : 0.1);
+      zd.dmgMul = 1 + (w - 1) * 0.06;
+      zd.toSpawn = Math.round((zd.bossWave ? 8 : 10 + w * 5) * c);
+      zd.spawned = 0;
+      zd.horde = 0;
+      zd.hordeLeft = Math.round((zd.bossWave ? 10 : 8 + w * 4) * c);
+      zd.bossDown = false;
+      zd.brutes = 0;
+      setPhase('wave', 1.2);
+      if (zd.bossWave) {
+        const [bx, bz] = zSpawnPoint(30);
+        const hp = Math.round(4500 * (0.7 + 0.3 * fighters.length) * (zmode === 'incoming' ? 1 + (w / 5 - 1) * 0.6 : 1));
+        spawnZ('boss', bx, bz, hp);
+      }
+    };
+    const zTick = dt => {
+      if (zd.phase === 'over' || zd.phase === 'won') return;
+      if (zd.phase !== 'boot' && fighters.length && fighters.every(f => f.dead || f.downed)) {
+        setPhase('over', 0);
+        return;
+      }
+      zd.t -= dt;
+      if (zd.phase === 'boot') {
+        if (zd.t <= 0) {
+          zd.wave = 1;
+          setPhase('prep', 5);
+        }
+        return;
+      }
+      if (zd.phase === 'prep') {
+        if (zd.t <= 0) startWave();
+        return;
+      }
+      if (zd.phase === 'clear') {
+        if (zd.t <= 0) {
+          zd.wave += 1;
+          setPhase('prep', 9);
+        }
+        return;
+      }
+      // --- wave in progress: trickle spawns ---
+      if (zd.spawned < zd.toSpawn && zd.t <= 0 && zombies.length < ZMAX) {
+        zd.t = Math.max(0.3, 1.5 - zd.wave * 0.1) / crowd();
+        const [sx, sz] = zSpawnPoint(26);
+        spawnZ(pickKind(false), sx, sz);
+        zd.spawned += 1;
+      }
+      // --- the INCOMING horde: siren, then a rush from one direction ---
+      const boss = zombies.find(o => o.def.boss);
+      if (zd.horde === 0 && (zd.bossWave ? boss && boss.hp < boss.maxHp * 0.6 : zd.spawned >= zd.toSpawn * 0.5)) {
+        zd.hordeAt = zSpawnPoint(32);
+        zd.horde = 1;
+        zd.hordeT = 3.5;
+        onHorde(1);
+      } else if (zd.horde === 1) {
+        zd.hordeT -= dt;
+        if (zd.hordeT <= 0) {
+          zd.horde = 2;
+          zd.hordeT = 0;
+          onHorde(2);
+        }
+      } else if (zd.horde === 2) {
+        zd.hordeT -= dt;
+        if (zd.hordeT <= 0 && zombies.length < ZMAX + 12) {
+          zd.hordeT = 0.3;
+          for (let k = 0; k < 3 && zd.hordeLeft > 0; k++) {
+            const zz = spawnZ(pickKind(true), zd.hordeAt[0], zd.hordeAt[1]);
+            zz.rush = true;
+            zz.rise = 0;
+            zd.hordeLeft -= 1;
+          }
+          if (zd.hordeLeft <= 0) {
+            zd.horde = 3;
+            if (!boss) sfx.setRush(false);
+          }
+        }
+      }
+      if (zd.spawned >= zd.toSpawn && zd.horde === 3 && zombies.length === 0 && (!zd.bossWave || zd.bossDown)) {
+        if (zmode !== 'incoming' && zd.bossWave) setPhase('won', 0);
+        else setPhase('clear', 4);
+      }
+    };
+
+    // ---- sync ----
+    const r2z = v => Math.round(v * 100) / 100;
+    const packZ = () => zombies.map(zz => [zz.id, ZKIND_IDS.indexOf(zz.kind), r1(zz.pos.x), r1(zz.pos.y), r1(zz.pos.z), r2z(zz.face), Math.max(0, Math.round(zz.hp)), zz.act, zz.rise > 0 ? 1 : 0, Math.round(zz.maxHp), zz.burnT > 0 ? 1 : 0]);
+    const packZd = () => [zd.wave, ZPHASES.indexOf(zd.phase), Math.round(zd.t * 10) / 10, zd.toSpawn, zd.spawned, zd.horde, r1(zd.hordeAt[0]), r1(zd.hordeAt[1]), zd.bossDown ? 1 : 0, zd.bossWave ? 1 : 0, zd.hordeLeft, Math.round(zd.hpMul * 100), Math.round(zd.dmgMul * 100)];
+    const applyZState = (zs, zda) => {
+      const n = (a, i, lo, hi, d = 0) => netNum(a[i], lo, hi, d);
+      const ph = ZPHASES[n(zda, 1, 0, ZPHASES.length - 1)] || 'wave';
+      zd.wave = n(zda, 0, 0, 999);
+      zd.t = n(zda, 2, -99, 999);
+      zd.toSpawn = n(zda, 3, 0, 999);
+      zd.spawned = n(zda, 4, 0, 999);
+      zd.hordeAt = [n(zda, 6, -200, 200), n(zda, 7, -200, 200)];
+      zd.bossDown = !!zda[8];
+      zd.bossWave = !!zda[9];
+      zd.hordeLeft = n(zda, 10, 0, 999);
+      zd.hpMul = n(zda, 11, 50, 2000, 100) / 100;
+      zd.dmgMul = n(zda, 12, 50, 2000, 100) / 100;
+      const hs = n(zda, 5, 0, 3);
+      if (hs !== zd.horde) {
+        zd.horde = hs;
+        onHorde(hs);
+      }
+      if (ph !== zd.phase) {
+        zd.phase = ph;
+        onPhase(ph);
+      }
+      const seen = new Set();
+      const nowT = performance.now();
+      zs.slice(0, 80).forEach(a => {
+        if (!Array.isArray(a)) return;
+        const id = n(a, 0, 1, 1e9);
+        const kind = ZKIND_IDS[n(a, 1, 0, ZKIND_IDS.length - 1)];
+        seen.add(id);
+        let zz = zById.get(id);
+        const hp = n(a, 6, 0, 1e6), mx = n(a, 9, 1, 1e6, 100);
+        if (!zz) {
+          zz = makeZombie(kind, n(a, 2, -200, 200), n(a, 4, -200, 200), id, mx);
+          zz.pos.y = n(a, 3, -20, 80);
+        }
+        zz.tx = n(a, 2, -200, 200);
+        zz.ty = n(a, 3, -20, 80);
+        zz.tz = n(a, 4, -200, 200);
+        zz.tface = n(a, 5, -50, 50);
+        zz.maxHp = mx;
+        zz.hp = nowT - zz.predT < 400 ? Math.min(zz.hp, hp) : hp;
+        const act = n(a, 7, 0, 3);
+        if (act === 1 && zz.act !== 1) zz.swing = 1;
+        zz.act = act;
+        zz.rise = a[8] ? Math.max(zz.rise, 0.05) : 0;
+        zz.burnT = a[10] ? 0.3 : 0;
+        if (zz.def.boss) zz.enraged = hp < mx * 0.5;
+      });
+      zombies.slice().forEach(zz => {
+        if (!seen.has(zz.id)) {
+          zombieDeathFx(zz, false);
+          dropZombie(zz);
+        }
+      });
+    };
+
+    // ---- per-frame: simulate (host) or follow (clients), then animate ----
+    let groanT = 0;
+    const animZombies = (dt, now, frozen) => {
+      groanT -= dt;
+      for (let i = zombies.length - 1; i >= 0; i--) {
+        const zz = zombies[i];
+        if (!zz || !zz.mesh) continue;
+        if (net.isHost) {
+          updateZombie(zz, dt, frozen);
+          if (zz.dead || !zz.mesh) continue;
+        } else if (zz.tx !== undefined) {
+          const k = Math.min(1, dt * 10);
+          const px = zz.pos.x, pz = zz.pos.z;
+          zz.pos.x += (zz.tx - zz.pos.x) * k;
+          zz.pos.y += (zz.ty - zz.pos.y) * k;
+          zz.pos.z += (zz.tz - zz.pos.z) * k;
+          if (dt > 0) {
+            zz.vel.x = (zz.pos.x - px) / dt;
+            zz.vel.z = (zz.pos.z - pz) / dt;
+          }
+          let df = zz.tface - zz.face;
+          df = Math.atan2(Math.sin(df), Math.cos(df));
+          zz.face += df * Math.min(1, dt * 10);
+          if (zz.rise > 0) zz.rise = Math.max(0, zz.rise - dt * 0.2);
+        }
+        const def = zz.def, s0 = def.s, m = zz.mesh, ud = m.userData;
+        const sp = Math.hypot(zz.vel.x, zz.vel.z);
+        zz.walk += dt * (2 + sp * 1.5);
+        const gait = Math.min(1, sp / 2);
+        ud.legs[0].rotation.x = Math.sin(zz.walk) * 0.75 * gait;
+        ud.legs[1].rotation.x = -Math.sin(zz.walk) * 0.75 * gait;
+        zz.swing = Math.max(0, zz.swing - dt * 3.5);
+        let armX = -0.12 + Math.sin(zz.walk * 0.5) * 0.12 * gait;
+        if (zz.swing > 0) armX = -0.12 - Math.sin(zz.swing * Math.PI) * 1.3;
+        if (def.boss && zz.act === 2) armX = -2.4; // both arms up before the slam
+        ud.arms[0].rotation.x = armX + Math.sin(zz.walk * 0.5 + 1) * 0.1;
+        ud.arms[1].rotation.x = def.boss && zz.act === 3 ? -2.7 : armX - Math.sin(zz.walk * 0.5 + 1) * 0.1;
+        const lean = zz.kind === 'runner' || zz.rush ? 0.32 : 0.14;
+        m.rotation.set(lean * gait, zz.face, 0);
+        const riseOff = zz.rise > 0 ? -Math.min(1, zz.rise / 0.9) * s0 * 1.6 : 0;
+        m.position.set(zz.pos.x, zz.pos.y + riseOff + Math.abs(Math.sin(zz.walk)) * 0.06 * s0 * gait, zz.pos.z);
+        if (zz.rise > 0 && Math.random() < dt * 14) puff(new THREE.Vector3(zz.pos.x + rnd() * 1.2, 0.2, zz.pos.z + rnd() * 1.2), '#5b4a3a', 2, 3);
+        if (zz.burnT > 0 && Math.random() < dt * 20) spawnFx({ pos: new THREE.Vector3(zz.pos.x + rnd() * s0 * 0.6, zz.pos.y + Math.random() * s0 * 1.5, zz.pos.z + rnd() * s0 * 0.6), size: 0.25 * s0, grow: 1.2, life: 0.4, color: Math.random() < 0.5 ? 0xff7a1a : 0xffc04a, add: true, opacity: 0.9, vy: 3, drag: 1 });
+        if (def.boss && zz.enraged && !zz.enrageShown) {
+          zz.enrageShown = true;
+          announceNow('😡 THE RUG LORD IS ENRAGED', '#ef4444');
+          sfx.play('roar');
+        }
+        if (groanT <= 0 && Math.random() < dt * 0.6) {
+          const vol = Math.max(0, 1 - me.pos.distanceTo(zz.pos) / 32);
+          if (vol > 0.1) {
+            sfx.play(def.boss ? 'roar' : 'groan', vol * (def.boss ? 0.4 : 0.7), def.boss ? 1 : 0.75 + Math.random() * 0.5 + (zz.kind === 'runner' ? 0.3 : 0));
+            groanT = 0.45;
+          }
+        }
+      }
+      for (let i = zRocks.length - 1; i >= 0; i--) {
+        const rk = zRocks[i];
+        rk.life -= dt;
+        rk.v.y -= 20 * dt;
+        const from = rk.m.position.clone();
+        const step = rk.v.length() * dt;
+        const dir = rk.v.clone().normalize();
+        const next = from.clone().addScaledVector(rk.v, dt);
+        rk.m.rotation.x += dt * 5;
+        rk.m.rotation.z += dt * 3;
+        let hitP = null;
+        const wh = step > 0 ? wallHit(from, dir, step) : null;
+        if (wh) hitP = wh.point.clone();
+        if (!hitP && fighters.some(f => !f.dead && Math.hypot(f.pos.x - next.x, f.pos.y + 1.2 - next.y, f.pos.z - next.z) < 1.6)) hitP = next;
+        if (!hitP && (next.y <= 0.3 || rk.life <= 0)) hitP = next;
+        if (hitP) {
+          scene.remove(rk.m);
+          zRocks.splice(i, 1);
+          rockImpact(hitP, rk.auth && net.isHost);
+          continue;
+        }
+        rk.m.position.copy(next);
+        if (Math.random() < 0.5) puff(from, '#8a7560', 1, 0.8);
+      }
     };
 
     // ---------- pickups ----------
@@ -4219,10 +5216,24 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       ctl.current.firing = false;
       if (document.pointerLockElement) document.exitPointerLock();
       // no freeze: everyone breaks into a victory dance while the camera orbits you
-      fighters.forEach(f => { if (f.isBot && !f.dead) f.danceT = 99; });
-      if (!me.dead) me.dancing = true;
+      fighters.forEach(f => { if (f.isBot && !f.dead && !f.downed) f.danceT = 99; });
+      if (!me.dead && !me.downed) me.dancing = true;
       const board = [...fighters].map(f => ({ id: f.id, name: f.name, color: f.color, isMe: f.isMe, kills: f.kills, deaths: f.deaths })).sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
       const rank = board.findIndex(r => r.isMe) + 1;
+      if (zombie) {
+        const won = winner === 'won';
+        sfx.setRush(false);
+        const survived = won ? zd.wave : Math.max(0, zd.wave - 1);
+        const p0 = loadProfile();
+        const key = zmode === 'incoming' ? 'zBestIncoming' : 'zBestRaid';
+        const prevBest = p0[key] || 0;
+        if (survived > prevBest) saveProfile({ ...p0, [key]: survived });
+        announceNow(won ? '🏆 RUG LORD DEFEATED' : '💀 OVERRUN', won ? '#facc15' : '#f87171');
+        sfx.play(won ? 'streak' : 'ko');
+        const xpRes = awardXp({ zkills: me.kills, deaths: me.deaths, won: won || (zmode === 'incoming' && survived >= 5), headshots: me.headshots || 0, waves: survived });
+        setTimeout(() => setResults({ board, rank, zombie: { won, survived, wave: zd.wave, best: Math.max(prevBest, survived), newBest: survived > prevBest, mode: zmode }, xp: xpRes, story: null }), 1400);
+        return;
+      }
       sayLine(rank === 1 ? 'Victory' : 'Match over');
       announceNow(rank === 1 ? 'VICTORY 🏆' : 'MATCH OVER', rank === 1 ? '#facc15' : '#ffffff');
       sfx.play(rank === 1 ? 'streak' : 'ko');
@@ -4242,7 +5253,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       let f = fighters.find(x => x.id === id);
       if (!f) {
         const klass = PANDA_CLASSES.find(k => k.id === c) || PANDA_CLASSES[0];
-        f = createFighter(id, nm, klass, { remote: true, team: siege ? tm || 'atk' : null });
+        f = createFighter(id, nm, klass, { remote: true, team: zombie ? 'surv' : siege ? tm || 'atk' : null });
         f.tx = f.pos.x;
         f.tz = f.pos.z;
       }
@@ -4254,6 +5265,13 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       f.hp = d.hp; f.dead = !!d.dd; f.kills = d.k || 0; f.deaths = d.dt || 0;
       f.dancing = !!d.dn;
       f.remoteProt = !!d.sp;
+      if (zombie) {
+        const wasDown = f.downed;
+        f.downed = !!d.dw && !f.dead;
+        f.rv = netNum(d.rv, 0, 100) / 100;
+        if (f.downed && !wasDown) pushFeed(`🆘 ${f.name} is down!`, '#f87171');
+        else if (wasDown && !f.downed && !f.dead) pushFeed(`💚 ${f.name} is back up`, '#4ade80');
+      }
       if (f.mesh && d.cos !== undefined && f.cosApplied !== d.cos) {
         applyCosmetic(f.mesh, d.cos);
         f.cosApplied = d.cos;
@@ -4288,6 +5306,14 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           }
           if (typeof d.left === 'number' && Math.abs(match.left - d.left) > 1.5) match.left = d.left;
         }
+        if (zombie && Array.isArray(d.zs) && Array.isArray(d.zd)) {
+          // follow the host's horde; a fresh host adopts a match already in progress
+          const theirWave = netNum(d.zd[0], 0, 999);
+          if ((!net.isHost && d.id === net.hostId) || (net.isHost && theirWave > zd.wave)) {
+            applyZState(d.zs, d.zd);
+            (d.zfx || []).forEach(zfxPlay);
+          }
+        }
         (d.ex || []).forEach(e => explodeAt(new THREE.Vector3(e[0], e[1], e[2]), null, true));
         (d.tr || []).forEach(t => {
           const a = new THREE.Vector3(t[0], t[1], t[2]), b = new THREE.Vector3(t[3], t[4], t[5]);
@@ -4315,6 +5341,29 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           }
       } else if (d.t === 'x') {
         handleDeath(d);
+      } else if (d.t === 'zh' && zombie) {
+        if (net.isHost) {
+          const zz = zById.get(d.z);
+          const sh = fighters.find(f => f.id === d.id);
+          if (zz) {
+            if (d.b) {
+              zz.burnT = 2.5;
+              zz.burnBy = sh ? { id: sh.id, name: sh.name } : null;
+            }
+            applyZDamage(zz, netNum(d.d, 0, 600), !!d.hs, d.id, sh ? sh.name : '');
+          }
+        }
+      } else if (d.t === 'zk' && zombie) {
+        const zz = zById.get(d.z);
+        const kdef = zz ? zz.def : ZOMBIE_KINDS[ZKIND_IDS[netNum(d.kd, 0, ZKIND_IDS.length - 1)]] || ZOMBIE_KINDS.walker;
+        if (zz) {
+          zombieDeathFx(zz, !!d.hs);
+          const pos = zz.pos.clone();
+          dropZombie(zz);
+          if (kdef.pop) bloaterPop(pos, false);
+        }
+        if (kdef.boss) bossDown();
+        creditZombieKill(d.k, kdef, !!d.hs);
       }
     };
     const startNet = () => {
@@ -4337,7 +5386,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       mqttTag.onerror = () => { net.status = 'OFFLINE'; };
       document.body.appendChild(mqttTag);
     }
-    if (fillBots) spawnBots(7);
+    if (fillBots) spawnBots(zombie ? 3 : 7);
 
     // ---------- post ----------
     const post = cinematic ? createPost(renderer, scene, camera) : null;
@@ -4376,9 +5425,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         }
         if (match.countdown <= 0) {
           sayLine(siege ? (me.team === 'atk' ? 'Attack!' : 'Defend!') : 'Fight!');
-          announceNow(siege ? (me.team === 'atk' ? '⚔️ ATTACK!' : '🛡️ DEFEND!') : 'SHOOT!', siege ? SIEGE_TEAMS[me.team].color : '#4ade80');
+          announceNow(zombie ? '🔦 STICK TOGETHER' : siege ? (me.team === 'atk' ? '⚔️ ATTACK!' : '🛡️ DEFEND!') : 'SHOOT!', zombie ? '#a3e635' : siege ? SIEGE_TEAMS[me.team].color : '#4ade80');
           sfx.play('streak');
         }
+      } else if (zombie) {
+        if (!match.over && net.isHost && dt > 0) zTick(dt);
       } else if (!match.over) {
         match.left -= dt;
         if (match.evIdx < EVENTS.length && match.left <= EVENTS[match.evIdx][0]) {
@@ -4504,6 +5555,14 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         let fwdIn = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0) - c.mz;
         let strIn = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + c.mx;
         if (frozen) { fwdIn = 0; strIn = 0; }
+        if (me.downed) {
+          // downed: crawl and keep shooting until someone picks you up
+          fwdIn *= 0.25;
+          strIn *= 0.25;
+          c.dance = false;
+          c.jump = false;
+          if (!frozen && dt > 0) tickDowned(me, dt);
+        }
         if (c.dance) {
           c.dance = false;
           me.dancing = !me.dancing && !frozen;
@@ -4526,7 +5585,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         let wx = -sy * fwdIn + cy * strIn, wz = -cy * fwdIn - sy * strIn;
         const wl = Math.hypot(wx, wz);
         if (wl > 1) { wx /= wl; wz /= wl; }
-        const sprint = (keys.ShiftLeft || keys.ShiftRight || (IS_TOUCH && wl > 0.95)) && fwdIn > 0 && me.adsT < 0.3;
+        const sprint = (keys.ShiftLeft || keys.ShiftRight || (IS_TOUCH && wl > 0.95)) && fwdIn > 0 && me.adsT < 0.3 && !me.downed;
         me.sprinting = sprint && me.onGround;
         const speed = (me.adsT > 0.5 ? 5 : sprint ? 12 : 8.5) * (world.bullT > 0 ? 1.4 : 1) * (SHOOT_WEAPONS[me.weapons[me.slot].key].spinUp && me.spin > 0.2 ? 0.7 : 1);
         const accel = me.onGround ? 12 : 3;
@@ -4596,7 +5655,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           }
           p.icon.position.y = 1.4 + Math.sin(now * 0.004 + p.ph) * 0.18;
           p.grp.rotation.y += dt;
-          if (Math.hypot(me.pos.x - p.x, me.pos.z - p.z) < 2.2 && Math.abs(me.pos.y - p.y) < 2) {
+          if (!me.downed && !me.dead && Math.hypot(me.pos.x - p.x, me.pos.z - p.z) < 2.2 && Math.abs(me.pos.y - p.y) < 2) {
             const pd = SHOOT_PICKUPS[p.kind];
             if (p.kind === 'burger') {
               if (me.hp >= 100) return;
@@ -4612,7 +5671,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           }
         });
       }
-      if (c.strike && me.strikeReady && !me.dead && !frozen) callStrike();
+      if (c.strike && me.strikeReady && !me.dead && !me.downed && !frozen) callStrike();
       c.strike = false;
       c.jump = false;
       c.reload = false;
@@ -4650,7 +5709,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           f.pos.y += ((f.ty || 0) - f.pos.y) * Math.min(1, dt * 12);
           f.pos.z += (f.tz - f.pos.z) * Math.min(1, dt * 12);
           if (f.tface !== undefined) f.face = f.tface;
-          f.mesh.rotation.x += ((f.dead ? -Math.PI / 2 : 0) - f.mesh.rotation.x) * Math.min(1, dt * 6);
+          f.mesh.rotation.x += ((f.dead ? -Math.PI / 2 : f.downed ? -1.15 : 0) - f.mesh.rotation.x) * Math.min(1, dt * 6);
         }
         if (f.mesh) {
           const moving = Math.hypot(f.vel.x, f.vel.z) > 1 && !f.dead;
@@ -4666,6 +5725,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           }
         }
       });
+
+      if (zombie) animZombies(paused ? 0 : dt, now, frozen);
 
       // ----- fx -----
       tracers.forEach(t => {
@@ -4685,8 +5746,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         const wh = step > 0 ? wallHit(from, rk.dir, step) : null;
         if (wh) hitPoint = wh.point.clone().addScaledVector(rk.dir, -0.2);
         if (!hitPoint) {
-          const hf = fighters.find(f => f !== rk.owner && !f.dead && !(siege && rk.owner && f.team === rk.owner.team) && Math.hypot(f.pos.x - next.x, f.pos.y + 1.2 - next.y, f.pos.z - next.z) < 1.3);
-          if (hf) hitPoint = next;
+          const hf = fighters.find(f => f !== rk.owner && !f.dead && !(teamPlay && rk.owner && f.team === rk.owner.team) && Math.hypot(f.pos.x - next.x, f.pos.y + 1.2 - next.y, f.pos.z - next.z) < 1.3);
+          const hz = zombie && zombies.find(zz => !zz.dead && zz.hp > 0 && Math.hypot(zz.pos.x - next.x, zz.pos.y + zz.def.s * 0.7 - next.y, zz.pos.z - next.z) < 0.85 * zz.def.s);
+          if (hf || hz) hitPoint = next;
         }
         if (!hitPoint && (next.y <= 0.05 || rk.life <= 0)) hitPoint = next;
         if (hitPoint) {
@@ -4837,7 +5899,14 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       // ----- camera + viewmodel -----
       me.recoil *= Math.exp(-dt * 9);
       me.kick = (me.kick || 0) * Math.exp(-dt * 18);
-      if (me.dead) {
+      if (me.dead && zombie) {
+        const mate = fighters.find(f => !f.isMe && !f.dead);
+        const fp = mate ? mate.pos : me.pos;
+        const a = (mate ? mate.face : 0) + Math.PI + Math.sin(now * 0.0003) * 0.4;
+        camera.position.set(fp.x + Math.sin(a) * 6, fp.y + 4.2, fp.z + Math.cos(a) * 6);
+        camera.lookAt(fp.x, fp.y + 1.6, fp.z);
+        vm.visible = false;
+      } else if (me.dead) {
         const k = me.deathBy && fighters.find(f => f.id === me.deathBy.id);
         camera.position.set(me.pos.x, me.pos.y + 4.5, me.pos.z + 3);
         camera.lookAt(k ? k.pos.x : me.pos.x, k ? k.pos.y + 1.5 : 0, k ? k.pos.z : me.pos.z);
@@ -4850,9 +5919,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         vm.visible = false;
       } else {
         const by = me.onGround ? Math.sin(bob * 1.6) * 0.06 : 0;
-        camera.position.set(me.pos.x, me.pos.y + 2.25 + by, me.pos.z);
+        camera.position.set(me.pos.x, me.pos.y + (me.downed ? 0.85 : 2.25) + by, me.pos.z);
         camera.rotation.order = 'YXZ';
-        camera.rotation.set(me.pitch + me.recoil, me.yaw, 0);
+        camera.rotation.set(me.pitch + me.recoil, me.yaw, me.downed ? 0.18 : 0);
         const def = SHOOT_WEAPONS[me.weapons[me.slot].key];
         const zoom = 1 + (def.zoom - 1) * me.adsT;
         const fov = BASE_FOV / zoom + (me.sprinting ? 7 : 0);
@@ -4903,14 +5972,24 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         lastNet = now;
         const r2 = v => Math.round(v * 100) / 100;
         const pkt = { t: 's', id: myId, n: name, c: cls.id, x: r2(me.pos.x), y: r2(me.pos.y), z: r2(me.pos.z), f: r2(me.yaw + Math.PI), hp: Math.round(me.hp), dd: me.dead ? 1 : 0, k: me.kills, dt: me.deaths, tr: net.pendingTr, w: me.weapons[me.slot].key, dn: me.dancing ? 1 : 0, ex: net.pendingEx, tm: me.team, sp: me.protT > 0 ? 1 : 0, cos: prof.cosmetic };
+        if (zombie) {
+          pkt.dw = me.downed ? 1 : 0;
+          pkt.rv = Math.round((me.revive || 0) * 100);
+        }
         if (net.isHost) {
           pkt.left = Math.round(match.left * 10) / 10;
-          pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.cls.id, x: r2(b.pos.x), y: r2(b.pos.y), z: r2(b.pos.z), f: r2(b.face), hp: Math.round(b.hp), dd: b.dead ? 1 : 0, k: b.kills, dt: b.deaths, dn: b.danceT > 0 ? 1 : 0, w: b.golden ? 'golden' : b.wkey || 'ak', sp: b.protT > 0 ? 1 : 0, tm: b.team }));
+          pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.cls.id, x: r2(b.pos.x), y: r2(b.pos.y), z: r2(b.pos.z), f: r2(b.face), hp: Math.round(b.hp), dd: b.dead ? 1 : 0, k: b.kills, dt: b.deaths, dn: b.danceT > 0 ? 1 : 0, w: b.golden ? 'golden' : b.wkey || 'ak', sp: b.protT > 0 ? 1 : 0, tm: b.team, dw: b.downed ? 1 : 0, rv: Math.round((b.revive || 0) * 100) }));
           if (siege) pkt.obj = [obj.stage, Math.round(obj.prog), obj.contested ? 1 : 0, obj.capturing ? 1 : 0];
+          if (zombie) {
+            pkt.zs = packZ();
+            pkt.zd = packZd();
+            pkt.zfx = net.pendingZfx;
+          }
         }
         send(pkt);
         net.pendingTr = [];
         net.pendingEx = [];
+        net.pendingZfx = [];
       }
 
       // ----- HUD + housekeeping (10 Hz) -----
@@ -4927,11 +6006,36 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           net.isHost = amHost;
           if (!amHost) fighters.filter(f => f.isBot).forEach(removeFighter);
         }
-        if (net.isHost && fillBots && !fighters.some(f => f.isBot)) spawnBots(Math.max(0, 7 - Object.keys(net.peers).length));
+        if (net.isHost && fillBots && !fighters.some(f => f.isBot)) spawnBots(Math.max(0, (zombie ? 3 : 7) - Object.keys(net.peers).length));
+        if (zombie && net.isHost && fighters.length > 4) {
+          // friends take bot slots: keep the squad at four
+          const spare = fighters.filter(f => f.isBot).sort((a, b) => (b.dead ? 1 : 0) - (a.dead ? 1 : 0)).slice(0, fighters.length - 4);
+          spare.forEach(f => { pushFeed(`🤖 ${f.name} hands their slot to a friend`, '#94a3b8'); removeFighter(f); });
+        }
 
         camera.getWorldDirection(fwd);
         const aimRes = me.dead ? null : traceShot(camera.getWorldPosition(new THREE.Vector3()), fwd, me, IS_TOUCH ? 1.2 : 1);
-        me.autoAim = !!(aimRes && aimRes.fighter && !aimRes.fighter.dead);
+        me.autoAim = !!(aimRes && ((aimRes.fighter && !aimRes.fighter.dead) || (aimRes.zombie && aimRes.zombie.hp > 0)));
+        const proj = (x, y, z) => {
+          const v = new THREE.Vector3(x, y, z).project(camera);
+          let px = (v.x * 0.5 + 0.5) * 100, py = (-v.y * 0.5 + 0.5) * 100;
+          if (v.z > 1) { px = 100 - px; py = 92; }
+          return { x: Math.max(4, Math.min(96, px)), y: Math.max(10, Math.min(90, py)), d: Math.round(Math.hypot(x - me.pos.x, z - me.pos.z)) };
+        };
+        let zHud = null, squad = [], zmarks = [], reviving = null;
+        if (zombie) {
+          const boss = zombies.find(o => o.def.boss);
+          const left = Math.max(0, zd.toSpawn - zd.spawned) + (zd.horde < 3 ? zd.hordeLeft : 0) + zombies.length;
+          zHud = { wave: zd.wave, phase: zd.phase, t: Math.max(0, Math.ceil(zd.t)), left, horde: zd.horde, bossWave: zd.bossWave, mode: zmode, boss: boss ? { hp: Math.max(0, boss.hp), max: boss.maxHp, enraged: !!boss.enraged } : null };
+          squad = fighters.map(f => ({ id: f.id, name: f.name, color: f.color, hp: Math.max(0, Math.round(f.hp)), downed: !!f.downed, dead: f.dead, isMe: f.isMe, bot: f.isBot }));
+          if ((zd.horde === 1 || zd.horde === 2) && !me.dead) zmarks.push({ k: '⚠️', c: '#ef4444', ...proj(zd.hordeAt[0], 3, zd.hordeAt[1]) });
+          if (boss && !me.dead) zmarks.push({ k: '👹', c: '#a855f7', ...proj(boss.pos.x, boss.pos.y + boss.def.s * 2, boss.pos.z) });
+          fighters.forEach(f => {
+            if (f.isMe || !f.downed || f.dead) return;
+            zmarks.push({ k: '🆘', c: '#f87171', name: f.name, ...proj(f.pos.x, f.pos.y + 2, f.pos.z) });
+            if (!me.dead && !me.downed && Math.hypot(f.pos.x - me.pos.x, f.pos.z - me.pos.z) < 2.8) reviving = { name: f.name, p: Math.min(1, (f.isBot && net.isHost ? f.revive : f.rv) || 0) };
+          });
+        }
         const w = me.weapons[me.slot];
         const def = SHOOT_WEAPONS[w.key];
         const board = [...fighters].map(f => ({ id: f.id, name: f.name, color: f.color, isMe: f.isMe, kills: f.kills, deaths: f.deaths, bot: f.isBot })).sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
@@ -4948,7 +6052,12 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           feed: feed.slice(),
           dead: me.dead ? { by: me.deathBy ? me.deathBy.name : '', hs: me.deathBy && me.deathBy.hs, t: Math.max(0, Math.ceil(me.respawnT)) } : null,
           board,
-          aim: aimRes && aimRes.fighter ? { name: aimRes.fighter.name, hp: Math.max(0, Math.round(aimRes.fighter.hp)), color: aimRes.fighter.color } : null,
+          aim: aimRes && aimRes.fighter ? { name: aimRes.fighter.name, hp: Math.max(0, Math.round(aimRes.fighter.hp)), color: aimRes.fighter.color } : aimRes && aimRes.zombie && aimRes.zombie.hp > 0 ? { name: aimRes.zombie.name, hp: Math.max(0, Math.round((aimRes.zombie.hp / aimRes.zombie.maxHp) * 100)), color: aimRes.zombie.color } : null,
+          zombie: zHud,
+          squad,
+          zmarks,
+          reviving,
+          downed: me.downed && !me.dead ? { bleed: Math.max(0, Math.ceil(me.bleed)), revive: me.revive || 0 } : null,
           siege,
           team: me.team,
           obj: siege ? { stage: obj.stage, prog: Math.min(100, Math.round(obj.prog)), contested: obj.contested, capturing: obj.capturing, name: obj.stage < 2 ? `${map.objectives[obj.stage].key} · ${map.objectives[obj.stage].name}` : 'ALL CAPTURED' } : null,
@@ -5047,6 +6156,34 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
 
       {/* top centre: timer */}
       <div className="absolute left-1/2 -translate-x-1/2 top-0 safe-top flex flex-col items-center gap-1 pointer-events-none">
+        {hud.zombie ? (
+          <>
+            <div className="font-game text-lg md:text-2xl px-3 py-0.5 rounded-lg bg-slate-950/85 text-lime-300 shadow border border-lime-400/40">
+              {hud.zombie.bossWave ? '👹 BOSS WAVE' : `🧟 WAVE ${hud.zombie.wave || 1}`}
+              {hud.zombie.mode !== 'incoming' && <span className="text-slate-400 text-sm md:text-base"> / {ZOMBIE_RAID_WAVES}</span>}
+            </div>
+            <div className={`text-[9px] md:text-[11px] font-black px-2 py-0.5 rounded ${hud.zombie.horde === 1 || hud.zombie.horde === 2 ? 'bg-rose-600/90 text-white animate-pulse' : 'bg-slate-900/75 text-slate-200'}`}>
+              {hud.zombie.phase === 'boot' ? '🔦 SURVIVORS · STICK TOGETHER'
+                : hud.zombie.phase === 'prep' ? `NEXT WAVE IN ${hud.zombie.t}s · grab weapons`
+                : hud.zombie.phase === 'clear' ? '✅ WAVE CLEARED'
+                : hud.zombie.horde === 1 ? '⚠️ HORDE INCOMING · face the marker'
+                : hud.zombie.horde === 2 ? `🧟 HORDE RUSH · ${hud.zombie.left} LEFT`
+                : `🧟 ${hud.zombie.left} ZOMBIES LEFT`}
+            </div>
+            {hud.zombie.boss && (
+              <div className="w-[240px] md:w-[420px] bg-slate-950/85 rounded-xl px-2.5 py-1.5 border border-purple-500/60">
+                <div className="flex justify-between text-[10px] md:text-xs font-black">
+                  <span className="text-purple-300">👹 THE RUG LORD{hud.zombie.boss.enraged ? ' · 😡 ENRAGED' : ''}</span>
+                  <span className="font-mono text-white">{Math.ceil(hud.zombie.boss.hp)}</span>
+                </div>
+                <div className="h-2.5 mt-1 bg-slate-700 rounded overflow-hidden">
+                  <div className={`h-full ${hud.zombie.boss.enraged ? 'bg-rose-500' : 'bg-purple-500'}`} style={{ width: `${Math.max(0, (hud.zombie.boss.hp / hud.zombie.boss.max) * 100)}%` }} />
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+        <>
         <div className={`font-game text-lg md:text-2xl px-3 py-0.5 rounded-lg bg-white/90 text-slate-900 shadow ${hud.left <= 30 ? 'text-rose-600 animate-pulse' : ''}`}>{fmt(hud.left)}</div>
         {hud.siege && hud.obj ? (
           <div className="w-[230px] md:w-[340px] bg-slate-950/80 rounded-xl px-2.5 py-1.5 text-center">
@@ -5063,6 +6200,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           </div>
         ) : (
           <div className="text-[9px] md:text-[10px] font-black px-2 py-0.5 rounded bg-slate-900/70">FIRST TO {KILL_TARGET} · {leader ? `${leader.name} ${leader.kills}` : ''}</div>
+        )}
+        </>
         )}
         {story !== null && CHAPTERS[story] && (
           <div className="text-[9px] md:text-[10px] font-black px-2 py-0.5 rounded-full border max-w-[70vw] truncate" style={{ background: 'rgba(2,6,23,0.8)', borderColor: CHAPTERS[story].color, color: CHAPTERS[story].color }}>📖 CH.{CHAPTERS[story].n} · {CHAPTERS[story].goal}</div>
@@ -5136,6 +6275,50 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         </div>
       </div>
 
+      {/* zombie co-op: squad status, markers, downed + revive */}
+      {hud.zombie && hud.squad.length > 0 && (
+        <div className={`absolute left-0 safe-x pointer-events-none flex flex-col gap-1 ${IS_TOUCH ? 'top-[100px]' : ''}`} style={IS_TOUCH ? undefined : { bottom: 'calc(env(safe-area-inset-bottom) + 50px)' }}>
+          {hud.squad.map(m => (
+            <div key={m.id} className={`flex items-center gap-1.5 rounded-md px-1.5 py-0.5 w-[150px] md:w-[190px] ${m.isMe ? 'bg-emerald-900/75' : 'bg-slate-950/70'}`}>
+              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: m.color }} />
+              <span className="text-[10px] md:text-[11px] font-black truncate flex-1">{m.isMe ? 'YOU' : m.name}{m.bot ? ' 🤖' : ''}</span>
+              {m.dead ? (
+                <span className="text-[10px] font-black text-slate-400">💀 NEXT WAVE</span>
+              ) : m.downed ? (
+                <span className="text-[10px] font-black text-rose-400 animate-pulse">🆘 DOWN</span>
+              ) : (
+                <div className="w-12 md:w-16 h-1.5 bg-slate-700 rounded overflow-hidden">
+                  <div className={`h-full ${m.hp > 50 ? 'bg-emerald-400' : m.hp > 25 ? 'bg-amber-400' : 'bg-rose-500'}`} style={{ width: `${m.hp}%` }} />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {hud.zmarks && !hud.dancing && hud.zmarks.map((mk, i) => (
+        <div key={`zm${i}`} className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2 text-center" style={{ left: `${mk.x}%`, top: `${mk.y}%` }}>
+          <div className={`w-8 h-8 mx-auto rounded-full border-2 flex items-center justify-center text-sm bg-slate-950/75 ${mk.k === '⚠️' ? 'animate-pulse' : ''}`} style={{ borderColor: mk.c }}>{mk.k}</div>
+          <div className="text-[10px] font-black text-white whitespace-nowrap" style={{ textShadow: '0 1px 2px #000' }}>{mk.name ? `${mk.name} · ` : ''}{mk.d}m</div>
+        </div>
+      ))}
+      {hud.downed && !results && (
+        <div className="absolute left-1/2 top-[60%] -translate-x-1/2 pointer-events-none text-center">
+          <div className="bg-rose-700/90 text-white px-5 py-2 rounded-lg shadow-xl border-2 border-white/70 w-[270px]">
+            <div className="font-game text-base md:text-lg">🆘 YOU'RE DOWN</div>
+            <div className="text-[11px] font-bold opacity-90">{hud.downed.revive > 0.02 ? 'A teammate is reviving you… hold on' : `Keep shooting · a teammate must reach you · ${hud.downed.bleed}s`}</div>
+            <div className="h-2 mt-1 bg-black/40 rounded overflow-hidden">
+              <div className={`h-full ${hud.downed.revive > 0.02 ? 'bg-emerald-400' : 'bg-white'}`} style={{ width: `${hud.downed.revive > 0.02 ? hud.downed.revive * 100 : Math.min(100, (hud.downed.bleed / 28) * 100)}%` }} />
+            </div>
+          </div>
+        </div>
+      )}
+      {hud.reviving && !hud.downed && !hud.dead && !results && (
+        <div className="absolute left-1/2 top-[63%] -translate-x-1/2 pointer-events-none text-center">
+          <div className="text-[12px] md:text-sm font-black text-emerald-300" style={{ textShadow: '0 1px 2px #000' }}>💚 REVIVING {hud.reviving.name} · stay close</div>
+          <div className="w-44 h-2 mt-1 bg-black/50 rounded overflow-hidden mx-auto"><div className="h-full bg-emerald-400" style={{ width: `${hud.reviving.p * 100}%` }} /></div>
+        </div>
+      )}
+
       {/* death screen */}
       {hud.marker && !hud.dancing && (
         <div className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2 text-center" style={{ left: `${hud.marker.x}%`, top: `${hud.marker.y}%` }}>
@@ -5171,8 +6354,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       {hud.dead && !results && (
         <div className="absolute left-1/2 top-[58%] -translate-x-1/2 pointer-events-none text-center">
           <div className="bg-rose-600 text-white px-5 py-2 rounded-lg shadow-xl border-2 border-white/80">
-            <div className="font-game text-base md:text-lg">ELIMINATED BY {hud.dead.by}{hud.dead.hs ? ' 🎯' : ''}</div>
-            <div className="text-[11px] font-bold opacity-90">Respawning in {hud.dead.t}s</div>
+            <div className="font-game text-base md:text-lg">{hud.zombie ? "💀 YOU DIDN'T MAKE IT" : <>ELIMINATED BY {hud.dead.by}{hud.dead.hs ? ' 🎯' : ''}</>}</div>
+            <div className="text-[11px] font-bold opacity-90">{hud.zombie ? 'Spectating your squad · you come back when the next wave starts' : `Respawning in ${hud.dead.t}s`}</div>
           </div>
         </div>
       )}
@@ -5188,7 +6371,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         <div className="absolute inset-0 bg-slate-950/70 flex items-center justify-center pointer-events-auto cursor-default">
           <div className="glass border border-slate-600 rounded-3xl p-6 text-center w-[min(92vw,470px)]">
             <div className="font-game text-3xl text-white">{hud.started ? 'PAUSED' : 'NGMI SHOOTOUT'}</div>
-            <div className="text-slate-300 text-sm mt-1">{hud.peers > 1 ? 'Online match — it keeps running while you are paused' : hud.started ? 'Game paused · bots are frozen' : `Free-for-all · first to ${KILL_TARGET} · 3 minutes`}</div>
+            <div className="text-slate-300 text-sm mt-1">{hud.peers > 1 ? 'Online match — it keeps running while you are paused' : hud.started ? 'Game paused · bots are frozen' : variant === 'zombie' ? (zmode === 'incoming' ? '🚨 INCOMING · endless waves, boss every 5th' : '👹 BOSS RAID · survive 4 waves, then drop the Rug Lord') : `Free-for-all · first to ${KILL_TARGET} · 3 minutes`}</div>
             <div className="flex flex-col gap-2 mt-4">
               <button
                 onClick={() => {
@@ -5217,6 +6400,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               <span className="keycap">WHEEL</span><span>Switch weapon (or <span className="keycap">1</span>–<span className="keycap">5</span>, <span className="keycap">Q</span> last gun)</span>
               <span className="keycap">SPACE</span><span>Jump · cyan pads launch you onto rooftops</span>
               <span className="keycap">R</span><span>Reload · ammo is endless</span>
+              {variant === 'zombie' && (<><span className="text-base">🆘</span><span>Downed teammate? Stand next to them to revive</span></>)}
               <span className="keycap">V</span><span>Dance 💃 · heals +15 HP/s up to 100</span>
               <span className="keycap">TAB</span><span>Scoreboard</span>
               <span className="keycap">G</span><span>Moon Strike (earned every 4-kill streak)</span>
@@ -5388,7 +6572,19 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       {results && (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-slate-950/75 p-4">
           <div data-scroll="1" className="w-full max-w-md max-h-[92%] overflow-y-auto glass border border-slate-700 rounded-3xl p-5 text-center">
-            {results.winner ? (
+            {results.zombie ? (
+              <>
+                <div className="font-game text-4xl" style={{ color: results.zombie.won ? '#facc15' : results.zombie.mode === 'incoming' ? '#a3e635' : '#f87171' }}>
+                  {results.zombie.won ? '🏆 RUG LORD DOWN' : results.zombie.mode === 'incoming' ? `🧟 ${results.zombie.survived} WAVE${results.zombie.survived === 1 ? '' : 'S'}` : '💀 OVERRUN'}
+                </div>
+                <div className="text-slate-300 text-sm">
+                  {results.zombie.mode === 'incoming'
+                    ? `Survived ${results.zombie.survived} wave${results.zombie.survived === 1 ? '' : 's'} · best ${results.zombie.best}${results.zombie.newBest ? ' · NEW BEST!' : ''}`
+                    : results.zombie.won ? 'Your squad survived every wave and dropped the boss' : `The horde got your squad on wave ${results.zombie.wave}`}
+                </div>
+                <div className="text-slate-500 text-xs mt-0.5">K = zombies killed</div>
+              </>
+            ) : results.winner ? (
               <>
                 <div className="font-game text-4xl" style={{ color: results.winner === results.myTeam ? '#facc15' : '#f87171' }}>{results.winner === results.myTeam ? '🏆 VICTORY' : 'DEFEAT'}</div>
                 <div className="text-sm font-black" style={{ color: SIEGE_TEAMS[results.winner].color }}>{SIEGE_TEAMS[results.winner].icon} {SIEGE_TEAMS[results.winner].name} WIN</div>
@@ -5453,10 +6649,14 @@ function loadProfile() {
 function saveProfile(p) {
   try { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch (e) {}
 }
-function awardXp({ kills = 0, deaths = 0, won = false, headshots = 0, bestStreak = 0 }) {
+function awardXp({ kills = 0, deaths = 0, won = false, headshots = 0, bestStreak = 0, zkills = 0, waves = 0 }) {
   const p = loadProfile();
   const before = p.level;
-  const parts = [['Match played', 150], [`Eliminations ×${kills}`, kills * 100]];
+  const parts = [['Match played', 150]];
+  if (zkills || waves) {
+    parts.push([`Zombies ×${zkills}`, zkills * 20]);
+    if (waves) parts.push([`Waves survived ×${waves}`, waves * 120]);
+  } else parts.push([`Eliminations ×${kills}`, kills * 100]);
   if (headshots) parts.push([`Headshots ×${headshots}`, headshots * 25]);
   if (won) parts.push(['Victory', 500]);
   const gained = parts.reduce((a, b) => a + b[1], 0);
@@ -5724,6 +6924,7 @@ function App() {
   }, [screen]);
   const [soVariant, setSoVariant] = useState('ffa');
   const [soTeam, setSoTeam] = useState('auto');
+  const [soZMode, setSoZMode] = useState('raid');
   const [muted, setMuted] = useState(false);
   const [announce, setAnnounce] = useState(null);
   const [buffHud, setBuffHud] = useState([]);
@@ -8195,7 +9396,9 @@ function App() {
                 <h1 className={`game-title ${mode === 'shootout' ? 'alt' : ''} text-[15vw] sm:text-7xl md:text-8xl mt-2`}>{mode === 'shootout' ? 'SHOOTOUT' : 'BEATDOWN'}</h1>
                 <p className="tagline text-slate-200 text-sm md:text-lg mt-4 font-semibold">
                   {mode === 'shootout' ? (
-                    soVariant === 'siege' ? (
+                    soVariant === 'zombie' ? (
+                      <>Squad up. Survive the <span className="text-lime-300 font-black">horde</span>. Drop the Rug Lord.</>
+                    ) : soVariant === 'siege' ? (
                       <>Raid Fort HODL. Crack the <span className="text-amber-300 font-black">Moon Vault</span>. Or hold the line.</>
                     ) : (
                       <>Grab an AK. Splat your rivals. Chase the <span className="text-amber-300 font-black">Golden AK</span>.</>
@@ -8206,7 +9409,7 @@ function App() {
                 </p>
                 <div className="tagline flex flex-wrap justify-center gap-1.5 mt-4 max-w-xl mx-auto">
                   {(mode === 'shootout'
-                    ? ['🔫 8 weapons', '🏰 Siege mode', '☄️ Moon Strike', '👑 Golden AK', '📱 Plays on phone']
+                    ? ['🔫 11 weapons', '🧟 Zombie co-op', '🏰 Siege mode', '☄️ Moon Strike', '📱 Plays on phone']
                     : ['🌕 Moon arena', '👥 Up to 12 players', '💥 %-knockback', '🤖 AI fills empty slots', '📱 Plays on phone']
                   ).map(c => <span key={c} className="chip">{c}</span>)}
                   {CLIP_OK && (
@@ -8303,7 +9506,7 @@ function App() {
                   <div className="grid grid-cols-2 gap-3">
                     {[
                       { id: 'beatdown', icon: '🥊', title: 'BEATDOWN', kicker: 'MOON ARENA · 3RD PERSON', sub: 'Gang brawl · pump their % · ring them out', bg: 'radial-gradient(circle at 78% 70%, #7c3aed77, transparent 60%), linear-gradient(135deg, #0a1f2e, #140b30)', ring: '#34d399' },
-                      { id: 'shootout', icon: '🔫', title: 'SHOOTOUT', kicker: 'FPS · FFA + SIEGE', sub: 'AKs, RPGs & a wooden gatling', bg: 'radial-gradient(circle at 78% 70%, #fb718577, transparent 60%), linear-gradient(135deg, #2a0d1a, #2b1607)', ring: '#fb7185', tag: 'NEW · SIEGE' }
+                      { id: 'shootout', icon: '🔫', title: 'SHOOTOUT', kicker: 'FPS · FFA · SIEGE · ZOMBIES', sub: 'Zombie co-op, snipers & flamethrowers', bg: 'radial-gradient(circle at 78% 70%, #fb718577, transparent 60%), linear-gradient(135deg, #2a0d1a, #2b1607)', ring: '#fb7185', tag: 'NEW · ZOMBIES' }
                     ].map(g => (
                       <button
                         key={g.id}
@@ -8334,14 +9537,31 @@ function App() {
                       <div className="grid grid-cols-2 gap-2">
                         {[
                           { id: 'ffa', icon: '🏙️', title: 'FREE-FOR-ALL', sub: 'Cartoon Town · first to 25' },
-                          { id: 'siege', icon: '🏰', title: 'SIEGE', sub: 'Fort HODL · attack or defend' }
+                          { id: 'siege', icon: '🏰', title: 'SIEGE', sub: 'Fort HODL · attack or defend' },
+                          { id: 'zombie', icon: '🧟', title: 'ZOMBIES', sub: 'Co-op squad of 4 · hordes & a boss', tag: 'NEW' }
                         ].map(v => (
-                          <button key={v.id} onClick={() => setSoVariant(v.id)} className={`text-left rounded-xl border-2 px-3 py-2 cursor-pointer transition ${soVariant === v.id ? 'border-amber-300 bg-amber-300/10' : 'border-slate-800 hover:border-slate-600'}`}>
+                          <button key={v.id} onClick={() => setSoVariant(v.id)} className={`relative text-left rounded-xl border-2 px-3 py-2 cursor-pointer transition ${v.id === 'zombie' ? 'col-span-2' : ''} ${soVariant === v.id ? (v.id === 'zombie' ? 'border-lime-300 bg-lime-300/10' : 'border-amber-300 bg-amber-300/10') : 'border-slate-800 hover:border-slate-600'}`}>
+                            {v.tag && <span className="absolute right-2 top-2 text-[9px] font-black px-1.5 py-0.5 rounded bg-lime-300 text-slate-900">{v.tag}</span>}
                             <div className="font-game text-sm text-white">{v.icon} {v.title}</div>
                             <div className="text-[11px] text-slate-400">{v.sub}</div>
                           </button>
                         ))}
                       </div>
+                      {soVariant === 'zombie' && (
+                        <div className="space-y-1.5">
+                          <div className="grid grid-cols-2 gap-2">
+                            {[['raid', '👹 BOSS RAID', '#a855f7'], ['incoming', '🚨 INCOMING', '#ef4444']].map(([id, label, col]) => (
+                              <button key={id} onClick={() => setSoZMode(id)} className="rounded-xl border-2 py-2 font-black text-xs cursor-pointer" style={soZMode === id ? { borderColor: col, background: `${col}22`, color: '#fff' } : { borderColor: '#1e293b', color: '#cbd5e1' }}>{label}</button>
+                            ))}
+                          </div>
+                          <div className="text-[11px] text-slate-400 leading-snug">
+                            {soZMode === 'raid'
+                              ? <>Survive <b className="text-white">4 waves</b>, each ending in a <b className="text-rose-300">⚠️ horde rush</b>, then team up to drop <b className="text-purple-300">THE RUG LORD</b>.</>
+                              : <>Endless waves, each with a <b className="text-rose-300">⚠️ HORDE INCOMING</b> rush and a boss every 5th wave. How long can your squad last?</>}
+                            {' '}Friends fill the squad first, bots fill the rest. Downed teammates get back up when you stand next to them.
+                          </div>
+                        </div>
+                      )}
                       {soVariant === 'siege' && (
                         <div className="space-y-1.5">
                           <div className="grid grid-cols-3 gap-2">
@@ -8655,9 +9875,10 @@ function App() {
 
       {screen === 'shootout' && (
         <ShootoutGame
-          key={`so_${matchId}_${soVariant}`}
+          key={`so_${matchId}_${soVariant}_${soZMode}`}
           variant={soVariant}
           team={soTeam}
+          zmode={soZMode}
           cls={selectedClass}
           name={playerName}
           room={roomCode}
