@@ -224,7 +224,16 @@ const SUITS = {
   astro_997: { color: '#8d8aa8', metal: 0.15, rough: 0.6, badge: 'GMI', badgeColor: '#ede9fe' }
 };
 
+const suitTexCache = new Map();
 function makeSuitTexture(suit) {
+  if (!suitTexCache.has(suit)) {
+    const t = drawSuitTexture(suit);
+    t.userData.shared = true;
+    suitTexCache.set(suit, t);
+  }
+  return suitTexCache.get(suit);
+}
+function drawSuitTexture(suit) {
   const c = document.createElement('canvas');
   c.width = 512;
   c.height = 256;
@@ -406,9 +415,6 @@ const sfx = (() => {
         break;
       case 'fall':
         tone('sine', 1100, 180, 1.1, 0.16 * vol);
-        break;
-      case 'call':
-        for (let i = 0; i < 4; i++) tone('square', i % 2 ? 1320 : 880, 0, 0.06, 0.1 * vol, null, now + i * 0.07);
         break;
       case 'pop':
         tone('sine', 520 * p, 1250 * p, 0.09, 0.25 * vol);
@@ -947,7 +953,7 @@ function upgradePandaMaterials(root) {
     const pm = new THREE.MeshPhysicalMaterial({
       color: m.color, map: m.map, roughness: m.roughness, metalness: m.metalness,
       emissive: m.emissive, emissiveIntensity: m.emissiveIntensity, emissiveMap: m.emissiveMap,
-      transparent: m.transparent, opacity: m.opacity, side: m.side
+      transparent: m.transparent, opacity: m.opacity, side: m.side, vertexColors: m.vertexColors
     });
     if (m.metalness >= 0.5) {
       pm.clearcoat = 1;
@@ -1022,7 +1028,7 @@ if (typeof document !== 'undefined') {
   // iOS Safari ignores user-scalable=no: block pinch-zoom ourselves (double-tap is handled by touch-action)
   document.addEventListener('gesturestart', e => e.preventDefault(), { passive: false });
 }
-const CD_MAX = { call: 5.5, smash: 4, swarm: 7, dash: 1.6, cannon: 0.8 };
+const CD_MAX = { smash: 4, dash: 1.6, cannon: 0.8 };
 
 const POWERUPS = [
   { id: 'burger', icon: '🍔', label: 'FAST FOOD! +45% SPEED', color: '#f97316' },
@@ -1035,7 +1041,21 @@ const POWERUPS = [
   { id: 'launcher', icon: '🧨', label: 'RUG ROCKET! 3 SHOTS (E)', color: '#ef4444' }
 ];
 
+// canvas textures are expensive to draw and upload mid-match, so identical ones are built once
+const TEX_CACHE = new Map();
+const cachedTex = (key, make) => {
+  let t = TEX_CACHE.get(key);
+  if (!t) {
+    t = make();
+    t.userData.shared = true;
+    TEX_CACHE.set(key, t);
+  }
+  return t;
+};
 function makeEmojiTexture(emoji) {
+  return cachedTex(`emoji|${emoji}`, () => drawEmojiTexture(emoji));
+}
+function drawEmojiTexture(emoji) {
   const c = document.createElement('canvas');
   c.width = c.height = 128;
   const ctx = c.getContext('2d');
@@ -1047,6 +1067,9 @@ function makeEmojiTexture(emoji) {
 }
 
 function makeGlowTexture(inner, outer) {
+  return cachedTex(`glow|${inner}|${outer}`, () => drawGlowTexture(inner, outer));
+}
+function drawGlowTexture(inner, outer) {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const ctx = c.getContext('2d');
@@ -2083,55 +2106,6 @@ function Showcase({ config, cosmetic }) {
 }
 
 // Rotating 3D preview on desktop; a static snapshot on phones (keeps iOS happy)
-function PandaPreview({ config }) {
-  const ref = useRef(null);
-  const [img] = useState(() => (IS_TOUCH ? getPreviewSnapshots()[config.id] : null));
-  useEffect(() => {
-    if (IS_TOUCH) return undefined;
-    const el = ref.current;
-    if (!el) return undefined;
-    const w = el.clientWidth || 240;
-    const h = el.clientHeight || 170;
-    let renderer;
-    try {
-      renderer = styleRenderer(new THREE.WebGLRenderer({ antialias: true, alpha: true }));
-    } catch (e) {
-      return undefined;
-    }
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.setSize(w, h);
-    el.appendChild(renderer.domElement);
-    const { scene, cam, hero, minion } = makePreviewScene(config, w, h);
-    let id;
-    const loop = t => {
-      id = requestAnimationFrame(loop);
-      hero.rotation.y = Math.sin(t * 0.0007) * 1.1;
-      minion.rotation.y = -t * 0.0012;
-      minion.position.y = Math.abs(Math.sin(t * 0.007)) * 0.3;
-      const ud = hero.userData;
-      if (ud && ud.rightArmGroup) ud.rightArmGroup.position.z = t % 1600 < 220 ? 0.65 : 0.2;
-      if (ud && ud.ringSpark) ud.ringSpark.rotation.y = t * 0.004;
-      renderer.render(scene, cam);
-    };
-    id = requestAnimationFrame(loop);
-    return () => {
-      cancelAnimationFrame(id);
-      renderer.dispose();
-      if (renderer.forceContextLoss) renderer.forceContextLoss();
-      el.innerHTML = '';
-    };
-  }, [config]);
-  return (
-    <div
-      ref={ref}
-      className="w-full h-36 sm:h-44 rounded-xl overflow-hidden mb-3 flex items-center justify-center"
-      style={{ background: `radial-gradient(circle at 50% 75%, ${config.accent}55, rgba(2,6,23,0.6) 70%)` }}
-    >
-      {IS_TOUCH && img && <img src={img} alt={config.name} className="preview-bob h-full w-auto object-contain pointer-events-none" draggable={false} />}
-      {IS_TOUCH && !img && <span className="text-6xl">🐼</span>}
-    </div>
-  );
-}
 
 // Each gang gets its own unmistakable colour (local player is always neon mint)
 const LOCAL_GANG_COLOR = '#00ffa3';
@@ -2183,6 +2157,9 @@ const MEME_CALLOUTS = [
 ];
 
 function createLabelTexture(text, bgColor, textColor, width = 256, height = 128, fontSize = 44, glowColor = null) {
+  return cachedTex(`label|${text}|${bgColor}|${textColor}|${width}|${height}|${fontSize}|${glowColor}`, () => drawLabelTexture(text, bgColor, textColor, width, height, fontSize, glowColor));
+}
+function drawLabelTexture(text, bgColor, textColor, width, height, fontSize, glowColor) {
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
@@ -2214,7 +2191,187 @@ function createLabelTexture(text, bgColor, textColor, width = 256, height = 128,
   return tex;
 }
 
+
+// Fewer draw calls: inside each group, meshes that never move on their own and look identical
+// (same material settings) are baked into one mesh. Anything the code holds a handle to
+// (userData) stays separate so animation, effects and cosmetics keep working.
+function concatGeometries(geos) {
+  const out = new THREE.BufferGeometry();
+  Object.keys(geos[0].attributes).forEach(name => {
+    const itemSize = geos[0].attributes[name].itemSize;
+    const arr = new Float32Array(geos.reduce((a, g) => a + g.attributes[name].array.length, 0));
+    let off = 0;
+    geos.forEach(g => {
+      arr.set(g.attributes[name].array, off);
+      off += g.attributes[name].array.length;
+    });
+    out.setAttribute(name, new THREE.BufferAttribute(arr, itemSize));
+  });
+  out.computeBoundingSphere();
+  return out;
+}
+function mergeStaticParts(root) {
+  const keep = new Set();
+  const scan = v => {
+    if (!v || typeof v !== 'object') return;
+    if (Array.isArray(v)) v.forEach(scan);
+    else if (v.isObject3D || v.isMaterial) keep.add(v);
+  };
+  Object.values(root.userData || {}).forEach(scan);
+  const groups = [];
+  root.traverse(o => { if (!o.isMesh) groups.push(o); });
+  groups.forEach(g => {
+    const buckets = new Map();
+    g.children.forEach(c => {
+      if (!mergeable(c, keep)) return;
+      const k = mergeKey(c, '');
+      if (!buckets.has(k)) buckets.set(k, []);
+      buckets.get(k).push(c);
+    });
+    buckets.forEach(list => {
+      if (list.length < 2) return;
+      const m = bakeMeshes(list, c => { c.updateMatrix(); return c.matrix; });
+      g.add(m);
+      list.forEach(c => {
+        g.remove(c);
+        c.geometry.dispose();
+      });
+    });
+  });
+  return root;
+}
+// ---- shared helpers for baking static meshes together ----
+const colHex = c => (c && c.getHex ? c.getHex() : '');
+function mergeable(c, keep) {
+  return c.isMesh && !c.isInstancedMesh && !c.isSkinnedMesh && !c.children.length && !keep.has(c) && !keep.has(c.material) && !Array.isArray(c.material) && !c.renderOrder && c.visible &&
+    c.onBeforeRender === THREE.Object3D.prototype.onBeforeRender && c.geometry.attributes.position && c.geometry.attributes.normal && !c.geometry.morphAttributes.position;
+}
+// untextured materials can share one draw call: their colour moves into the vertices
+const colorBakes = m => !m.map && !m.alphaMap && !m.emissiveMap && (m.isMeshStandardMaterial || m.isMeshBasicMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial) && !m.vertexColors;
+function mergeKey(c, extra) {
+  const m = c.material, g = c.geometry;
+  const bake = colorBakes(m) && !g.attributes.color;
+  const attrs = Object.keys(g.attributes).filter(n => n !== 'color').sort().join(',') + (bake || g.attributes.color ? ',color' : '');
+  // roughness/metalness are bucketed: tiny differences aren't visible but cost a draw call each
+  const rough = bake ? Math.round((m.roughness ?? 1) * 3) / 3 : m.roughness, metal = bake ? Math.round((m.metalness ?? 0) * 2) / 2 : m.metalness;
+  return [m.type, bake ? 'vc' : colHex(m.color), rough, metal, colHex(m.emissive), m.emissiveIntensity, m.map ? m.map.uuid : '', m.transparent, m.opacity, m.side, m.depthWrite, m.depthTest, m.blending, m.flatShading, m.alphaTest, m.fog, m.toneMapped, m.wireframe, attrs, c.castShadow, c.receiveShadow, extra].join('|');
+}
+function bakeMeshes(list, matrixOf) {
+  const m0 = list[0].material;
+  const bake = colorBakes(m0) && !list[0].geometry.attributes.color;
+  const geos = list.map(c => {
+    const gg = c.geometry.index ? c.geometry.toNonIndexed() : c.geometry.clone();
+    gg.clearGroups();
+    if (bake) {
+      const col = c.material.color;
+      const n = gg.attributes.position.count, arr = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        arr[i * 3] = col.r;
+        arr[i * 3 + 1] = col.g;
+        arr[i * 3 + 2] = col.b;
+      }
+      gg.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+    }
+    gg.applyMatrix4(matrixOf(c));
+    return gg;
+  });
+  let mat = m0;
+  if (bake) {
+    mat = m0.clone();
+    mat.color.setRGB(1, 1, 1);
+    mat.vertexColors = true;
+  }
+  const out = new THREE.Mesh(concatGeometries(geos), mat);
+  geos.forEach(x => x.dispose());
+  out.castShadow = list[0].castShadow;
+  out.receiveShadow = list[0].receiveShadow;
+  return out;
+}
+// Bake a whole static map into a few draw calls. The original pieces stay (detached) in `solids`
+// so bullets and line-of-sight still test small boxes instead of one giant mesh.
+function mergeSceneStatic(scene, keepRefs) {
+  const keep = new Set();
+  const scan = (v, depth = 0) => {
+    if (!v || typeof v !== 'object' || depth > 4) return;
+    if (v.isMaterial) keep.add(v);
+    else if (v.isObject3D) v.traverse(c => { keep.add(c); if (c.material) keep.add(c.material); });
+    else if (Array.isArray(v)) v.forEach(x => scan(x, depth + 1));
+    else Object.values(v).forEach(x => scan(x, depth + 1));
+  };
+  scan(keepRefs);
+  scene.updateMatrixWorld(true);
+  const buckets = new Map(), lines = new Map();
+  const visit = o => {
+    if (keep.has(o) || !o.visible) return;
+    if (o.isMesh) {
+      if (mergeable(o, keep)) {
+        const k = mergeKey(o, '');
+        if (!buckets.has(k)) buckets.set(k, []);
+        buckets.get(k).push(o);
+      }
+      return;
+    }
+    if (o.isLineSegments && !o.children.length && o.geometry.attributes.position && !o.geometry.index) {
+      const k = o.material.uuid;
+      if (!lines.has(k)) lines.set(k, []);
+      lines.get(k).push(o);
+      return;
+    }
+    o.children.slice().forEach(visit);
+  };
+  scene.children.slice().forEach(visit);
+  let before = 0, after = 0;
+  buckets.forEach(list => {
+    before += list.length;
+    if (list.length < 2) { after += 1; return; }
+    scene.add(bakeMeshes(list, c => c.matrixWorld));
+    after += 1;
+    list.forEach(c => c.parent && c.parent.remove(c)); // detached, still raycastable via `solids`
+  });
+  lines.forEach(list => {
+    before += list.length;
+    after += 1;
+    if (list.length < 2) return;
+    const geos = list.map(l => l.geometry.clone().applyMatrix4(l.matrixWorld));
+    scene.add(new THREE.LineSegments(concatGeometries(geos), list[0].material));
+    geos.forEach(x => x.dispose());
+    list.forEach(l => l.parent && l.parent.remove(l));
+  });
+  return { before, after };
+}
+
+// Every panda of the same kind looks identical, so each kind is built (and baked) once and then
+// copied: the copies share geometry + materials, which makes spawning gang members nearly free.
+const PANDA_TEMPLATES = new Map();
 function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
+  const word = isMinion ? (Math.random() > 0.5 ? 'GM' : 'WAGMI') : '';
+  const key = `${config.id}|${isMinion ? 1 : 0}|${gangColor}|${word}|${GFX_CINEMATIC ? 1 : 0}`;
+  let tpl = PANDA_TEMPLATES.get(key);
+  if (!tpl) {
+    tpl = buildPandaFresh(config, isMinion, gangColor, word);
+    tpl.traverse(o => {
+      if (o.geometry) o.geometry.userData.shared = true;
+      if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.userData.shared = true; });
+    });
+    PANDA_TEMPLATES.set(key, tpl);
+  }
+  // clone without serialising userData (it holds object handles), then point the handles at the copy
+  const ud = tpl.userData;
+  tpl.userData = {};
+  const copy = tpl.clone(true);
+  tpl.userData = ud;
+  const src = [], dst = [];
+  tpl.traverse(o => src.push(o));
+  copy.traverse(o => dst.push(o));
+  const remap = v => {
+    if (v && v.isObject3D) return dst[src.indexOf(v)] || v;
+    return v;
+  };
+  copy.userData = {};
+  Object.keys(ud).forEach(k => { copy.userData[k] = remap(ud[k]); });
+  return copy;
+}
+function buildPandaFresh(config, isMinion, gangColor, word) {
   const root = new THREE.Group();
   const scale = isMinion ? 0.62 : 1.5;
   const teamColor = gangColor || config.accent || '#22c55e';
@@ -2233,7 +2390,7 @@ function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
   // ---- body: pear-shaped, wearing a shirt (minions wear their gang's colour) ----
   const shirtBg = isMinion ? teamColor : config.shirtColor || '#7c3aed';
   const shirtTex = createLabelTexture(
-    isMinion ? (Math.random() > 0.5 ? 'GM' : 'WAGMI') : config.shirtText.replace(' ', '\n'),
+    isMinion ? word : config.shirtText.replace(' ', '\n'),
     shirtBg,
     config.id === 'astro_gmi' && !isMinion ? '#14532d' : '#f8fafc',
     512, 256, isMinion ? 64 : 54
@@ -2276,7 +2433,8 @@ function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
   headGroup.position.y = 2.08;
   root.add(headGroup);
   const pandaFace = !isAstro;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.78, 32, 24), whiteFur);
+  // gang minions are drawn small, so they get lighter geometry and skip the tiniest details
+  const head = new THREE.Mesh(isMinion ? new THREE.SphereGeometry(0.78, 18, 14) : new THREE.SphereGeometry(0.78, 32, 24), whiteFur);
   head.scale.set(1.08, 0.94, 0.98);
   if (pandaFace) headGroup.add(head);
   if (pandaFace) [-1, 1].forEach(side => {
@@ -2294,6 +2452,7 @@ function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
     const eye = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 10), pupilMat);
     eye.position.set(side * 0.25, 0.11, 0.75);
     headGroup.add(eye);
+    if (isMinion) return;
     const glint = new THREE.Mesh(new THREE.SphereGeometry(0.026, 8, 6), eyeWhite);
     glint.position.set(side * 0.25 + 0.025, 0.145, 0.815);
     headGroup.add(glint);
@@ -2436,6 +2595,7 @@ function buildNgmiPandaMesh(config, isMinion = false, gangColor = null) {
   root.add(disc);
 
   root.userData = { headGroup, leftArmGroup, rightArmGroup, ringSpark, auraMat, isAstro };
+  mergeStaticParts(root);
   upgradePandaMaterials(root);
   return root;
 }
@@ -2580,7 +2740,7 @@ function buildZombieMesh(kind) {
   root.scale.setScalar(def.s);
   // limp: one leg drags, one arm hangs
   root.userData = { head, arms, legs, limp: Math.random() < 0.4 ? 0.5 + Math.random() * 0.4 : 1, hang: Math.random() < 0.35 ? (Math.random() < 0.5 ? 0 : 1) : -1 };
-  return root;
+  return mergeStaticParts(root);
 }
 
 function makeInkTexture() {
@@ -3693,6 +3853,43 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     }
     const obj = { stage: 0, prog: 0, contested: false, capturing: false, warnAt: 0 };
     const { colliders, solids } = map;
+    mergeSceneStatic(scene, [map.pads, map.anim, map.clouds]);
+    // uniform grid over the colliders (rebuilt automatically if more are added, e.g. barrels)
+    const GRID = 8;
+    const grid = new Map();
+    let gridN = -1, gridStamp = 0;
+    const nearBuf = [];
+    const ensureGrid = () => {
+      if (gridN === colliders.length) return;
+      gridN = colliders.length;
+      grid.clear();
+      colliders.forEach(c => {
+        for (let gx = Math.floor(c.minX / GRID); gx <= Math.floor(c.maxX / GRID); gx++) {
+          for (let gz = Math.floor(c.minZ / GRID); gz <= Math.floor(c.maxZ / GRID); gz++) {
+            const key = gx * 4096 + gz;
+            if (!grid.has(key)) grid.set(key, []);
+            grid.get(key).push(c);
+          }
+        }
+      });
+    };
+    const nearColliders = (x0, x1, z0, z1) => {
+      ensureGrid();
+      gridStamp += 1;
+      nearBuf.length = 0;
+      for (let gx = Math.floor(x0 / GRID); gx <= Math.floor(x1 / GRID); gx++) {
+        for (let gz = Math.floor(z0 / GRID); gz <= Math.floor(z1 / GRID); gz++) {
+          const cell = grid.get(gx * 4096 + gz);
+          if (!cell) continue;
+          for (const c of cell) {
+            if (c._s === gridStamp) continue;
+            c._s = gridStamp;
+            nearBuf.push(c);
+          }
+        }
+      }
+      return nearBuf;
+    };
     const raycaster = new THREE.Raycaster();
 
     // ---------- helpers ----------
@@ -3709,13 +3906,15 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const freeSpot = (x, z) => {
       for (let i = 0; i < 30; i++) {
         const ox = x + (i ? (Math.random() - 0.5) * i * 1.5 : 0), oz = z + (i ? (Math.random() - 0.5) * i * 1.5 : 0);
-        if (!colliders.some(c => ox > c.minX - 1 && ox < c.maxX + 1 && oz > c.minZ - 1 && oz < c.maxZ + 1 && c.bottom < 2)) return [ox, oz];
+        if (!nearColliders(ox - 1.1, ox + 1.1, oz - 1.1, oz + 1.1).some(c => !c.off && ox > c.minX - 1 && ox < c.maxX + 1 && oz > c.minZ - 1 && oz < c.maxZ + 1 && c.bottom < 2)) return [ox, oz];
       }
       return [x, z];
     };
     const moveBody = (pos, vel, r, dt) => {
+      const reach = r + 1 + (Math.abs(vel.x) + Math.abs(vel.z)) * dt;
+      const near = nearColliders(pos.x - reach, pos.x + reach, pos.z - reach, pos.z + reach).slice();
       const axis = (ax) => {
-        for (const c of colliders) {
+        for (const c of near) {
           if (c.off || pos.y >= c.top - 0.5 || pos.y + 2.6 <= c.bottom) continue;
           if (pos.x > c.minX - r && pos.x < c.maxX + r && pos.z > c.minZ - r && pos.z < c.maxZ + r) {
             if (ax === 'x') {
@@ -3739,7 +3938,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const rr = r * 0.6;
       if (vel.y > 0) {
         // bump your head on ceilings instead of popping through roofs
-        for (const c of colliders) {
+        for (const c of near) {
           if (c.off || c.bottom < 1) continue;
           if (pos.x > c.minX - rr && pos.x < c.maxX + rr && pos.z > c.minZ - rr && pos.z < c.maxZ + rr && pos.y + 2.6 > c.bottom && pos.y + 2.6 - vel.y * dt <= c.bottom + 0.05) {
             pos.y = c.bottom - 2.6;
@@ -3747,7 +3946,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           }
         }
       }
-      for (const c of colliders) {
+      for (const c of near) {
         if (c.off) continue;
         if (c.top <= pos.y + 0.5 && pos.x > c.minX - rr && pos.x < c.maxX + rr && pos.z > c.minZ - rr && pos.z < c.maxZ + rr) ground = Math.max(ground, c.top);
       }
@@ -3773,11 +3972,13 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const hit = raycaster.intersectObjects(solids, false)[0];
       return hit || null;
     };
+    const losDir = new THREE.Vector3();
     const hasLOS = (a, b) => {
-      const d = new THREE.Vector3().subVectors(b, a);
-      const len = d.length();
-      d.divideScalar(len);
-      const h = wallHit(a, d, len);
+      losDir.subVectors(b, a);
+      const len = losDir.length();
+      if (len < 0.01) return true;
+      losDir.divideScalar(len);
+      const h = wallHit(a, losDir, len);
       return !h || h.distance > len - 0.4;
     };
     const traceShot = (o, d, shooter, assist = 1, range = 260, skip = null) => {
@@ -3849,28 +4050,63 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     };
     const partGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14);
     const parts = [];
-    const puff = (p, color, n = 8, sp = 5) => {
-      for (let i = 0; i < n && parts.length < 220; i++) {
+    // debris cubes come from a pool: no new meshes or materials while fighting
+    const PART_MAX = IS_TOUCH ? 140 : 220;
+    const partFree = [];
+    let partMade = 0;
+    const takePart = (color, geo = partGeo) => {
+      let it = partFree.pop();
+      if (!it) {
+        if (partMade >= PART_MAX) return null;
+        partMade += 1;
         const mat = new THREE.MeshBasicMaterial({ color, transparent: true });
-        const m = new THREE.Mesh(partGeo, mat);
-        m.position.copy(p);
-        scene.add(m);
-        parts.push({ m, mat, vx: (Math.random() - 0.5) * sp, vy: Math.random() * sp, vz: (Math.random() - 0.5) * sp, life: 0.5 + Math.random() * 0.3 });
+        it = { m: new THREE.Mesh(partGeo, mat), mat };
+        it.m.frustumCulled = false;
+        scene.add(it.m);
+      }
+      it.mat.color.set(color);
+      it.mat.opacity = 1;
+      it.m.geometry = geo;
+      it.m.scale.setScalar(1);
+      it.m.visible = true;
+      return it;
+    };
+    const puff = (p, color, n = 8, sp = 5) => {
+      for (let i = 0; i < n; i++) {
+        const it = takePart(color);
+        if (!it) return;
+        it.m.position.copy(p);
+        parts.push({ m: it.m, mat: it.mat, it, vx: (Math.random() - 0.5) * sp, vy: Math.random() * sp, vz: (Math.random() - 0.5) * sp, life: 0.5 + Math.random() * 0.3 });
       }
     };
 
     // ---------- sprite FX system ----------
     const smokeTex = makeSmokeTexture();
     const softTex = makeGlowTexture('rgba(255,255,255,1)', 'rgba(255,255,255,0)');
+    // sprite FX are pooled: a sprite + material is built once and recycled, never per particle
+    const FX_MAX = IS_TOUCH ? 260 : 420;
     const fxs = [];
+    const fxFree = [];
+    let fxMade = 0;
     const spawnFx = o => {
-      if (fxs.length > 450) return;
-      const mat = new THREE.SpriteMaterial({ map: o.smoke ? smokeTex : softTex, color: o.color, transparent: true, opacity: o.opacity == null ? 1 : o.opacity, depthWrite: false, blending: o.add ? THREE.AdditiveBlending : THREE.NormalBlending, rotation: Math.random() * 6.28 });
-      const sp = new THREE.Sprite(mat);
-      sp.position.copy(o.pos);
-      sp.scale.setScalar(o.size);
-      scene.add(sp);
-      fxs.push({ sp, mat, vx: o.vx || 0, vy: o.vy || 0, vz: o.vz || 0, life: o.life, max: o.life, size: o.size, grow: o.grow || 0, g: o.g || 0, drag: o.drag || 0, op: o.opacity == null ? 1 : o.opacity, spin: o.spin || (Math.random() - 0.5) * 1.5 });
+      let it = fxFree.pop();
+      if (!it) {
+        if (fxMade >= FX_MAX) return;
+        fxMade += 1;
+        const mat = new THREE.SpriteMaterial({ map: softTex, transparent: true, depthWrite: false });
+        it = { sp: new THREE.Sprite(mat), mat };
+        scene.add(it.sp);
+      }
+      const mat = it.mat;
+      mat.map = o.smoke ? smokeTex : softTex;
+      mat.color.set(o.color);
+      mat.opacity = o.opacity == null ? 1 : o.opacity;
+      mat.blending = o.add ? THREE.AdditiveBlending : THREE.NormalBlending;
+      mat.rotation = Math.random() * 6.28;
+      it.sp.position.copy(o.pos);
+      it.sp.scale.setScalar(o.size);
+      it.sp.visible = true;
+      fxs.push({ it, sp: it.sp, mat, vx: o.vx || 0, vy: o.vy || 0, vz: o.vz || 0, life: o.life, max: o.life, size: o.size, grow: o.grow || 0, g: o.g || 0, drag: o.drag || 0, op: o.opacity == null ? 1 : o.opacity, spin: o.spin || (Math.random() - 0.5) * 1.5 });
     };
     const rnd = () => Math.random() - 0.5;
     const impactFx = (p, n) => {
@@ -4175,7 +4411,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           me.maxStreak = Math.max(me.maxStreak || 0, k.streak + 1);
           if ((k.streak + 1) % 4 === 0 && !me.strikeReady) {
             me.strikeReady = true;
-            setTimeout(() => { announceNow(IS_TOUCH ? '☄️ MOON STRIKE READY · TAP ☄️' : '☄️ MOON STRIKE READY · PRESS G', '#f87171'); sayLine('Moon strike ready'); }, 900);
+            setTimeout(() => { announceNow(IS_TOUCH ? '☄️ MOON STRIKE READY · TAP ☄️' : '☄️ MOON STRIKE READY · PRESS G', '#f87171'); }, 900);
           }
         }
         k.streak += 1;
@@ -4189,7 +4425,6 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           if (k.streak >= 2 && clipRef.current) clipRef.current.highlight(STREAK[k.streak] || `${k.streak}-KILL STREAK`);
           if (STREAK[k.streak]) {
             announceNow(STREAK[k.streak], '#facc15');
-            sayLine(STREAK[k.streak].toLowerCase());
             sfx.play('streak');
           } else announceNow(`ELIMINATED ${ev.vn}${ev.hs ? ' · HEADSHOT' : ''}`, ev.hs ? '#facc15' : '#ffffff');
         }
@@ -4395,14 +4630,19 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     };
     const rockets = [];
     const booms = [];
+    const RK = {
+      bodyGeo: new THREE.CylinderGeometry(0.07, 0.07, 0.55, 10), bodyMat: new THREE.MeshStandardMaterial({ color: 0x1f2125, roughness: 0.5 }),
+      headGeo: new THREE.ConeGeometry(0.13, 0.42, 12), headMat: new THREE.MeshStandardMaterial({ color: 0x3f5a3a, roughness: 0.5 }),
+      fireMat: new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(255,210,120,1)', 'rgba(255,90,20,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })
+    };
     const fireRocket = (origin, dir, owner) => {
       const g = new THREE.Group();
-      const body = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.55, 10), new THREE.MeshStandardMaterial({ color: 0x1f2125, roughness: 0.5 }));
+      const body = new THREE.Mesh(RK.bodyGeo, RK.bodyMat);
       body.rotation.x = Math.PI / 2;
-      const head = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.42, 12), new THREE.MeshStandardMaterial({ color: 0x3f5a3a, roughness: 0.5 }));
+      const head = new THREE.Mesh(RK.headGeo, RK.headMat);
       head.rotation.x = Math.PI / 2;
       head.position.z = 0.48;
-      const fire = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(255,210,120,1)', 'rgba(255,90,20,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      const fire = new THREE.Sprite(RK.fireMat);
       fire.scale.set(0.9, 0.9, 1);
       fire.position.z = -0.4;
       g.add(body, head, fire);
@@ -4411,6 +4651,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       scene.add(g);
       rockets.push({ g, dir: dir.clone(), owner, start: origin.clone(), life: 3, speed: 48 });
     };
+    const BOOM_RING = new THREE.RingGeometry(0.6, 1.0, 40);
     const explodeAt = (point, owner, visualOnly, start, scale = 1) => {
       const R = 7 * scale, core = 1.6 * scale;
       boomLight.position.set(point.x, point.y + 1.5, point.z);
@@ -4430,9 +4671,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
       puff(point, '#2d2a28', Math.round(10 * scale), 11 * scale);
       puff(point, '#7a5a3a', Math.round(6 * scale), 8 * scale);
-      const ring = new THREE.Mesh(new THREE.RingGeometry(0.6 * scale, 1.0 * scale, 40), new THREE.MeshBasicMaterial({ color: 0xffa94d, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+      const ring = new THREE.Mesh(BOOM_RING, new THREE.MeshBasicMaterial({ color: 0xffa94d, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
       ring.rotation.x = -Math.PI / 2;
       ring.position.set(point.x, Math.max(0.1, point.y - 0.8), point.z);
+      ring.userData.base = scale;
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(255,230,160,1)', 'rgba(255,110,30,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
       glow.position.copy(point);
       scene.add(ring, glow);
@@ -4498,7 +4740,6 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       scene.add(ring, beam);
       strikes.push({ tgt, ring, beam, t: 1.6, fired: 0, next: 0 });
       announceNow('☄️ MOON STRIKE INBOUND', '#f87171');
-      sayLine('Moon strike inbound');
       sfx.play('powerup');
     };
     const selectSlot = i => {
@@ -4729,7 +4970,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (frozen) { dx = 0; dz = 0; }
       if (b.downed) { dx *= 0.2; dz *= 0.2; }
       if (dx || dz) {
-        const blocked = (ax, az) => colliders.some(c => c.top > b.pos.y + 0.6 && c.bottom < b.pos.y + 2 && ax > c.minX - 0.6 && ax < c.maxX + 0.6 && az > c.minZ - 0.6 && az < c.maxZ + 0.6);
+        const blocked = (ax, az) => nearColliders(ax - 0.7, ax + 0.7, az - 0.7, az + 0.7).some(c => !c.off && c.top > b.pos.y + 0.6 && c.bottom < b.pos.y + 2 && ax > c.minX - 0.6 && ax < c.maxX + 0.6 && az > c.minZ - 0.6 && az < c.maxZ + 0.6);
         const ll = Math.hypot(dx, dz) || 1;
         const ux = dx / ll, uz = dz / ll;
         if (blocked(b.pos.x + ux * 2.4, b.pos.z + uz * 2.4)) {
@@ -4811,13 +5052,6 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const i = zombies.indexOf(zz);
       if (i >= 0) zombies.splice(i, 1);
       zById.delete(zz.id);
-    };
-    const dropZombie = zz => {
-      unlistZombie(zz);
-      if (zz.mesh) {
-        poolZMesh(zz.kind, zz.mesh);
-        zz.mesh = null;
-      }
     };
     const crowd = () => 0.8 + 0.2 * Math.max(1, fighters.length);
     const isBossWave = w => w > 0 && w % 5 === 0;
@@ -4920,13 +5154,12 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const gibFx = zz => {
       const p = new THREE.Vector3(zz.pos.x, zz.pos.y + zz.s * 0.8, zz.pos.z);
       const cols = [zz.color, '#1d241b', '#5b0f0f', '#4d7c0f'];
-      for (let i = 0; i < 9 && parts.length < 220; i++) {
-        const mat = new THREE.MeshBasicMaterial({ color: cols[i % 4], transparent: true });
-        const m = new THREE.Mesh(gibGeo, mat);
-        m.position.copy(p);
-        m.scale.setScalar((0.6 + Math.random() * 0.9) * Math.min(2.5, zz.s / 1.4));
-        scene.add(m);
-        parts.push({ m, mat, vx: rnd() * 14, vy: 5 + Math.random() * 9, vz: rnd() * 14, life: 1.1 + Math.random() * 0.6 });
+      for (let i = 0; i < 9; i++) {
+        const it = takePart(cols[i % 4], gibGeo);
+        if (!it) break;
+        it.m.position.copy(p);
+        it.m.scale.setScalar((0.6 + Math.random() * 0.9) * Math.min(2.5, zz.s / 1.4));
+        parts.push({ m: it.m, mat: it.mat, it, vx: rnd() * 14, vy: 5 + Math.random() * 9, vz: rnd() * 14, life: 1.1 + Math.random() * 0.6 });
       }
       for (let i = 0; i < 16; i++) spawnFx({ pos: p, size: 0.2, life: 0.8, color: zGreen, vx: rnd() * 12, vy: 3 + Math.random() * 8, vz: rnd() * 12, g: 16 });
       splat(new THREE.Vector3(zz.pos.x, zz.pos.y, zz.pos.z), 2.6);
@@ -5144,7 +5377,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     };
 
     // ---- AI (host only) ----
-    const zBlocked = (x, z, y) => colliders.some(c => !c.off && c.top > y + 0.6 && c.bottom < y + 2 && x > c.minX - 0.6 && x < c.maxX + 0.6 && z > c.minZ - 0.6 && z < c.maxZ + 0.6);
+    const zBlocked = (x, z, y) => nearColliders(x - 0.7, x + 0.7, z - 0.7, z + 0.7).some(c => !c.off && c.top > y + 0.6 && c.bottom < y + 2 && x > c.minX - 0.6 && x < c.maxX + 0.6 && z > c.minZ - 0.6 && z < c.maxZ + 0.6);
     const bossAct = zz => {
       if (zz.act === 2) {
         slamFx(zz.pos.x, zz.pos.y, zz.pos.z);
@@ -5330,7 +5563,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     // ---- squad chatter: speech bubbles, radio blips and (optional) voices ----
     const CALLS = { reload: 'RELOADING!', help: 'HELP ME!', horde: 'HORDE INCOMING!', nade: 'FIRE IN THE HOLE!', med: 'CATCH — MEDKIT!', revive: 'I GOT YOU!', thanks: 'THANKS!', boss: 'RUG LORD! FOCUS FIRE!', brute: 'BIG ONE COMING!', bloater: 'BLOATER! SHOOT IT FROM RANGE!', spitter: 'SPITTER! WATCH THE ACID!', hurt: "I'M HURT BAD!", onme: 'ON ME! STICK TOGETHER!', clear: 'CLEAR!', barrel: 'SHOOT THE BARREL!' };
     const CALL_IDS = Object.keys(CALLS);
-    let lastVoiceAt = 0, lastCallAt = 0;
+    let lastVoiceAt = 0;
     const showBubble = (f, text) => {
       if (!f.mesh) return;
       if (!f.say) {
@@ -5388,7 +5621,6 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (!text || !f || !zombie) return;
       const now = performance.now();
       if (f.lastCode === code && now - (f.lastCall || 0) < 4500) return;
-      lastCallAt = now;
       f.lastCall = now;
       f.lastCode = code;
       pushFeed(`💬 ${f.isMe ? 'You' : f.name}: ${text}`, f.isMe ? '#bbf7d0' : '#fde68a');
@@ -5826,7 +6058,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
       if (frozen || b.downed) { dx = 0; dz = 0; } // downed bots stay put so you can reach them
       if (dx || dz) {
-        const blocked = (ax, az) => colliders.some(c => !c.off && c.top > b.pos.y + 0.6 && c.bottom < b.pos.y + 2 && ax > c.minX - 0.6 && ax < c.maxX + 0.6 && az > c.minZ - 0.6 && az < c.maxZ + 0.6);
+        const blocked = (ax, az) => nearColliders(ax - 0.7, ax + 0.7, az - 0.7, az + 0.7).some(c => !c.off && c.top > b.pos.y + 0.6 && c.bottom < b.pos.y + 2 && ax > c.minX - 0.6 && ax < c.maxX + 0.6 && az > c.minZ - 0.6 && az < c.maxZ + 0.6);
         const ll = Math.hypot(dx, dz) || 1;
         const ux = dx / ll, uz = dz / ll;
         const look = b.wp ? 1.2 : 2.4;
@@ -6313,7 +6545,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         it.vx *= drag;
         it.vz *= drag;
         const nx = it.x + it.vx * dt, nz = it.z + it.vz * dt;
-        if (colliders.some(c => !c.off && c.bottom < 0.5 && c.top > it.y && nx > c.minX && nx < c.maxX && nz > c.minZ && nz < c.maxZ)) {
+        if (nearColliders(nx - 0.1, nx + 0.1, nz - 0.1, nz + 0.1).some(c => !c.off && c.bottom < 0.5 && c.top > it.y && nx > c.minX && nx < c.maxX && nz > c.minZ && nz < c.maxZ)) {
           it.vx *= -0.4;
           it.vz *= -0.4;
           if (it.sndT <= 0 && it.L.snd !== 'paper') {
@@ -6619,7 +6851,6 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       scene.add(beam);
       drops.push({ id: match.evIdx, grp, chute, strings, beam, x, z, landed: false });
       announceNow('👑 GOLDEN AK AIRDROP INCOMING', '#facc15');
-      sayLine('Golden airdrop incoming');
       pushFeed('📦 Golden AK airdrop! Follow the light', '#facc15');
       sfx.play('powerup');
     };
@@ -6654,7 +6885,6 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const objectiveTaken = idx => {
       const o = map.objectives[idx];
       announceNow(`${o.key} · ${o.name} CAPTURED`, SIEGE_TEAMS.atk.color);
-      sayLine(`Objective ${o.key} captured`);
       pushFeed(`⚔️ Raiders captured ${o.name}${idx === 0 ? ' · +75s' : ''}`, SIEGE_TEAMS.atk.color);
       sfx.play('streak');
       if (idx === 0) {
@@ -6685,12 +6915,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         setTimeout(() => setResults({ board, rank, zombie: { won, survived, wave: zd.wave, best: Math.max(prevBest, survived), newBest: survived > prevBest, mode: zmode }, xp: xpRes, story: null }), 1400);
         return;
       }
-      sayLine(rank === 1 ? 'Victory' : 'Match over');
       announceNow(rank === 1 ? 'VICTORY 🏆' : 'MATCH OVER', rank === 1 ? '#facc15' : '#ffffff');
       sfx.play(rank === 1 ? 'streak' : 'ko');
       if (siege) {
         const won = winner === me.team;
-        sayLine(won ? 'Victory' : 'Defeat');
         announceNow(won ? 'VICTORY 🏆' : 'DEFEAT', won ? '#facc15' : '#f87171');
       }
       const didWin = siege ? winner === me.team : rank === 1;
@@ -6889,11 +7117,34 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
 
     // ---------- main loop ----------
     let raf, prev = performance.now(), lastNet = 0, lastHud = 0, bob = 0;
+    // adaptive resolution: if the device can't hold ~45 fps, render fewer pixels; raise them back when it can
+    const perf = { acc: 0, n: 0, t: 0, warm: 3, max: renderer.getPixelRatio(), pr: renderer.getPixelRatio(), min: IS_TOUCH ? 0.6 : 0.8 };
+    const setPR = v => {
+      perf.pr = Math.round(v * 100) / 100;
+      renderer.setPixelRatio(perf.pr);
+      renderer.setSize(W(), H());
+      if (post) post.setSize();
+    };
     const loop = now => {
       raf = requestAnimationFrame(loop);
       if (locked()) everLocked = true;
       const paused = !IS_TOUCH && !locked() && Object.keys(net.peers).length === 0 && !match.over;
-      const dt = paused ? 0 : Math.max(0, Math.min(0.05, (now - prev) / 1000));
+      const rawDt = Math.max(0, (now - prev) / 1000);
+      if (!paused && !document.hidden && rawDt < 0.25) {
+        perf.acc += rawDt;
+        perf.n += 1;
+        perf.t += rawDt;
+        if (perf.t > 2) {
+          const avg = perf.acc / Math.max(1, perf.n);
+          if (perf.warm > 0) perf.warm -= perf.t;
+          else if (avg > 1 / 42 && perf.pr > perf.min) setPR(Math.max(perf.min, perf.pr - 0.15));
+          else if (avg < 1 / 57 && perf.pr < perf.max) setPR(Math.min(perf.max, perf.pr + 0.1));
+          perf.acc = 0;
+          perf.n = 0;
+          perf.t = 0;
+        }
+      }
+      const dt = paused ? 0 : Math.min(0.05, rawDt);
       prev = now;
       if (match.countdown > 0) {
         match.countdown -= dt;
@@ -6904,7 +7155,6 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           sfx.play('pop', 1, 0.8);
         }
         if (match.countdown <= 0) {
-          sayLine(siege ? (me.team === 'atk' ? 'Attack!' : 'Defend!') : 'Fight!');
           announceNow(zombie ? '🔦 STICK TOGETHER' : siege ? (me.team === 'atk' ? '⚔️ ATTACK!' : '🛡️ DEFEND!') : 'SHOOT!', zombie ? '#a3e635' : siege ? SIEGE_TEAMS[me.team].color : '#4ade80');
           sfx.play('streak');
         }
@@ -7298,7 +7548,6 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (!hitPoint && (next.y <= 0.05 || rk.life <= 0)) hitPoint = next;
         if (hitPoint) {
           scene.remove(rk.g);
-          rk.g.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
           rockets.splice(i, 1);
           explodeAt(hitPoint, rk.owner, false, rk.start, zombie ? 1.35 : 1);
           continue;
@@ -7310,13 +7559,13 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         const bm = booms[i];
         bm.t += dt;
         const k = bm.t / 0.45;
-        bm.ring.scale.setScalar(1 + k * 8);
+        bm.ring.scale.setScalar((bm.ring.userData.base || 1) * (1 + k * 8));
         bm.ring.material.opacity = Math.max(0, 1 - k);
         bm.glow.scale.setScalar((4 + k * 10) * (bm.s || 1));
         bm.glow.material.opacity = Math.max(0, 1 - k * 1.3);
         if (k >= 1) {
           scene.remove(bm.ring, bm.glow);
-          bm.ring.geometry.dispose();
+          if (bm.ring.geometry !== BOOM_RING) bm.ring.geometry.dispose();
           bm.ring.material.dispose();
           bm.glow.material.dispose();
           booms.splice(i, 1);
@@ -7338,9 +7587,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         f.mat.opacity = f.op * Math.pow(1 - Math.min(1, k), 1.3);
         f.mat.rotation += f.spin * dt;
         if (f.life <= 0) {
-          scene.remove(f.sp);
-          f.mat.dispose();
-          fxs.splice(i, 1);
+          f.sp.visible = false;
+          fxFree.push(f.it);
+          fxs[i] = fxs[fxs.length - 1];
+          fxs.pop();
         }
       }
       dmgPool.forEach(d => {
@@ -7380,9 +7630,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         p.life -= dt;
         p.mat.opacity = Math.max(0, p.life * 2);
         if (p.life <= 0 || p.m.position.y < 0) {
-          scene.remove(p.m);
-          p.mat.dispose();
-          parts.splice(i, 1);
+          p.m.visible = false;
+          partFree.push(p.it);
+          parts[i] = parts[parts.length - 1];
+          parts.pop();
         }
       }
       map.clouds.forEach((cl, i) => { cl.position.x += dt * (0.6 + (i % 3) * 0.3); if (cl.position.x > 170) cl.position.x = -170; });
@@ -8279,24 +8530,6 @@ function awardXp({ kills = 0, deaths = 0, won = false, headshots = 0, bestStreak
   saveProfile(p);
   return { gained, parts, before, after: p.level, unlocked: COSMETICS.filter(c => c.lvl > before && c.lvl <= p.level), profile: p };
 }
-let voiceCache = null;
-function sayLine() {} // announcer voice removed (kept as a no-op so call sites stay simple)
-function sayLineUnused(text) {
-  try {
-    if (!window.speechSynthesis || sfx.isMuted() || !loadProfile().voice) return;
-    window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
-    u.rate = 1.05;
-    u.pitch = 0.65;
-    u.volume = 0.95;
-    if (!voiceCache) {
-      const vs = window.speechSynthesis.getVoices();
-      voiceCache = vs.find(v => /en[-_](GB|US)/i.test(v.lang) && /male|daniel|alex|fred|george/i.test(v.name)) || vs.find(v => /^en/i.test(v.lang)) || null;
-    }
-    if (voiceCache) u.voice = voiceCache;
-    window.speechSynthesis.speak(u);
-  } catch (e) {}
-}
 function applyCosmetic(mesh, id) {
   const ud = mesh && mesh.userData;
   if (!ud || !ud.headGroup) return;
@@ -8472,7 +8705,7 @@ function App() {
   const [myKos, setMyKos] = useState(0);
   const [killFeed, setKillFeed] = useState([]);
   const [activeBeatdownAlert, setActiveBeatdownAlert] = useState(null);
-  const [cooldowns, setCooldowns] = useState({ call: 0, smash: 0, swarm: 0, dash: 0, cannon: 0, ult: 0 });
+  const [cooldowns, setCooldowns] = useState({ smash: 0, dash: 0, cannon: 0, ult: 0 });
   const [arenaEventText, setArenaEventText] = useState('HIT RIVALS TO RAISE THEIR % • HIGH % = THEY FLY! 🚀');
   const [onlinePeersCount, setOnlinePeersCount] = useState(1);
 
@@ -8578,7 +8811,7 @@ function App() {
       document.removeEventListener('visibilitychange', onHide);
     };
   }, [screen]);
-  const actionTriggerRef = useRef({ call: false, smash: false, swarm: false, jump: false });
+  const actionTriggerRef = useRef({ smash: false, jump: false });
   const [matchId, setMatchId] = useState(0);
   const [matchTime, setMatchTime] = useState(MATCH_SECONDS);
   const [results, setResults] = useState(null);
@@ -8978,9 +9211,13 @@ function App() {
     const disposeObj = o => {
       if (!o) return;
       o.traverse(c => {
-        if (c.geometry) c.geometry.dispose();
+        if (c.geometry && !c.geometry.userData.shared) c.geometry.dispose();
         const mats = Array.isArray(c.material) ? c.material : c.material ? [c.material] : [];
-        mats.forEach(mt => { if (mt.map) mt.map.dispose(); mt.dispose(); });
+        mats.forEach(mt => {
+          if (mt.userData.shared) return; // shared with other pandas of the same kind
+          if (mt.map && !mt.map.userData.shared) mt.map.dispose();
+          mt.dispose();
+        });
       });
     };
     const pandaPool = {};
@@ -9316,7 +9553,7 @@ function App() {
     const match = { left: MATCH_SECONDS, countdown: 3.3, over: false, finalRush: false };
     const stats = { bestCombo: 0, biggestHit: 0, falls: 0 };
     ['3', '2', '1'].forEach((n, i) => setTimeout(() => { announceNow(n, '#ffffff'); sfx.play('pop', 1, 0.8); }, 150 + i * 1000));
-    setTimeout(() => { announceNow('FIGHT!', '#00ffa3'); sfx.play('streak'); sayLine('Fight!'); }, 3150);
+    setTimeout(() => { announceNow('FIGHT!', '#00ffa3'); sfx.play('streak'); }, 3150);
     setMatchTime(MATCH_SECONDS);
 
     // ---------- RUG PULL: a slice of the floor collapses ----------
@@ -9707,7 +9944,7 @@ function App() {
       loadMqtt().then(() => { if (!netCancelled) initMultiplayer(); }).catch(() => setNetStatus('OFFLINE · BOTS ONLY'));
     }
 
-    const cdState = { call: 0, smash: 0, swarm: 0, dash: 0, cannon: 0 };
+    const cdState = { smash: 0, dash: 0, cannon: 0 };
     const pressBuf = { smash: -1e9, dash: -1e9, cannon: -1e9 };
     const INPUT_BUFFER_MS = { smash: 320, dash: 380, cannon: 320 };
     let lastDeniedAt = -1e9;
@@ -9759,7 +9996,6 @@ function App() {
         if (killer.streak >= 2 && bdClipRef.current) bdClipRef.current.highlight(st ? st[0].replace(/!+$/, '') : 'MULTI K.O.');
         if (st) {
           announceNow(st[0], st[1]);
-          sayLine(st[0].replace(/[^A-Za-z .]/g, '').toLowerCase());
           sfx.play('streak');
         }
       }
@@ -9936,7 +10172,6 @@ function App() {
       if (fx.liqTimer > 0) fx.liqTimer -= dt;
       if (fx.comboTimer > 0) fx.comboTimer -= rawDt;
 
-      cdState.call = Math.max(0, cdState.call - dt);
       cdState.dash = Math.max(0, cdState.dash - dt);
       cdState.cannon = Math.max(0, cdState.cannon - dt);
       perf.acc += rawDt; perf.n += 1; perf.t += rawDt;
@@ -9948,7 +10183,6 @@ function App() {
         perf.acc = 0; perf.n = 0; perf.t = 0;
       }
       cdState.smash = Math.max(0, cdState.smash - dt);
-      cdState.swarm = Math.max(0, cdState.swarm - dt);
 
       // ---------- match clock ----------
       const frozen = match.countdown > 0 || match.over;
@@ -9958,7 +10192,6 @@ function App() {
         if (!matchRef.finalRush && match.left <= 30) {
           matchRef.finalRush = true;
           announceNow('FINAL 30s! KNOCKBACK x1.5', '#f97316');
-          sayLine('Final thirty seconds');
           sfx.setRush(true);
           setArenaEventText('🔥 FINAL RUSH: EVERY HIT KNOCKS 1.5x FURTHER!');
           sfx.play('streak');
@@ -9972,16 +10205,13 @@ function App() {
           announceNow(myRank === 1 ? 'VICTORY! 🏆' : 'TIME!', myRank === 1 ? '#facc15' : '#ffffff');
           sfx.play(myRank === 1 ? 'streak' : 'ko');
           const xpRes = awardXp({ kills: localFighter.kos, deaths: localFighter.deaths || 0, won: myRank === 1, bestStreak: localFighter.maxStreak || 0 });
-          sayLine(myRank === 1 ? 'Victory' : 'Time');
           const storyRes = storyEval(storyRunRef.current, { game: 'beatdown', kills: localFighter.kos, ringouts: localFighter.ringouts || 0, bestStreak: localFighter.maxStreak || 0, won: myRank === 1, rank: myRank, whale: localFighter.whaleKOs || 0 });
           const party = !storyMode && livePeers().length > 0;
           setTimeout(() => setResults({ board, myRank, kos: localFighter.kos, ...stats, xp: xpRes, story: storyRes, party }), 1600);
         }
       }
       if (frozen) {
-        actionTriggerRef.current.call = false;
         actionTriggerRef.current.smash = false;
-        actionTriggerRef.current.swarm = false;
         actionTriggerRef.current.jump = false;
         actionTriggerRef.current.dash = false;
         actionTriggerRef.current.cannon = false;
@@ -10182,8 +10412,6 @@ function App() {
       // cooldown, a hit-stun or a dropped frame still fires as soon as it can.
       const netEvents = [];
       const at = actionTriggerRef.current;
-      at.call = false;
-      at.swarm = false;
       ['smash', 'dash', 'cannon'].forEach(k => {
         if (at[k]) { pressBuf[k] = now; at[k] = false; }
       });
@@ -10831,14 +11059,14 @@ function App() {
 
       if (now - lastHudSync > 200) {
         lastHudSync = now;
-        setCooldowns({
-          call: Number(cdState.call.toFixed(1)),
+        // only re-render the HUD when a value actually changed
+        const cdNext = {
           smash: Number(cdState.smash.toFixed(1)),
-          swarm: Number(cdState.swarm.toFixed(1)),
           dash: Number(cdState.dash.toFixed(1)),
           cannon: Number(cdState.cannon.toFixed(1)),
           ult: Math.floor(ult.v)
-        });
+        };
+        setCooldowns(prevCd => (prevCd.smash === cdNext.smash && prevCd.dash === cdNext.dash && prevCd.cannon === cdNext.cannon && prevCd.ult === cdNext.ult ? prevCd : cdNext));
         setActiveBeatdownAlert(currentBeatdownBanner);
         setMyDmg(Math.round(localFighter.dmg));
         let holder = null;
@@ -10861,7 +11089,7 @@ function App() {
         if (b.armor > 0) hud.push(`💎 ${b.armor.toFixed(0)}s`);
         if (b.pump > 0) hud.push(`🚀 ${b.pump.toFixed(0)}s`);
         if (localFighter.weapon) hud.push(`${localFighter.weapon.kind === 'hammer' ? '🔨' : '🧨'} x${localFighter.weapon.uses} · E`);
-        setBuffHud(hud);
+        setBuffHud(prevHud => (prevHud.length === hud.length && prevHud.every((x, i) => x === hud[i]) ? prevHud : hud));
         let nearest = 999;
         fighters.forEach(o => {
           if (o.id !== localFighter.id) nearest = Math.min(nearest, o.mesh.position.distanceTo(localFighter.mesh.position));

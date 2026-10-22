@@ -28,6 +28,14 @@ Single-file game: `index.html` (React 18 UMD + Babel standalone + Three.js r149 
 
 ## Rules for working here
 
+- Performance rules (keep the game smooth on phones):
+  - Canvas textures go through `cachedTex` (`makeGlowTexture`, `createLabelTexture`, `makeEmojiTexture`, `makeSuitTexture` are memoised and marked `userData.shared`); never build one per frame or per particle. `disposeObj` skips shared textures/geometry/materials.
+  - Pandas: `buildNgmiPandaMesh` builds each kind once (`PANDA_TEMPLATES`, real work in `buildPandaFresh`) and returns clones sharing geometry+materials. Don't mutate a panda's materials per instance; add your own material if you need per-panda colour changes.
+  - Static parts are baked with `mergeStaticParts(root)` (models) and `mergeSceneStatic(scene, keepRefs)` (Shootout/Siege maps). Anything you animate later must be referenced from `root.userData` / the keep list, or it gets baked. Map originals stay detached in `solids` for raycasts.
+  - Shootout FX: `spawnFx` and `puff`/`takePart` are pooled (no new materials mid-fight). Collisions use the uniform grid `nearColliders(x0,x1,z0,z1)`; don't loop over all `colliders` in per-frame code.
+  - Both games use adaptive resolution (`perf`/`setPR`). React state set from game loops must only change when values change (see `setCooldowns`/`setBuffHud`).
+  - Benchmark recipe: wrap the loop (`loopInner`/`animateInner`) to push per-frame ms into `window.__perf`, gate rendering behind `window.__RENDER`, and count visible objects; compare against `git show HEAD:index.html`.
+
 - Work directly on `main` and push when done (owner's standing preference: no feature branches, he tests on the live site). Run the compile check and a browser smoke test first, since push = live.
 
 - Compile check before pushing: extract the `<script type="text/babel">` block and run `@babel/standalone` `transform` with the `react` preset.
