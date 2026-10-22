@@ -24,6 +24,8 @@ Single-file game: `index.html` (React 18 UMD + Babel standalone + Three.js r149 
 
 ## Rules for working here
 
+- Work directly on `main` and push when done (owner's standing preference: no feature branches, he tests on the live site). Run the compile check and a browser smoke test first, since push = live.
+
 - Compile check before pushing: extract the `<script type="text/babel">` block and run `@babel/standalone` `transform` with the `react` preset.
 - Browser tests use Playwright with `/opt/pw-browsers/chromium` and CDN routing to `/tmp/bchk/node_modules`. Rendering is about 1 fps in the sandbox, so shorten clocks in a test copy rather than waiting for real match lengths.
 - Never run the full game without a timeout. Run long tests in the background and poll their log.
