@@ -487,6 +487,10 @@ const sfx = (() => {
         hiss(0.18, 0.45 * vol, 'lowpass', 1200 * p, 200);
         tone('sine', 140 * p, 50, 0.16, 0.35 * vol);
         break;
+      case 'radio':
+        hiss(0.07, 0.25 * vol, 'bandpass', 1800, 2400);
+        tone('square', 1400, 0, 0.04, 0.08 * vol, null, now + 0.05);
+        break;
       case 'revive':
         [523, 659, 784, 1047, 1319].forEach((f, i) => tone('triangle', f, 0, 0.14, 0.16 * vol, null, now + i * 0.07));
         break;
@@ -2316,6 +2320,8 @@ const SHOOT_PICKUPS = {
   sniper: { icon: '🎯', label: 'MOON SNIPER · right click to scope · pierces', color: '#38bdf8' },
   flamer: { icon: '🐉', label: 'DRAGON BREATH · short-range flamethrower', color: '#fb923c' },
   revolver: { icon: '💎', label: 'DIAMOND REVOLVER · 62 dmg a shot', color: '#67e8f9' },
+  medkit: { icon: '➕', label: 'MEDKIT · H / tap ➕ to throw it to a teammate', color: '#ef4444' },
+  nade: { icon: '💣', label: '+2 GRENADES · F / tap 💣 to throw', color: '#84cc16' },
   burger: { icon: '🍔', label: '+50 HP', color: '#facc15' }
 };
 
@@ -2323,14 +2329,17 @@ const SHOOT_PICKUPS = {
 // ZOMBIE MODE — co-op survivors vs the NGMI undead
 // ============================================================================
 const ZOMBIE_KINDS = {
-  walker: { name: 'NGMI ZOMBIE', hp: 70, spd: [3.4, 4.6], dmg: 8, reach: 2.3, cd: 1.0, s: 1.45, w: 1, color: '#8fbf7a', shirt: 0x4b5563 },
-  runner: { name: 'PAPER-HAND RUNNER', hp: 45, spd: [8, 9.2], dmg: 6, reach: 2.1, cd: 0.8, s: 1.3, w: 0.85, color: '#b5d99c', shirt: 0xe5e7eb },
-  brute: { name: 'BAG HOLDER', hp: 420, spd: [3.0, 3.5], dmg: 24, reach: 3.0, cd: 1.4, s: 2.1, w: 1.45, color: '#6b8f5e', shirt: 0x7c2d12 },
-  bloater: { name: 'RUG BLOATER', hp: 60, spd: [2.7, 3.1], dmg: 0, reach: 2.6, cd: 1, s: 1.7, w: 1.7, color: '#a3e635', shirt: 0x3f6212, pop: true },
-  boss: { name: 'THE RUG LORD', hp: 3500, spd: [5.2, 5.2], dmg: 32, reach: 4.6, cd: 1.6, s: 4.2, w: 1.35, color: '#a855f7', shirt: 0x2e1065, boss: true }
+  // hb = hitbox [headY, headR, bodyY, bodyR, headFwd, bodyFwd] in mesh units (× size)
+  walker: { name: 'NGMI ZOMBIE', hp: 80, spd: [3.6, 4.8], dmg: 9, reach: 2.3, cd: 1.0, s: 1.45, w: 1, color: '#8fbf7a', shirt: 0x4b5563 },
+  runner: { name: 'PAPER-HAND RUNNER', hp: 55, spd: [8.2, 9.4], dmg: 7, reach: 2.1, cd: 0.8, s: 1.3, w: 0.85, color: '#b5d99c', shirt: 0xe5e7eb },
+  brute: { name: 'BAG HOLDER', hp: 520, spd: [3.2, 3.7], dmg: 26, reach: 3.0, cd: 1.4, s: 2.1, w: 1.45, color: '#6b8f5e', shirt: 0x7c2d12 },
+  bloater: { name: 'RUG BLOATER', hp: 70, spd: [2.8, 3.2], dmg: 0, reach: 2.6, cd: 1, s: 1.7, w: 1.7, color: '#a3e635', shirt: 0x3f6212, pop: true },
+  boss: { name: 'THE RUG LORD', hp: 4500, spd: [5.2, 5.2], dmg: 34, reach: 4.6, cd: 1.6, s: 4.2, w: 1.35, color: '#a855f7', shirt: 0x2e1065, boss: true },
+  crawler: { name: 'LIQUIDATED CRAWLER', hp: 60, spd: [5, 6.2], dmg: 8, reach: 1.9, cd: 0.7, s: 1.45, w: 1, color: '#9fb98a', shirt: 0x57534e, crawl: true, hb: [0.42, 0.44, 0.28, 0.55, 1.25, 0.6] },
+  spitter: { name: 'FUD SPITTER', hp: 75, spd: [3.4, 4.0], dmg: 6, reach: 2.2, cd: 1.1, s: 1.6, w: 0.8, color: '#bef264', shirt: 0x365314, spit: true }
 };
-const ZKIND_IDS = ['walker', 'runner', 'brute', 'bloater', 'boss'];
-const ZOMBIE_RAID_WAVES = 5;
+const ZKIND_IDS = ['walker', 'runner', 'brute', 'bloater', 'boss', 'crawler', 'spitter'];
+const ZOMBIE_RAID_WAVES = 10;
 let zombieKit = null;
 function buildZombieMesh(kind) {
   if (!zombieKit) {
@@ -2346,19 +2355,27 @@ function buildZombieMesh(kind) {
       wart: new THREE.SphereGeometry(0.12, 8, 6),
       crown: new THREE.CylinderGeometry(0.3, 0.26, 0.2, 8, 1, true),
       spike: new THREE.ConeGeometry(0.06, 0.2, 6),
-      fur: std(0xc9dcb8),
+      wound: new THREE.SphereGeometry(0.11, 8, 6),
+      furs: [std(0xc9dcb8), std(0xb8c9a6), std(0xd4d9c4)],
       dark: std(0x1d241b),
+      blood: std(0x5b0f0f, { roughness: 0.4 }),
       mouth: new THREE.MeshBasicMaterial({ color: 0x3b0a0a }),
       eyeM: new THREE.MeshBasicMaterial({ color: 0xff2d2d }),
       bossEye: new THREE.MeshBasicMaterial({ color: 0xfacc15 }),
+      spitEye: new THREE.MeshBasicMaterial({ color: 0xd9f99d }),
       wartM: std(0xa3e635, { emissive: 0x4d7c0f, emissiveIntensity: 0.9 }),
       gold: std(0xd4a640, { metalness: 1, roughness: 0.25, emissive: 0x4a2f00, emissiveIntensity: 0.5, side: THREE.DoubleSide }),
       shirts: {}
     };
   }
   const K = zombieKit, def = ZOMBIE_KINDS[kind];
-  if (!K.shirts[kind]) K.shirts[kind] = new THREE.MeshStandardMaterial({ color: def.shirt, roughness: 0.85 });
+  if (!K.shirts[kind]) {
+    // three torn-shirt variants per kind so a horde doesn't look cloned
+    const base = new THREE.Color(def.shirt);
+    K.shirts[kind] = [0, 1, 2].map(i => new THREE.MeshStandardMaterial({ color: base.clone().offsetHSL(i * 0.05 - 0.05, 0, i * 0.06 - 0.06), roughness: 0.85 }));
+  }
   const root = new THREE.Group();
+  root.rotation.order = 'YXZ';
   const add = (geo, mat, x, y, z, sx = 1, sy = 1, sz = 1, parent = root) => {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
@@ -2366,18 +2383,27 @@ function buildZombieMesh(kind) {
     parent.add(m);
     return m;
   };
-  add(K.body, K.shirts[kind], 0, 0.66, 0, def.w, 1.12, def.w * 0.9);
+  const fur = K.furs[Math.floor(Math.random() * K.furs.length)];
+  add(K.body, K.shirts[kind][Math.floor(Math.random() * 3)], 0, 0.66, 0, def.w, 1.12, def.w * 0.9);
   const head = new THREE.Group();
   head.position.set(0, 1.36, 0.05);
   root.add(head);
-  add(K.head, K.fur, 0, 0, 0, 1, 0.95, 1, head);
+  add(K.head, fur, 0, 0, 0, 1, 0.95, 1, head);
   add(K.ear, K.dark, -0.3, 0.33, -0.02, 1, 1, 0.7, head);
-  add(K.ear, K.dark, 0.31, 0.3, -0.02, 1, 1, 0.7, head);
+  if (Math.random() < 0.8) add(K.ear, K.dark, 0.31, 0.3, -0.02, 1, 1, 0.7, head); // some lost an ear
   add(K.patch, K.dark, -0.15, 0.05, 0.33, 1, 1.25, 0.55, head);
   add(K.patch, K.dark, 0.15, 0.05, 0.33, 1, 1.25, 0.55, head);
-  add(K.eye, def.boss ? K.bossEye : K.eyeM, -0.15, 0.06, 0.4, 1, 1, 1, head);
-  add(K.eye, def.boss ? K.bossEye : K.eyeM, 0.15, 0.06, 0.4, 1, 1, 1, head);
-  add(K.patch, K.mouth, 0, -0.18, 0.36, 1.3, 0.55, 0.4, head);
+  const eyeM = def.boss ? K.bossEye : def.spit ? K.spitEye : K.eyeM;
+  add(K.eye, eyeM, -0.15, 0.06, 0.4, 1, 1, 1, head);
+  add(K.eye, eyeM, 0.15, 0.06, 0.4, 1, 1, 1, head);
+  add(K.patch, K.mouth, 0, -0.18, 0.36, 1.3, def.spit ? 0.9 : 0.55, 0.4, head);
+  // wounds and blood stains
+  for (let i = 0; i < 1 + Math.floor(Math.random() * 3); i++) {
+    const a = Math.random() * Math.PI * 2;
+    add(K.wound, K.blood, Math.cos(a) * 0.45 * def.w, 0.45 + Math.random() * 0.5, Math.abs(Math.sin(a)) * 0.42 * def.w + 0.05, 1.2, 1, 0.35);
+  }
+  if (Math.random() < 0.5) add(K.wound, K.blood, 0.12, 0.22, 0.32, 0.9, 0.6, 0.35, head);
+  if (def.spit) [[0, -0.32, 0.25], [0.18, -0.25, 0.2], [-0.18, -0.25, 0.2]].forEach(([x, y, z]) => add(K.wart, K.wartM, x, y, z, 0.8, 0.8, 0.8, head));
   head.rotation.z = (Math.random() - 0.5) * 0.5; // the classic zombie head tilt
   const arms = [-1, 1].map(sd => {
     const g = new THREE.Group();
@@ -2390,6 +2416,7 @@ function buildZombieMesh(kind) {
     const g = new THREE.Group();
     g.position.set(sd * 0.2 * def.w, 0.36, 0);
     add(K.leg, K.dark, 0, -0.16, 0, 1, 1, 1, g);
+    g.visible = !def.crawl;
     root.add(g);
     return g;
   });
@@ -2403,7 +2430,8 @@ function buildZombieMesh(kind) {
     [-1, 1].forEach(sd => add(K.spike, K.gold, sd * 0.5, 1.2, -0.05, 2, 2, 2).rotation.z = -sd * 0.6);
   }
   root.scale.setScalar(def.s);
-  root.userData = { head, arms, legs };
+  // limp: one leg drags, one arm hangs
+  root.userData = { head, arms, legs, limp: Math.random() < 0.4 ? 0.5 + Math.random() * 0.4 : 1, hang: Math.random() < 0.35 ? (Math.random() < 0.5 ? 0 : 1) : -1 };
   return root;
 }
 
@@ -2613,8 +2641,9 @@ function makeGunModel(key, view) {
   return g;
 }
 
-function buildShootoutMap(scene, cinematic) {
+function buildShootoutMap(scene, cinematic, zmap = false) {
   const colliders = [], solids = [];
+  const rooms = [], portals = [], ladders = [];
   const edgeMat = new THREE.LineBasicMaterial({ color: 0x15141c, transparent: true, opacity: 0.55 });
   const box = (x, z, w, h, d, color, o = {}) => {
     const y0 = o.y || 0;
@@ -2657,6 +2686,7 @@ function buildShootoutMap(scene, cinematic) {
   };
   const winMat = new THREE.MeshStandardMaterial({ color: 0x1d3550, roughness: 0.25, metalness: 0.4, emissive: 0x0b1a2a, emissiveIntensity: 0.4 });
   const building = (x, z, w, h, d, color, roof, label, face, signBg, signFg) => {
+    if (zmap && WALK[label]) return walkIn(x, z, w, d, 4.8, color, roof, label, { ...WALK[label], signBg, signFg });
     box(x, z, w, h, d, color);
     box(x, z, w + 0.9, 0.55, d + 0.9, roof, { y: h, noCollide: true });
     const span = face === 'z+' || face === 'z-' ? w : d;
@@ -2734,7 +2764,7 @@ function buildShootoutMap(scene, cinematic) {
   }
 
   // ---- perimeter wall + invisible tall colliders ----
-  const L = 62;
+  const L = zmap ? 86 : 62;
   [[0, -L, 2 * L + 2, 1.4], [0, L, 2 * L + 2, 1.4], [-L, 0, 1.4, 2 * L + 2], [L, 0, 1.4, 2 * L + 2]].forEach(([x, z, w, d]) => {
     box(x, z, w, 3, d, 0xd8cfc0, { noCollide: true });
     colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, bottom: 0, top: 60 });
@@ -2742,6 +2772,162 @@ function buildShootoutMap(scene, cinematic) {
   for (let i = -L; i <= L; i += 8) {
     [[i, -L], [i, L], [-L, i], [L, i]].forEach(([x, z]) => box(x, z, 0.3, 5.5, 0.3, 0x6b7280, { noCollide: true, noEdge: true }));
   }
+
+  // ---- zombie mode: walk-in buildings with rooms, doors and roof ladders ----
+  const WALK = {
+    BARRACKS: { doors: [['z+', 2], ['z+', 8], ['x+', 0]], split: { axis: 'x', at: [-3], door: true }, ladder: ['z-', 0] },
+    'MOON EDEN MARKET': { doors: [['z+', 0], ['z-', -5]], split: { axis: 'x', at: [3], door: true }, ladder: ['x+', 0] },
+    'NGMI DINER': { doors: [['z-', 3], ['x+', 2]], split: { axis: 'z', at: [1], door: true }, ladder: ['x-', 0] },
+    'HODL GYM': { doors: [['z-', -3], ['x-', 4]], ladder: ['x+', 0] },
+    'GM COFFEE': { doors: [['z+', 0]], ladder: ['x+', 0] },
+    'WAGMI FM 99.9': { doors: [['z-', -4], ['z-', 5]], split: { axis: 'x', at: [0.5], door: true }, ladder: ['z+', 0] }
+  };
+  const ladderTex = (() => {
+    const c = document.createElement('canvas');
+    c.width = 64;
+    c.height = 256;
+    const g = c.getContext('2d');
+    g.fillStyle = '#facc15';
+    g.fillRect(4, 0, 9, 256);
+    g.fillRect(51, 0, 9, 256);
+    for (let y = 10; y < 256; y += 26) g.fillRect(4, y, 56, 7);
+    const t = srgbTex(new THREE.CanvasTexture(c));
+    t.wrapT = THREE.RepeatWrapping;
+    return t;
+  })();
+  const addLadder = (fx, fz, nx, nz, top) => {
+    const H = top + 1.1;
+    const mat = new THREE.MeshStandardMaterial({ map: ladderTex, transparent: true, alphaTest: 0.5, side: THREE.DoubleSide, emissive: 0x5a4300, emissiveIntensity: 0.6, roughness: 0.5 });
+    mat.map = ladderTex.clone();
+    mat.map.needsUpdate = true;
+    mat.map.repeat.set(1, H / 2.6);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(0.95, H), mat);
+    m.position.set(fx + nx * 0.12, H / 2, fz + nz * 0.12);
+    m.rotation.y = Math.atan2(nx, nz);
+    scene.add(m);
+    ladders.push({ x: fx + nx * 0.7, z: fz + nz * 0.7, nx, nz, top });
+  };
+  const FACE_N = { 'z+': [0, 1], 'z-': [0, -1], 'x+': [1, 0], 'x-': [-1, 0] };
+  const T = 0.4, DOOR = 2.8, LINTEL = 3.2;
+  const floorMat = new THREE.MeshStandardMaterial({ color: 0x5e5248, roughness: 0.95 });
+  const lampMat = new THREE.MeshBasicMaterial({ color: 0xfff1c1 });
+  const walkIn = (x, z, w, d, h, color, roofColor, label, o = {}) => {
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.85 });
+    const inMat = new THREE.MeshStandardMaterial({ color: 0xcfc6b6, roughness: 0.9 });
+    const minX = x - w / 2, maxX = x + w / 2, minZ = z - d / 2, maxZ = z + d / 2;
+    const doors = (o.doors || []).map(([side, at]) => ({ side, at }));
+    // outer walls with door gaps + lintels
+    ['z+', 'z-', 'x+', 'x-'].forEach(sd => {
+      const alongX = sd === 'z+' || sd === 'z-';
+      const len = alongX ? w : d;
+      const gaps = doors.filter(dd => dd.side === sd).map(dd => dd.at).sort((a, b) => a - b);
+      const place = (a, b, y0, hh) => {
+        if (b - a < 0.05) return;
+        const mid = (a + b) / 2, L = b - a;
+        if (alongX) box(x + mid, sd === 'z+' ? maxZ - T / 2 : minZ + T / 2, L, hh, T, 0, { mat, y: y0, noEdge: true });
+        else box(sd === 'x+' ? maxX - T / 2 : minX + T / 2, z + mid, T, hh, L, 0, { mat, y: y0, noEdge: true });
+      };
+      let cur = -len / 2;
+      gaps.forEach(gp => {
+        place(cur, gp - DOOR / 2, 0, h);
+        place(gp - DOOR / 2, gp + DOOR / 2, LINTEL, h - LINTEL);
+        cur = gp + DOOR / 2;
+      });
+      place(cur, len / 2, 0, h);
+      // windows on the outside, away from doors
+      const k = Math.max(1, Math.floor(len / 4.5));
+      const [nx, nz] = FACE_N[sd];
+      for (let i = 0; i < k; i++) {
+        const along = (i - (k - 1) / 2) * (len / k);
+        if (gaps.some(gp => Math.abs(gp - along) < 2.6)) continue;
+        const px = alongX ? x + along : nx > 0 ? maxX + 0.03 : minX - 0.03;
+        const pz = alongX ? (nz > 0 ? maxZ + 0.03 : minZ - 0.03) : z + along;
+        plane(1.6, 1.2, winMat, px, 2.2, pz, ROT[sd]);
+      }
+    });
+    // roof you can stand on (reach it by ladder)
+    box(x, z, w, 0.35, d, roofColor, { y: h - 0.35 });
+    [[x, minZ + 0.15, w, 0.3], [x, maxZ - 0.15, w, 0.3], [minX + 0.15, z, 0.3, d], [maxX - 0.15, z, 0.3, d]].forEach(([px, pz, pw, pd]) => box(px, pz, pw, 0.5, pd, roofColor, { y: h, noCollide: true, noEdge: true }));
+    box(x, z, w - 2 * T, 0.04, d - 2 * T, 0, { mat: floorMat, noCollide: true, noEdge: true });
+    // inner partitions → rooms
+    const sp = o.split;
+    const cuts = sp ? sp.at.slice().sort((a, b) => a - b) : [];
+    const bounds = [];
+    if (!sp) bounds.push([minX + T, maxX - T, minZ + T, maxZ - T]);
+    else if (sp.axis === 'x') {
+      const xs = [minX + T, ...cuts.map(c => x + c), maxX - T];
+      for (let i = 0; i < xs.length - 1; i++) bounds.push([xs[i] + (i ? T / 2 : 0), xs[i + 1] - (i < xs.length - 2 ? T / 2 : 0), minZ + T, maxZ - T]);
+      cuts.forEach(c => {
+        const px = x + c, span = d - 2 * T;
+        if (sp.door) {
+          box(px, minZ + T + (span / 2 - DOOR / 2) / 2, T, h, span / 2 - DOOR / 2, 0, { mat: inMat, noEdge: true });
+          box(px, maxZ - T - (span / 2 - DOOR / 2) / 2, T, h, span / 2 - DOOR / 2, 0, { mat: inMat, noEdge: true });
+          box(px, z, T, h - LINTEL, DOOR, 0, { mat: inMat, y: LINTEL, noEdge: true });
+        } else box(px, z, T, h, span, 0, { mat: inMat, noEdge: true });
+      });
+    } else {
+      const zs = [minZ + T, ...cuts.map(c => z + c), maxZ - T];
+      for (let i = 0; i < zs.length - 1; i++) bounds.push([minX + T, maxX - T, zs[i] + (i ? T / 2 : 0), zs[i + 1] - (i < zs.length - 2 ? T / 2 : 0)]);
+      cuts.forEach(c => {
+        const pz = z + c, span = w - 2 * T;
+        if (sp.door) {
+          box(minX + T + (span / 2 - DOOR / 2) / 2, pz, span / 2 - DOOR / 2, h, T, 0, { mat: inMat, noEdge: true });
+          box(maxX - T - (span / 2 - DOOR / 2) / 2, pz, span / 2 - DOOR / 2, h, T, 0, { mat: inMat, noEdge: true });
+          box(x, pz, DOOR, h - LINTEL, T, 0, { mat: inMat, y: LINTEL, noEdge: true });
+        } else box(x, pz, span, h, T, 0, { mat: inMat, noEdge: true });
+      });
+    }
+    const ids = bounds.map(([a, b, c, e]) => {
+      const id = rooms.length + 1;
+      rooms.push({ id, minX: a, maxX: b, minZ: c, maxZ: e, label });
+      box((a + b) / 2, (c + e) / 2, 1.4, 0.12, 1.4, 0, { mat: lampMat, y: h - 0.5, noCollide: true, noEdge: true });
+      return id;
+    });
+    const roomAt = (px, pz) => {
+      const r = rooms.find(rr => ids.includes(rr.id) && px > rr.minX - 0.2 && px < rr.maxX + 0.2 && pz > rr.minZ - 0.2 && pz < rr.maxZ + 0.2);
+      return r ? r.id : ids[0];
+    };
+    // portals: outside ↔ room through each door, room ↔ room through partition doors
+    doors.forEach(({ side, at }) => {
+      const [nx, nz] = FACE_N[side];
+      const fx = nx ? (nx > 0 ? maxX : minX) : x + at, fz = nz ? (nz > 0 ? maxZ : minZ) : z + at;
+      const inP = [fx - nx * 1.4, fz - nz * 1.4];
+      portals.push({ a: 0, b: roomAt(inP[0], inP[1]), pa: [fx + nx * 1.5, fz + nz * 1.5], pb: inP });
+    });
+    if (sp && sp.door) cuts.forEach(c => {
+      const p1 = sp.axis === 'x' ? [x + c - 1.3, z] : [x, z + c - 1.3];
+      const p2 = sp.axis === 'x' ? [x + c + 1.3, z] : [x, z + c + 1.3];
+      portals.push({ a: roomAt(p1[0], p1[1]), b: roomAt(p2[0], p2[1]), pa: p1, pb: p2 });
+    });
+    // sign over the first door
+    if (doors.length) {
+      const dd = doors[0];
+      const [nx, nz] = FACE_N[dd.side];
+      const fx = nx ? (nx > 0 ? maxX + 0.05 : minX - 0.05) : x + dd.at, fz = nz ? (nz > 0 ? maxZ + 0.05 : minZ - 0.05) : z + dd.at;
+      const sw = Math.min(10, label.length * 0.75 + 1.6);
+      plane(sw, 1.1, signMat(label, o.signBg || '#0f172a', o.signFg || '#fde68a', sw, 1.1), fx, LINTEL + 0.75, fz, ROT[dd.side]);
+    }
+    if (o.ladder) {
+      const [sd, at] = o.ladder;
+      const [nx, nz] = FACE_N[sd];
+      const fx = nx ? (nx > 0 ? maxX : minX) : x + at, fz = nz ? (nz > 0 ? maxZ : minZ) : z + at;
+      addLadder(fx, fz, nx, nz, h);
+    }
+    if (o.props === 'shelves') {
+      const shelf = new THREE.MeshStandardMaterial({ color: 0xe5e7eb, roughness: 0.6 });
+      [[minX + 2.2, z - 6], [minX + 2.2, z + 6]].forEach(([px, pz]) => box(px, pz, 1, 1.9, 5, 0, { mat: shelf }));
+      box(maxX - 3, z - 6, 1, 1.1, 3.5, 0x9ca3af);
+      box(maxX - 3, z + 6, 1, 1.1, 3.5, 0x9ca3af);
+    } else if (o.props === 'crates') {
+      const cm = new THREE.MeshStandardMaterial({ color: 0xc28b52, roughness: 0.8 });
+      [[x - 6, z - 2], [x - 4, z + 3], [x + 5, z - 3], [x + 7, z + 2], [x, z + 1]].forEach(([px, pz]) => box(px, pz, 2, 2, 2, 0, { mat: cm }));
+      box(x - 6, z - 2, 2, 2, 2, 0, { mat: cm, y: 2 });
+    }
+  };
+  const solidLadder = (x, z, w, d, side, top) => {
+    const [nx, nz] = FACE_N[side];
+    addLadder(nx ? (nx > 0 ? x + w / 2 : x - w / 2) : x, nz ? (nz > 0 ? z + d / 2 : z - d / 2) : z, nx, nz, top);
+  };
 
   // ---- buildings ----
   building(-40, -38, 22, 9, 12, 0xef6a86, 0x9b2c46, 'BARRACKS', 'z+', '#1f2937', '#fde68a');
@@ -2752,6 +2938,17 @@ function buildShootoutMap(scene, cinematic) {
   building(0, 51, 18, 7, 8, 0x8b5cf6, 0x4c1d95, 'WAGMI FM 99.9', 'z-', '#111827', '#f0abfc');
   building(-52, 0, 10, 7, 18, 0xe5484d, 0x7f1d1d, 'BARRACKS B', 'x+', '#111827', '#fecaca');
   building(52, 0, 10, 8, 18, 0x6cc070, 0x2f6b33, 'DIAMOND HANDS CO', 'x-', '#052e16', '#bbf7d0');
+  if (zmap) {
+    solidLadder(-52, 0, 10, 18, 'z+', 7);
+    solidLadder(52, 0, 10, 18, 'z-', 8);
+    // the outskirts: more places to hole up in
+    walkIn(-74, 0, 14, 22, 4.8, 0x4ade80, 0x166534, 'NGMI CHEMIST ➕', { doors: [['x+', -6], ['x+', 6]], split: { axis: 'z', at: [0], door: true }, ladder: ['x-', 0], props: 'shelves', signBg: '#14532d', signFg: '#ffffff' });
+    walkIn(74, 0, 14, 24, 4.8, 0xf59e0b, 0x92400e, 'MOTEL 88', { doors: [['x-', -8], ['x-', 0], ['x-', 8]], split: { axis: 'z', at: [-4, 4], door: false }, ladder: ['x+', 0], signBg: '#7c2d12', signFg: '#fde68a' });
+    walkIn(0, -74, 22, 12, 4.8, 0x94a3b8, 0x334155, 'SAFE HOUSE', { doors: [['z+', -5], ['z+', 5]], split: { axis: 'x', at: [0], door: true }, ladder: ['z-', 0], signBg: '#0f172a', signFg: '#86efac' });
+    walkIn(0, 74, 26, 14, 6, 0xa16207, 0x713f12, 'WAREHOUSE', { doors: [['z-', -7], ['z-', 7], ['x+', 0]], ladder: ['z+', 0], props: 'crates', signBg: '#1c1917', signFg: '#fbbf24' });
+    walkIn(-70, -70, 14, 14, 4.8, 0x64748b, 0x1e293b, 'GARAGE', { doors: [['x+', 0], ['z+', 0]], ladder: ['x-', 0], signBg: '#111827', signFg: '#e5e7eb' });
+    walkIn(70, 70, 16, 14, 4.8, 0xec4899, 0x831843, 'ARCADE', { doors: [['x-', 0], ['z-', 0]], split: { axis: 'x', at: [2], door: true }, ladder: ['z+', 0], signBg: '#4a044e', signFg: '#f0abfc' });
+  }
 
   // ---- water tower ----
   const towerMat = new THREE.MeshStandardMaterial({ color: 0x6d3fc4, roughness: 0.6, metalness: 0.3 });
@@ -2814,7 +3011,7 @@ function buildShootoutMap(scene, cinematic) {
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x7a5230 });
   for (let i = 0; i < 70; i++) {
     const a = (i / 70) * Math.PI * 2 + Math.random() * 0.05;
-    const r = 72 + Math.random() * 38;
+    const r = (zmap ? 100 : 72) + Math.random() * 38;
     const t = new THREE.Group();
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 2.5, 6), trunkMat);
     trunk.position.y = 1.25;
@@ -2936,7 +3133,12 @@ function buildShootoutMap(scene, cinematic) {
 
   const spawns = [[-48, -22], [48, 22], [-48, 22], [48, -22], [-20, -46], [20, 46], [0, 0], [-40, 0], [40, 0], [0, -40], [0, 40], [-24, 34], [24, -34]];
   const pickupSpots = [[-24, -8, 'ak'], [24, 8, 'ak'], [14, -14, 'gatling'], [-44, 12, 'rpg'], [0, -40, 'gatling'], [44, -12, 'rpg'], [-14, -42, 'smg'], [30, 44, 'shotgun'], [-16, 30, 'shotgun'], [12, -36, 'smg'], [-38, -24, 'burger'], [38, 24, 'burger'], [-40, -38, 'ak', 9], [42, 38, 'rpg', 10], [-42, 40, 'burger', 7], [0, 22, 'sniper'], [-30, -44, 'flamer'], [34, -26, 'revolver'], [8, 30, 'flamer'], [-6, -22, 'revolver']];
-  return { colliders, solids, spawns, pickupSpots, clouds, pads };
+  if (zmap) {
+    pickupSpots.forEach(sp => { if (sp[0] === -30 && sp[1] === -44) { sp[0] = -22; sp[1] = -48; } });
+    pickupSpots.push([-76, -5, 'medkit'], [-76, 5, 'medkit'], [-71, -3, 'nade'], [0, 71, 'rpg'], [10, 71, 'nade'], [-5, -76, 'medkit'], [5, -72, 'sniper'], [74, -8, 'burger'], [74, 8, 'flamer'], [-70, -70, 'gatling'], [70, 70, 'revolver'], [66, 66, 'medkit'], [-44, -40, 'nade'], [42, 40, 'medkit']);
+  }
+  const zspawns = zmap ? [[-82, -40], [-82, 40], [82, -40], [82, 40], [-40, -82], [40, -82], [-40, 82], [40, 82], [-82, -82], [82, 82], [82, -82], [-82, 82], [-60, -60], [60, -60], [-60, 60], [60, 60], [-82, 0], [0, 82]] : null;
+  return { colliders, solids, spawns, pickupSpots, clouds, pads, rooms, portals, ladders, zspawns };
 }
 
 function makeSmokeTexture() {
@@ -3220,6 +3422,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
   const sensRef = useRef(loadProfile().sens || 1);
   const touchSensRef = useRef(loadProfile().touchSens || 1);
   const autoFireRef = useRef(loadProfile().autoFire !== false);
+  const voiceRef = useRef(loadProfile().squadVoice !== false);
+  const miniRef = useRef(null);
+  const [voiceUi, setVoiceUi] = useState(voiceRef.current);
   const [touchMenu, setTouchMenu] = useState(false);
   const [touchSensUi, setTouchSensUi] = useState(touchSensRef.current);
   const [autoFireUi, setAutoFireUi] = useState(autoFireRef.current);
@@ -3307,7 +3512,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const siege = variant === 'siege';
     const zombie = variant === 'zombie';
     const teamPlay = siege || zombie; // no friendly fire
-    const map = siege ? buildSiegeMap(scene, cinematic) : buildShootoutMap(scene, cinematic);
+    const map = siege ? buildSiegeMap(scene, cinematic) : buildShootoutMap(scene, cinematic, zombie);
     if (map.sunset) {
       sun.color.set(0xffa868);
       sun.intensity = 2.5;
@@ -3363,7 +3568,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const moveBody = (pos, vel, r, dt) => {
       const axis = (ax) => {
         for (const c of colliders) {
-          if (pos.y >= c.top - 0.5 || pos.y + 2.6 <= c.bottom) continue;
+          if (c.off || pos.y >= c.top - 0.5 || pos.y + 2.6 <= c.bottom) continue;
           if (pos.x > c.minX - r && pos.x < c.maxX + r && pos.z > c.minZ - r && pos.z < c.maxZ + r) {
             if (ax === 'x') {
               const v = vel.x !== 0 ? vel.x : (pos.x < (c.minX + c.maxX) / 2 ? 1 : -1);
@@ -3384,7 +3589,18 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       pos.y += vel.y * dt;
       let ground = 0;
       const rr = r * 0.6;
+      if (vel.y > 0) {
+        // bump your head on ceilings instead of popping through roofs
+        for (const c of colliders) {
+          if (c.off || c.bottom < 1) continue;
+          if (pos.x > c.minX - rr && pos.x < c.maxX + rr && pos.z > c.minZ - rr && pos.z < c.maxZ + rr && pos.y + 2.6 > c.bottom && pos.y + 2.6 - vel.y * dt <= c.bottom + 0.05) {
+            pos.y = c.bottom - 2.6;
+            vel.y = 0;
+          }
+        }
+      }
       for (const c of colliders) {
+        if (c.off) continue;
         if (c.top <= pos.y + 0.5 && pos.x > c.minX - rr && pos.x < c.maxX + rr && pos.z > c.minZ - rr && pos.z < c.maxZ + rr) ground = Math.max(ground, c.top);
       }
       if (pos.y <= ground) {
@@ -3431,16 +3647,16 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (zombie && (!shooter || !shooter.isZombie)) {
         for (const zz of zombies) {
           if (zz.dead || zz.hp <= 0 || (skip && skip.has(zz))) continue;
-          const zs = zz.def.s, p = zz.pos;
-          const th = raySphere(o, d, p.x, p.y + zs * 1.36, p.z, zs * 0.46 * assist);
-          const tb = raySphere(o, d, p.x, p.y + zs * 0.66, p.z, zs * 0.6 * zz.def.w * assist);
+          const zs = zz.s, p = zz.pos, hb = zz.def.hb || ZHB, sf = Math.sin(zz.face), cf = Math.cos(zz.face);
+          const th = raySphere(o, d, p.x + sf * hb[4] * zs, p.y + zs * hb[0], p.z + cf * hb[4] * zs, zs * hb[1] * assist);
+          const tb = raySphere(o, d, p.x + sf * hb[5] * zs, p.y + zs * hb[2], p.z + cf * hb[5] * zs, zs * hb[3] * zz.def.w * assist);
           if (th > 0 && th < best) { best = th; hitF = null; hitZ = zz; head = true; }
           if (tb > 0 && tb < best - 0.01) { best = tb; hitF = null; hitZ = zz; head = false; }
         }
       }
       const point = o.clone().addScaledVector(d, best);
       const solid = !hitF && !hitZ;
-      return { point, fighter: hitF, zombie: hitZ, head, normal: solid && wh && wh.face ? wh.face.normal.clone().transformDirection(wh.object.matrixWorld) : null, wall: solid && !!wh };
+      return { point, fighter: hitF, zombie: hitZ, head, normal: solid && wh && wh.face ? wh.face.normal.clone().transformDirection(wh.object.matrixWorld) : null, wall: solid && !!wh, obj: solid && wh ? wh.object : null };
     };
 
     // ---------- FX pools ----------
@@ -3726,6 +3942,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     me.yaw = 0;
     me.pitch = 0;
     me.weapons = [{ key: 'ak', mag: SHOOT_WEAPONS.ak.mag }, { key: 'pistol', mag: SHOOT_WEAPONS.pistol.mag }];
+    me.grenades = zombie ? 3 : 2;
+    me.medkits = zombie ? 1 : 0;
     me.slot = 0;
     me.reloadT = 0;
     me.shotCd = 0;
@@ -3746,6 +3964,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       me.downed = false;
       me.revive = 0;
       me.protT = 2.5;
+      if (!zombie) me.grenades = Math.max(me.grenades || 0, 2);
       el.style.filter = '';
     };
     spawnMe();
@@ -3879,6 +4098,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       f.revive = 0;
       f.downs = (f.downs || 0) + 1;
       pushFeed(`🆘 ${f.name} is down!`, '#f87171');
+      if (f.isMe || f.isBot) callout(f, 'help');
       if (f.isMe) {
         me.dancing = false;
         el.style.filter = 'saturate(0.35) contrast(1.1)';
@@ -3898,11 +4118,13 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         announceNow('💚 REVIVED · BACK IN THE FIGHT', '#4ade80');
       }
       if (f.isMe || me.pos.distanceTo(f.pos) < 6) sfx.play('revive');
+      if ((f.isMe || f.isBot) && how === 'mate') setTimeout(() => callout(f, 'thanks'), 500);
     };
     // runs on whoever owns the survivor (you on your client, bots on the host)
     const tickDowned = (f, dt) => {
       f.bleed -= dt;
-      const helper = fighters.some(o => o !== f && !o.dead && !o.downed && Math.hypot(o.pos.x - f.pos.x, o.pos.z - f.pos.z) < 2.8 && Math.abs(o.pos.y - f.pos.y) < 2.2);
+      // bots revive by standing close; players hold left click / FIRE next to you
+      const helper = fighters.some(o => o !== f && !o.dead && !o.downed && Math.hypot(o.pos.x - f.pos.x, o.pos.z - f.pos.z) < 2.9 && Math.abs(o.pos.y - f.pos.y) < 2.2 && (o.isBot || o.revTo === f.id));
       f.revive = helper ? (f.revive || 0) + dt / REVIVE_TIME : Math.max(0, (f.revive || 0) - dt * 0.6);
       if (f.revive >= 1) reviveFighter(f, 'mate');
       else if (f.bleed <= 0) {
@@ -3929,7 +4151,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         return;
       }
       me.shotCd = (def.spinUp ? def.slowRate + (def.rate - def.slowRate) * me.spin : def.rate) * (world.bullT > 0 ? 0.8 : 1);
-      w.mag -= 1;
+      if (!(zombie && world.frenzyT > 0)) w.mag -= 1;
+      if (!def.flame && Math.random() < 0.35) spawnFx({ pos: gunModel.userData.muzzle.getWorldPosition(new THREE.Vector3()), size: 0.12, grow: 0.9, life: 0.45, color: 0xd6d3d1, smoke: true, opacity: 0.35, vy: 0.8, drag: 2 });
       sfx.play(def.snd, 1);
       me.recoil += def.recoil;
       me.protT = 0;
@@ -3976,6 +4199,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           last = res;
           const tgt = res.fighter || res.zombie;
           if (!tgt) {
+            if (res.obj && res.obj.userData && res.obj.userData.barrel !== undefined) hitBarrel(res.obj.userData.barrel, def.flame ? def.dmg * 0.5 : def.dmg, me);
             if (res.wall && res.normal && !def.flame) {
               inkSplat(res.point, res.normal, w.key === 'shotgun' ? 0.45 : 0.75);
               impactFx(res.point, res.normal);
@@ -3986,8 +4210,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           const dmg = def.dmg * (res.head ? 2 : 1);
           if (res.zombie) {
             const was = res.zombie.hp > 0;
-            hurtZombie(res.zombie, dmg, res.head, me, def.flame);
+            const kk = def.pellets > 1 ? 1.1 : def.pierce ? 3 : w.key === 'revolver' ? 1.5 : 0;
+            hurtZombie(res.zombie, dmg, res.head, me, def.flame, kk ? [d.x * kk, d.z * kk] : null);
             if (was && res.zombie.hp <= 0) killAny = true;
+            if (Math.random() < 0.25) splat(res.zombie.pos, 0.9);
           } else damage(res.fighter, me, dmg, res.head);
           if (!def.flame || Math.random() < 0.25) hitFx(tgt, res.point, res.head);
           const prevHit = hitTally.get(tgt);
@@ -4017,6 +4243,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (me.reloadT > 0 || w.mag >= def.mag) return;
       me.reloadT = def.reload;
       sfx.play('reload');
+      if (zombie && zombies.some(zz => zz.pos.distanceTo(me.pos) < 20)) callout(me, 'reload');
     };
     const rockets = [];
     const booms = [];
@@ -4036,51 +4263,54 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       scene.add(g);
       rockets.push({ g, dir: dir.clone(), owner, start: origin.clone(), life: 3, speed: 48 });
     };
-    const explodeAt = (point, owner, visualOnly, start) => {
+    const explodeAt = (point, owner, visualOnly, start, scale = 1) => {
+      const R = 7 * scale, core = 1.6 * scale;
       boomLight.position.set(point.x, point.y + 1.5, point.z);
-      boomLight.intensity = 10;
-      spawnFx({ pos: point, size: 1.6, grow: 5.5, life: 0.14, color: 0xffd9a0, add: true, opacity: 0.85 });
-      for (let i = 0; i < 13; i++) {
+      boomLight.intensity = 10 * Math.min(1.8, scale);
+      spawnFx({ pos: point, size: 1.6 * scale, grow: 5.5 * scale, life: 0.16, color: 0xffd9a0, add: true, opacity: 0.9 });
+      const nFire = Math.round(13 * scale);
+      for (let i = 0; i < nFire; i++) {
         const dv = new THREE.Vector3(rnd(), Math.random() * 0.8, rnd()).normalize();
-        spawnFx({ pos: point.clone().addScaledVector(dv, 0.4), size: 1.2 + Math.random() * 1.2, grow: 3.8, life: 0.5 + Math.random() * 0.4, color: [0xffb347, 0xff7a1a, 0xe2420f][i % 3], add: true, opacity: 0.9, vx: dv.x * 7, vy: dv.y * 7 + 2, vz: dv.z * 7, drag: 3 });
+        spawnFx({ pos: point.clone().addScaledVector(dv, 0.4 * scale), size: (1.2 + Math.random() * 1.2) * scale, grow: 3.8 * scale, life: 0.5 + Math.random() * 0.45, color: [0xffb347, 0xff7a1a, 0xe2420f][i % 3], add: true, opacity: 0.9, vx: dv.x * 7 * scale, vy: dv.y * 7 * scale + 2, vz: dv.z * 7 * scale, drag: 3 });
       }
-      for (let i = 0; i < 12; i++) {
-        spawnFx({ pos: point.clone().add(new THREE.Vector3(rnd() * 1.6, Math.random(), rnd() * 1.6)), size: 1.4, grow: 6.5, life: 2.4 + Math.random() * 1.4, color: i % 2 ? 0x2e2a28 : 0x4a423c, smoke: true, opacity: 0.9, vx: rnd() * 3, vy: 1.8 + Math.random() * 2.6, vz: rnd() * 3, drag: 1.1 });
+      for (let i = 0; i < Math.round(12 * scale); i++) {
+        spawnFx({ pos: point.clone().add(new THREE.Vector3(rnd() * 1.6 * scale, Math.random(), rnd() * 1.6 * scale)), size: 1.4 * scale, grow: 6.5 * scale, life: 2.4 + Math.random() * 1.6, color: i % 2 ? 0x2e2a28 : 0x4a423c, smoke: true, opacity: 0.9, vx: rnd() * 3, vy: 1.8 + Math.random() * 2.6, vz: rnd() * 3, drag: 1.1 });
       }
-      for (let i = 0; i < 26; i++) {
+      for (let i = 0; i < Math.round(26 * scale); i++) {
         const dv = new THREE.Vector3(rnd(), Math.random() * 0.9 + 0.1, rnd()).normalize();
-        spawnFx({ pos: point, size: 0.09, life: 0.7 + Math.random() * 0.8, color: 0xffb347, add: true, vx: dv.x * 17, vy: dv.y * 17 + 3, vz: dv.z * 17, g: 18, drag: 0.5 });
+        spawnFx({ pos: point, size: 0.09, life: 0.7 + Math.random() * 0.9, color: 0xffb347, add: true, vx: dv.x * 17 * scale, vy: dv.y * 17 + 3, vz: dv.z * 17 * scale, g: 18, drag: 0.5 });
       }
-      puff(point, '#2d2a28', 10, 11);
-      puff(point, '#7a5a3a', 6, 8);
-      const ring = new THREE.Mesh(new THREE.RingGeometry(0.6, 1.0, 40), new THREE.MeshBasicMaterial({ color: 0xffa94d, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+      puff(point, '#2d2a28', Math.round(10 * scale), 11 * scale);
+      puff(point, '#7a5a3a', Math.round(6 * scale), 8 * scale);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.6 * scale, 1.0 * scale, 40), new THREE.MeshBasicMaterial({ color: 0xffa94d, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
       ring.rotation.x = -Math.PI / 2;
       ring.position.set(point.x, Math.max(0.1, point.y - 0.8), point.z);
       const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(255,230,160,1)', 'rgba(255,110,30,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
       glow.position.copy(point);
       scene.add(ring, glow);
-      booms.push({ ring, glow, t: 0 });
+      booms.push({ ring, glow, t: 0, s: scale });
       const dme = me.pos.distanceTo(point);
-      me.shake = Math.max(me.shake, Math.max(0, 1.3 - dme / 22));
+      me.shake = Math.max(me.shake, Math.max(0, (1.3 - dme / (22 * scale)) * Math.min(1.5, scale)));
       sfx.play('explode', Math.max(0.15, 1 - dme / 90));
-      if (dme < 6) inkSplat(new THREE.Vector3(point.x, 0.02, point.z), new THREE.Vector3(0, 1, 0), 3.2);
+      if (scale > 1.2) sfx.play('roar', Math.max(0.05, 0.35 - dme / 120), 2.2);
+      if (point.y < 3) inkSplat(new THREE.Vector3(point.x, Math.max(0.02, point.y - 0.6), point.z), new THREE.Vector3(0, 1, 0), 3.2 * scale);
       if (visualOnly) return;
-      net.pendingEx.push([r1(point.x), r1(point.y), r1(point.z)]);
+      net.pendingEx.push([r1(point.x), r1(point.y), r1(point.z), Math.round(scale * 10)]);
       if (start) queueTracer(start, point);
       fighters.forEach(f => {
         if (f.dead) return;
         if (teamPlay && owner && f !== owner && f.team === owner.team) return;
         const cx = f.pos.x, cy = f.pos.y + 1.2, cz = f.pos.z;
         const d = Math.hypot(cx - point.x, cy - point.y, cz - point.z);
-        if (d > 7) return;
-        let dmg = d < 1.6 ? 100 : 100 * (1 - (d - 1.6) / 5.4);
+        if (d > R) return;
+        let dmg = d < core ? 100 : 100 * (1 - (d - core) / (R - core));
         if (f === owner) dmg *= 0.3;
         if (dmg < 1) return;
         if (f.isMe || (f.isBot && net.isHost)) {
-          const kx = (cx - point.x) / (d || 1), kz = (cz - point.z) / (d || 1), kb = 16 * (1 - d / 7);
+          const kx = (cx - point.x) / (d || 1), kz = (cz - point.z) / (d || 1), kb = 16 * (1 - d / R);
           f.vel.x += kx * kb;
           f.vel.z += kz * kb;
-          f.vel.y = Math.max(f.vel.y, 6 + 9 * (1 - d / 7));
+          f.vel.y = Math.max(f.vel.y, 6 + 9 * (1 - d / R));
         }
         damage(f, owner, Math.round(dmg), false);
         if (owner && owner.isMe && f !== owner) dmgNumber(new THREE.Vector3(f.pos.x, f.pos.y + 2.6, f.pos.z), Math.round(dmg), false, true);
@@ -4088,18 +4318,17 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (zombie) {
         zombies.slice().forEach(zz => {
           if (zz.dead || zz.hp <= 0) return;
-          const d = Math.max(0, Math.hypot(zz.pos.x - point.x, zz.pos.y + zz.def.s * 0.66 - point.y, zz.pos.z - point.z) - zz.def.s * 0.3);
-          if (d > 7) return;
-          const dmg = (d < 1.6 ? 100 : 100 * (1 - (d - 1.6) / 5.4)) * 1.3;
+          const d = Math.max(0, Math.hypot(zz.pos.x - point.x, zz.pos.y + zz.s * 0.66 - point.y, zz.pos.z - point.z) - zz.s * 0.3);
+          if (d > R) return;
+          const dmg = (d < core ? 100 : 100 * (1 - (d - core) / (R - core))) * 1.3;
           if (dmg < 1) return;
-          if (net.isHost && !zz.def.boss) {
-            const kx = (zz.pos.x - point.x) / (d || 1), kz = (zz.pos.z - point.z) / (d || 1), kb = 14 * (1 - d / 7);
-            zz.vel.x += kx * kb;
-            zz.vel.z += kz * kb;
-            zz.vel.y = Math.max(zz.vel.y, 5 + 8 * (1 - d / 7));
-          }
-          hurtZombie(zz, Math.round(dmg), false, owner);
-          if (owner && owner.isMe) dmgNumber(new THREE.Vector3(zz.pos.x, zz.pos.y + zz.def.s * 1.8, zz.pos.z), Math.round(dmg), false, true);
+          const kx = (zz.pos.x - point.x) / (d || 1), kz = (zz.pos.z - point.z) / (d || 1), kb = 14 * (1 - d / R);
+          if (net.isHost && !zz.def.boss) zz.vel.y = Math.max(zz.vel.y, 5 + 8 * (1 - d / R));
+          hurtZombie(zz, Math.round(dmg), false, owner, false, [kx * kb, kz * kb], dmg > 45);
+          if (owner && owner.isMe) dmgNumber(new THREE.Vector3(zz.pos.x, zz.pos.y + zz.s * 1.8, zz.pos.z), Math.round(dmg), false, true);
+        });
+        barrels.forEach(br => {
+          if (!br.dead && Math.hypot(br.x - point.x, br.z - point.z) < R * 0.85 && !pendingBoom.some(pb => pb.b === br)) pendingBoom.push({ b: br, t: 0.12 + Math.random() * 0.15, owner });
         });
       }
     };
@@ -4162,7 +4391,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       b.protT = 0;
       if (res.zombie) {
         // squad bots hit zombies harder so they pull their weight
-        hurtZombie(res.zombie, (b.golden ? 30 : b.wkey === 'gatling' ? 10 : 18) * (res.head ? 1.6 : 1), res.head, b);
+        hurtZombie(res.zombie, (b.golden ? 30 : b.wkey === 'gatling' ? 10 : 18) * (res.head ? 1.6 : 1) * (1 + (zd.wave - 1) * 0.08), res.head, b);
         if (vol > 0.2) hitFx(res.zombie, res.point, res.head);
       } else if (res.fighter) {
         damage(res.fighter, b, (b.golden ? 20 : b.wkey === 'gatling' ? 6 : 11) * (res.head ? 1.6 : 1) * BOT.dmg, res.head);
@@ -4183,6 +4412,12 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         b.wkey = zombie ? ['ak', 'gatling', 'ak', 'rpg'][i % 4] : ['ak', 'ak', 'ak', 'gatling', 'rpg'][Math.floor(Math.random() * 5)];
         swapGun(b, b.mesh, b.wkey);
         b.dropSeeker = Math.random() < 0.5;
+        if (zombie) {
+          b.nades = 2;
+          b.medkits = 1;
+          b.mag = 30;
+          b.dropSeeker = false;
+        }
         const [x, z] = pickSpawn(b);
         b.pos.set(x, 0, z);
       }
@@ -4207,6 +4442,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const eyeOf = f => new THREE.Vector3(f.pos.x, f.pos.y + 2.0, f.pos.z);
     const chestOf = f => new THREE.Vector3(f.pos.x, f.pos.y + 1.3, f.pos.z);
     const updateBot = (b, dt, frozen) => {
+      if (zombie) {
+        updateSquadBot(b, dt, frozen);
+        return;
+      }
       if (b.dead) {
         b.respawnT -= dt;
         b.mesh.rotation.x += (-Math.PI / 2 - b.mesh.rotation.x) * Math.min(1, dt * 6);
@@ -4375,64 +4614,82 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     };
 
     // ============ ZOMBIES: the host runs the horde, everyone else renders it ============
+    const ZHB = [1.36, 0.46, 0.66, 0.6, 0.08, 0];
     const zombies = [];
     const zById = new Map();
     let zSeq = 1;
     const zPool = {};
-    const ZMAX = IS_TOUCH ? 16 : 26;
+    const ZMAX = IS_TOUCH ? 18 : 30;
     const ZPHASES = ['boot', 'prep', 'wave', 'clear', 'over', 'won'];
-    // phase: boot → prep → wave → clear → prep … ; ends in over (squad wiped) or won (raid boss down)
+    // phase: boot → prep → wave → clear → prep … ; ends in over (squad wiped) or won (raid finale)
     // horde: 0 not yet · 1 siren warning · 2 pouring in · 3 done
-    const zd = { wave: 0, phase: 'boot', t: 2, toSpawn: 0, spawned: 0, horde: 0, hordeT: 0, hordeLeft: 0, hordeAt: [0, 0], bossWave: false, bossDown: false, brutes: 0, hpMul: 1, dmgMul: 1 };
+    const zd = { wave: 0, phase: 'boot', t: 2, toSpawn: 0, spawned: 0, horde: 0, hordeT: 0, hordeLeft: 0, hordeAt: [0, 0], bossWave: false, bossDown: false, brutes: 0, spitters: 0, hpMul: 1, dmgMul: 1, spdMul: 1 };
+    const corpses = [];
     const takeZMesh = kind => {
       const pl = zPool[kind] || (zPool[kind] = []);
       const m = pl.pop() || buildZombieMesh(kind);
       m.visible = true;
       m.rotation.set(0, 0, 0);
+      m.userData.head.visible = true;
+      m.userData.head.rotation.x = 0;
       scene.add(m);
       return m;
     };
+    const poolZMesh = (kind, m) => {
+      scene.remove(m);
+      (zPool[kind] || (zPool[kind] = [])).push(m);
+    };
     const makeZombie = (kind, x, z, id, hp) => {
       const def = ZOMBIE_KINDS[kind] || ZOMBIE_KINDS.walker;
+      if (!ZOMBIE_KINDS[kind]) kind = 'walker';
       const zz = {
         id: id || zSeq++, kind, def, isZombie: true, name: def.name, color: def.color,
+        s: def.s * (def.boss ? 1 : 0.9 + Math.random() * 0.2),
         pos: new THREE.Vector3(x, 0, z), vel: new THREE.Vector3(), face: Math.random() * 6.28,
         hp: hp || def.hp, maxHp: hp || def.hp, dead: false, atkCd: 0.6, thinkT: 0, target: null,
         spd: def.spd[0] + Math.random() * (def.spd[1] - def.spd[0]), walk: Math.random() * 6, stuckT: 0, avoid: 0,
-        act: 0, actT: 0, swing: 0, rush: false, rise: 0, slamCd: 6, rockCd: 4, onGround: true, burnT: 0, predT: 0
+        act: 0, actT: 0, swing: 0, rush: false, rise: 0, slamCd: 6, rockCd: 4, spitCd: 2 + Math.random() * 2, onGround: true, burnT: 0, predT: 0, flinch: 0, wp: null
       };
-      zz.mesh = takeZMesh(def === ZOMBIE_KINDS[kind] ? kind : 'walker');
+      zz.mesh = takeZMesh(kind);
+      zz.mesh.scale.setScalar(zz.s);
       zz.mesh.position.copy(zz.pos);
       zombies.push(zz);
       zById.set(zz.id, zz);
       if (zz.id >= zSeq) zSeq = zz.id + 1;
       return zz;
     };
-    const dropZombie = zz => {
+    const unlistZombie = zz => {
       const i = zombies.indexOf(zz);
       if (i >= 0) zombies.splice(i, 1);
       zById.delete(zz.id);
+    };
+    const dropZombie = zz => {
+      unlistZombie(zz);
       if (zz.mesh) {
-        scene.remove(zz.mesh);
-        (zPool[zz.kind] || (zPool[zz.kind] = [])).push(zz.mesh);
+        poolZMesh(zz.kind, zz.mesh);
         zz.mesh = null;
       }
     };
     const crowd = () => 0.8 + 0.2 * Math.max(1, fighters.length);
-    const isBossWave = w => (zmode === 'incoming' ? w > 0 && w % 5 === 0 : w >= ZOMBIE_RAID_WAVES);
+    const isBossWave = w => w > 0 && w % 5 === 0;
+    const isFinalWave = w => zmode !== 'incoming' && w >= ZOMBIE_RAID_WAVES;
     const zSpawnPoint = (minD = 26) => {
+      const pts = map.zspawns || map.spawns;
       const alive = fighters.filter(f => !f.dead);
       const far = ([x, z]) => Math.min(...alive.map(f => Math.hypot(f.pos.x - x, f.pos.z - z)), 999);
-      const ok = map.spawns.filter(sp => far(sp) > minD);
-      if (ok.length) return ok[Math.floor(Math.random() * ok.length)];
-      return map.spawns.reduce((a, b) => (far(b) > far(a) ? b : a), map.spawns[0]);
+      const ok = pts.map(sp => [far(sp), sp]).filter(([d]) => d > minD).sort((a, b) => a[0] - b[0]);
+      if (ok.length) return ok[Math.floor(Math.random() * Math.min(5, ok.length))][1];
+      return pts.reduce((a, b) => (far(b) > far(a) ? b : a), pts[0]);
     };
     const pickKind = horde => {
       const w = zd.wave, r = Math.random();
-      if (horde) return r < 0.55 ? 'runner' : 'walker';
-      if (w >= 2 && r < 0.04 + w * 0.01) return 'bloater';
-      if (w >= 2 && zd.brutes < 1 + Math.floor(w / 2) && r < 0.1 + w * 0.012) return 'brute';
-      return r < 0.18 + w * 0.05 ? 'runner' : 'walker';
+      if (horde) return r < 0.5 ? 'runner' : r < 0.62 && w >= 3 ? 'crawler' : 'walker';
+      let t = 0;
+      if (w >= 2 && r < (t += 0.04 + w * 0.01)) return 'bloater';
+      if (w >= 4 && zd.spitters < 1 + Math.floor(w / 3) && r < (t += 0.05 + w * 0.006)) { zd.spitters += 1; return 'spitter'; }
+      if (w >= 2 && zd.brutes < 1 + Math.floor(w / 2) && r < (t += 0.05 + w * 0.009)) return 'brute';
+      if (w >= 3 && r < (t += 0.06 + w * 0.008)) return 'crawler';
+      return r < t + 0.12 + w * 0.04 ? 'runner' : 'walker';
     };
     const spawnZ = (kind, x, z, hp) => {
       const [fx, fz] = freeSpot(x + rnd() * 6, z + rnd() * 6);
@@ -4443,24 +4700,127 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       return zz;
     };
 
+    // ---- navigation: rooms + doors as a tiny graph ----
+    const navRooms = map.rooms || [], navPortals = map.portals || [];
+    const regionOf = p => {
+      if (p.y > 2.6) return 0;
+      for (const r of navRooms) if (p.x > r.minX && p.x < r.maxX && p.z > r.minZ && p.z < r.maxZ) return r.id;
+      return 0;
+    };
+    const navStep = (from, to) => {
+      if (!navPortals.length) return null;
+      const a = regionOf(from), b = regionOf(to);
+      if (a === b) return null;
+      const prev = new Map([[a, null]]), q = [a];
+      while (q.length && !prev.has(b)) {
+        const r = q.shift();
+        for (const pt of navPortals) {
+          const nr = pt.a === r ? pt.b : pt.b === r ? pt.a : -1;
+          if (nr < 0 || prev.has(nr)) continue;
+          prev.set(nr, { r, pt });
+          q.push(nr);
+        }
+      }
+      if (!prev.has(b)) return null;
+      let cur = b, st = prev.get(b);
+      while (st.r !== a) {
+        cur = st.r;
+        st = prev.get(cur);
+      }
+      const pt = st.pt, near = pt.a === a ? pt.pa : pt.pb, far = pt.a === a ? pt.pb : pt.pa;
+      const dNear = Math.hypot(from.x - near[0], from.z - near[1]);
+      const dFar = Math.hypot(from.x - far[0], from.z - far[1]), span = Math.hypot(near[0] - far[0], near[1] - far[1]);
+      return dNear > 1 && dFar > span + 0.25 ? near : far;
+    };
+
     // ---- FX ----
     const zGreen = new THREE.Color(0x7bd389);
+    const splatTex = (() => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 128;
+      const g = c.getContext('2d');
+      g.fillStyle = '#ffffff';
+      g.beginPath();
+      g.arc(64, 64, 24, 0, Math.PI * 2);
+      g.fill();
+      for (let i = 0; i < 14; i++) {
+        const a = Math.random() * Math.PI * 2, r = 22 + Math.random() * 34, sz = 3 + Math.random() * 8;
+        g.beginPath();
+        g.arc(64 + Math.cos(a) * r, 64 + Math.sin(a) * r, sz, 0, Math.PI * 2);
+        g.fill();
+      }
+      return srgbTex(new THREE.CanvasTexture(c));
+    })();
+    const splatMat = new THREE.MeshBasicMaterial({ map: splatTex, color: 0x4d7c0f, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
+    const splats = [];
+    const splat = (p, size) => {
+      let m;
+      if (splats.length >= 70) m = splats.shift();
+      else {
+        m = new THREE.Mesh(inkGeo, splatMat);
+        m.rotation.x = -Math.PI / 2;
+        scene.add(m);
+      }
+      m.position.set(p.x, p.y + 0.03, p.z);
+      m.rotation.z = Math.random() * 6.28;
+      const sc = size * (0.7 + Math.random() * 0.6);
+      m.scale.set(sc, sc, 1);
+      splats.push(m);
+    };
+    const gibGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+    const gibFx = zz => {
+      const p = new THREE.Vector3(zz.pos.x, zz.pos.y + zz.s * 0.8, zz.pos.z);
+      const cols = [zz.color, '#1d241b', '#5b0f0f', '#4d7c0f'];
+      for (let i = 0; i < 9 && parts.length < 220; i++) {
+        const mat = new THREE.MeshBasicMaterial({ color: cols[i % 4], transparent: true });
+        const m = new THREE.Mesh(gibGeo, mat);
+        m.position.copy(p);
+        m.scale.setScalar((0.6 + Math.random() * 0.9) * Math.min(2.5, zz.s / 1.4));
+        scene.add(m);
+        parts.push({ m, mat, vx: rnd() * 14, vy: 5 + Math.random() * 9, vz: rnd() * 14, life: 1.1 + Math.random() * 0.6 });
+      }
+      for (let i = 0; i < 16; i++) spawnFx({ pos: p, size: 0.2, life: 0.8, color: zGreen, vx: rnd() * 12, vy: 3 + Math.random() * 8, vz: rnd() * 12, g: 16 });
+      splat(new THREE.Vector3(zz.pos.x, zz.pos.y, zz.pos.z), 2.6);
+    };
     const zombieDeathFx = (zz, head) => {
-      const s0 = zz.def.s;
+      const s0 = zz.s;
       const kp = new THREE.Vector3(zz.pos.x, zz.pos.y + s0 * 0.9, zz.pos.z);
       const col = new THREE.Color(zz.color);
-      const n = me.pos.distanceTo(kp) < 40 ? (zz.def.boss ? 40 : 14) : 5;
+      const n = me.pos.distanceTo(kp) < 40 ? (zz.def.boss ? 40 : 12) : 4;
       for (let i = 0; i < n; i++) spawnFx({ pos: kp, size: (0.12 + Math.random() * 0.14) * Math.min(2, s0 / 1.4), life: 0.7 + Math.random() * 0.5, color: i % 2 ? col : zGreen, vx: rnd() * 8, vy: 3 + Math.random() * 6, vz: rnd() * 8, g: 16, drag: 1 });
-      spawnFx({ pos: kp.clone(), size: 0.9 * s0, grow: 2 * s0, life: 1.1, color: 0x9fbf8a, smoke: true, opacity: 0.4, vy: 1.2, drag: 1 });
-      if (head) spawnFx({ pos: new THREE.Vector3(zz.pos.x, zz.pos.y + s0 * 1.36, zz.pos.z), size: 0.4, grow: 2.2, life: 0.25, color: 0xfacc15, add: true, opacity: 0.8 });
+      if (head) {
+        const hp = new THREE.Vector3(zz.pos.x, zz.pos.y + s0 * 1.36, zz.pos.z);
+        spawnFx({ pos: hp, size: 0.5, grow: 2.6, life: 0.3, color: 0x84cc16, add: true, opacity: 0.8 });
+        for (let i = 0; i < 14; i++) spawnFx({ pos: hp, size: 0.16, life: 0.9, color: i % 2 ? 0x4d7c0f : 0x5b0f0f, vx: rnd() * 9, vy: 4 + Math.random() * 7, vz: rnd() * 9, g: 18 });
+      }
+      splat(zz.pos, 1.4 * Math.min(2, s0 / 1.4));
       const vol = Math.max(0, 1 - me.pos.distanceTo(zz.pos) / 45);
       if (vol > 0.05) sfx.play('splat', vol * 0.8, 0.8 + Math.random() * 0.5);
+    };
+    // dead zombies drop and stay for a few seconds instead of vanishing
+    const toCorpse = (zz, head, gib) => {
+      unlistZombie(zz);
+      const m = zz.mesh;
+      zz.mesh = null;
+      if (!m) return;
+      if (gib) {
+        gibFx(zz);
+        poolZMesh(zz.kind, m);
+        return;
+      }
+      if (head) m.userData.head.visible = false;
+      corpses.push({ m, kind: zz.kind, t: 0, dir: zz.def.crawl ? 0 : Math.random() < 0.6 ? -1 : 1, rx0: m.rotation.x });
+      if (corpses.length > 28) {
+        const c0 = corpses.shift();
+        poolZMesh(c0.kind, c0.m);
+      }
     };
     const bloaterPop = (pos, auth) => {
       const p = new THREE.Vector3(pos.x, pos.y + 1.1, pos.z);
       spawnFx({ pos: p, size: 2, grow: 7, life: 0.25, color: 0xbef264, add: true, opacity: 0.85 });
       for (let i = 0; i < 14; i++) spawnFx({ pos: p.clone().add(new THREE.Vector3(rnd() * 2, Math.random(), rnd() * 2)), size: 1.4, grow: 5, life: 1.8 + Math.random(), color: i % 2 ? 0x65a30d : 0x84cc16, smoke: true, opacity: 0.75, vx: rnd() * 4, vy: 1 + Math.random() * 2, vz: rnd() * 4, drag: 1.2 });
       for (let i = 0; i < 20; i++) spawnFx({ pos: p, size: 0.16, life: 0.8 + Math.random() * 0.5, color: 0xa3e635, vx: rnd() * 16, vy: 4 + Math.random() * 9, vz: rnd() * 16, g: 18, drag: 0.6 });
+      splat(pos, 4);
       const dme = me.pos.distanceTo(p);
       me.shake = Math.max(me.shake, Math.max(0, 0.9 - dme / 20));
       sfx.play('explode', Math.max(0.1, 0.7 - dme / 80));
@@ -4474,7 +4834,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       zombies.slice().forEach(o => {
         if (o.dead || o.hp <= 0 || o.def.pop) return;
         const d = Math.hypot(o.pos.x - p.x, o.pos.z - p.z);
-        if (d < 5.5) applyZDamage(o, 90 * (1 - d / 5.5) + 20, false, null, '');
+        if (d < 5.5) applyZDamage(o, 90 * (1 - d / 5.5) + 20, false, null, '', true);
       });
     };
     const slamFx = (x, y, z) => {
@@ -4490,20 +4850,39 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         const a = (i / 16) * Math.PI * 2;
         spawnFx({ pos: new THREE.Vector3(x + Math.cos(a) * 2, y + 0.3, z + Math.sin(a) * 2), size: 1.4, grow: 4, life: 1.4 + Math.random() * 0.6, color: 0x6b5a4a, smoke: true, opacity: 0.7, vx: Math.cos(a) * 9, vy: 1 + Math.random() * 2, vz: Math.sin(a) * 9, drag: 1.8 });
       }
+      inkSplat(new THREE.Vector3(x, y + 0.02, z), new THREE.Vector3(0, 1, 0), 6);
       const dme = me.pos.distanceTo(point);
       me.shake = Math.max(me.shake, Math.max(0, 1.4 - dme / 25));
       sfx.play('explode', Math.max(0.2, 1 - dme / 70));
     };
+    // boss rocks + spitter acid globs share one projectile list
     const rockGeo = new THREE.IcosahedronGeometry(0.95, 0);
     const rockMat = new THREE.MeshStandardMaterial({ color: 0x6b5a4a, roughness: 1, flatShading: true });
+    const globGeo = new THREE.SphereGeometry(0.32, 10, 8);
+    const globMat = new THREE.MeshBasicMaterial({ color: 0xa3e635 });
     const zRocks = [];
-    const throwRock = (from, vel, auth) => {
-      const m = new THREE.Mesh(rockGeo, rockMat);
+    const throwRock = (from, vel, auth, kind = 'rock') => {
+      const m = new THREE.Mesh(kind === 'spit' ? globGeo : rockGeo, kind === 'spit' ? globMat : rockMat);
       m.position.copy(from);
       scene.add(m);
-      zRocks.push({ m, v: vel.clone(), auth, life: 4 });
+      zRocks.push({ m, v: vel.clone(), auth, life: 4, kind });
     };
-    const rockImpact = (p, auth) => {
+    const acids = [];
+    const acidGeo = new THREE.CircleGeometry(2.4, 28);
+    const acidPool = (p, auth) => {
+      const m = new THREE.Mesh(acidGeo, new THREE.MeshBasicMaterial({ color: 0x84cc16, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }));
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(p.x, Math.max(0.05, p.y + 0.05), p.z);
+      scene.add(m);
+      acids.push({ m, x: p.x, y: p.y, z: p.z, t: 5.5, tick: 0, auth });
+      sfx.play('splat', Math.max(0.1, 1 - me.pos.distanceTo(p) / 40), 1.4);
+    };
+    const rockImpact = (p, auth, kind) => {
+      if (kind === 'spit') {
+        for (let i = 0; i < 12; i++) spawnFx({ pos: p, size: 0.25, life: 0.6, color: 0xbef264, add: true, vx: rnd() * 7, vy: 2 + Math.random() * 4, vz: rnd() * 7, g: 14 });
+        acidPool(new THREE.Vector3(p.x, Math.max(0, p.y - 0.3), p.z), auth);
+        return;
+      }
       spawnFx({ pos: p, size: 1.4, grow: 4, life: 0.18, color: 0xffe0b0, add: true, opacity: 0.7 });
       for (let i = 0; i < 12; i++) spawnFx({ pos: p.clone().add(new THREE.Vector3(rnd() * 1.5, Math.random(), rnd() * 1.5)), size: 1.2, grow: 4.5, life: 1.6 + Math.random(), color: i % 2 ? 0x6b5a4a : 0x8a7560, smoke: true, opacity: 0.8, vx: rnd() * 5, vy: 1.5 + Math.random() * 2, vz: rnd() * 5, drag: 1.3 });
       puff(p, '#6b5a4a', 10, 9);
@@ -4528,18 +4907,23 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (!Array.isArray(e)) return;
       const n = i => netNum(e[i], -400, 400, 0);
       if (e[0] === 1) slamFx(n(1), n(2), n(3));
-      else if (e[0] === 2) throwRock(new THREE.Vector3(n(1), n(2), n(3)), new THREE.Vector3(n(4), n(5), n(6)), false);
+      else if (e[0] === 2 || e[0] === 3) throwRock(new THREE.Vector3(n(1), n(2), n(3)), new THREE.Vector3(n(4), n(5), n(6)), false, e[0] === 3 ? 'spit' : 'rock');
     };
 
     // ---- damage + kills ----
-    const applyZDamage = (zz, dmg, head, kid, kname) => {
+    const applyZDamage = (zz, dmg, head, kid, kname, gib, knock) => {
       if (!zz || zz.dead || zz.hp <= 0 || match.over) return;
       zz.hp -= dmg;
+      zz.flinch = Math.min(0.4, Math.max(zz.flinch, (zz.def.boss ? 0.02 : 0.1) + dmg / (zz.def.boss ? 1200 : 160)));
+      if (knock && !zz.def.boss) {
+        zz.vel.x += knock[0];
+        zz.vel.z += knock[1];
+      }
       if (kid) zz.lastBy = { id: kid, name: kname };
-      if (zz.def.boss && !zz.enraged && zz.hp < zz.maxHp * 0.5) zz.enraged = true;
-      if (zz.hp <= 0) killZombie(zz, kid, kname, head);
+      if (zz.def.boss && !zz.enraged && zz.hp < zz.maxHp * (zz.final ? 0.6 : 0.5)) zz.enraged = true;
+      if (zz.hp <= 0) killZombie(zz, kid, kname, head, gib);
     };
-    const hurtZombie = (zz, dmg, head, src, burn) => {
+    const hurtZombie = (zz, dmg, head, src, burn, knock, gib) => {
       if (!zz || zz.dead || zz.hp <= 0 || match.over || match.countdown > 0) return;
       if (burn) {
         zz.burnT = 2.5;
@@ -4549,17 +4933,18 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         // predicted locally so hits feel instant; the host has the final say
         zz.hp -= dmg;
         zz.predT = performance.now();
-        send({ t: 'zh', id: myId, z: zz.id, d: Math.round(dmg), hs: head ? 1 : 0, b: burn ? 1 : 0 });
+        zz.flinch = Math.min(0.4, zz.flinch + 0.12);
+        send({ t: 'zh', id: myId, z: zz.id, d: Math.round(dmg), hs: head ? 1 : 0, b: burn ? 1 : 0, g: gib ? 1 : 0, kx: knock ? r1(knock[0]) : 0, kz: knock ? r1(knock[1]) : 0 });
         return;
       }
-      applyZDamage(zz, dmg, head, src ? src.id : null, src ? src.name : '');
+      applyZDamage(zz, dmg, head, src ? src.id : null, src ? src.name : '', gib, knock);
     };
     const multi = { n: 0, t: 0 };
     const creditZombieKill = (kid, def, head) => {
       const k = fighters.find(f => f.id === kid);
       if (!k) return;
       if (k.isMe || k.isBot) k.kills += 1; // remote players report their own totals
-      if (def.boss || def.pop || def === ZOMBIE_KINDS.brute) pushFeed(`${k.name} ${def.boss ? '👑' : '💀'} ${def.name}`, k.isMe ? '#4ade80' : '#d9f99d');
+      if (def.boss || def.pop || def.spit || def === ZOMBIE_KINDS.brute) pushFeed(`${k.name} ${def.boss ? '👑' : '💀'} ${def.name}`, k.isMe ? '#4ade80' : '#d9f99d');
       if (!k.isMe) return;
       me.headshots = (me.headshots || 0) + (head ? 1 : 0);
       showHit(head, true);
@@ -4568,8 +4953,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       multi.n = now - multi.t < 1600 ? multi.n + 1 : 1;
       multi.t = now;
       me.maxStreak = Math.max(me.maxStreak || 0, multi.n);
-      if (multi.n === 4 || multi.n === 8) {
-        announceNow(multi.n === 4 ? '🧟 ZOMBIE SHREDDER' : '🔥 HORDE BREAKER', '#a3e635');
+      if (multi.n === 4 || multi.n === 8 || multi.n === 12) {
+        announceNow(multi.n === 4 ? '🧟 ZOMBIE SHREDDER' : multi.n === 8 ? '🔥 HORDE BREAKER' : '💀 APOCALYPSE NOW', '#a3e635');
         if (clipRef.current) clipRef.current.highlight(multi.n === 4 ? 'ZOMBIE SHREDDER' : 'HORDE BREAKER');
       }
       if (me.kills > 0 && me.kills % 30 === 0 && !me.strikeReady) {
@@ -4587,29 +4972,30 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       sfx.play('streak');
       if (!net.isHost) return;
       zd.bossDown = true;
-      if (zmode !== 'incoming') {
+      if (isFinalWave(zd.wave)) {
         // raid finale: the horde collapses with its lord
-        zombies.slice().forEach(o => { zombieDeathFx(o, false); dropZombie(o); });
+        zombies.slice().forEach(o => { zombieDeathFx(o, false); toCorpse(o, false, false); });
         zd.spawned = zd.toSpawn;
         zd.horde = 3;
         zd.hordeLeft = 0;
       }
     };
-    const killZombie = (zz, kid, kname, head) => {
+    const killZombie = (zz, kid, kname, head, gib) => {
       if (zz.dead) return;
       zz.dead = true;
       zz.hp = 0;
       zombieDeathFx(zz, head);
-      send({ t: 'zk', id: myId, z: zz.id, k: kid || '', hs: head ? 1 : 0, kd: ZKIND_IDS.indexOf(zz.kind) });
+      send({ t: 'zk', id: myId, z: zz.id, k: kid || '', hs: head ? 1 : 0, g: gib ? 1 : 0, kd: ZKIND_IDS.indexOf(zz.kind) });
       creditZombieKill(kid, zz.def, head);
       const pos = zz.pos.clone();
-      dropZombie(zz);
+      toCorpse(zz, head, gib || zz.def.pop);
       if (zz.def.pop) bloaterPop(pos, true);
+      if (zz.def.spit) zd.spitters = Math.max(0, zd.spitters - 1);
       if (zz.def.boss) bossDown();
     };
 
     // ---- AI (host only) ----
-    const zBlocked = (x, z, y) => colliders.some(c => c.top > y + 0.6 && c.bottom < y + 2 && x > c.minX - 0.6 && x < c.maxX + 0.6 && z > c.minZ - 0.6 && z < c.maxZ + 0.6);
+    const zBlocked = (x, z, y) => colliders.some(c => !c.off && c.top > y + 0.6 && c.bottom < y + 2 && x > c.minX - 0.6 && x < c.maxX + 0.6 && z > c.minZ - 0.6 && z < c.maxZ + 0.6);
     const bossAct = zz => {
       if (zz.act === 2) {
         slamFx(zz.pos.x, zz.pos.y, zz.pos.z);
@@ -4626,14 +5012,15 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             f.vel.y = Math.max(f.vel.y, 9);
           }
         });
-      } else if (zz.act === 3 && zz.rockTarget && !zz.rockTarget.dead) {
-        const t = zz.rockTarget;
-        const from = new THREE.Vector3(zz.pos.x + Math.sin(zz.face) * 2, zz.pos.y + zz.def.s * 1.6, zz.pos.z + Math.cos(zz.face) * 2);
-        const to = new THREE.Vector3(t.pos.x + t.vel.x * 0.45, t.pos.y + 1, t.pos.z + t.vel.z * 0.45);
-        const T = Math.max(0.5, from.distanceTo(to) / 34);
+      } else if ((zz.act === 3 || zz.act === 4) && zz.rockTarget && !zz.rockTarget.dead) {
+        const t = zz.rockTarget, spit = zz.act === 4;
+        const from = new THREE.Vector3(zz.pos.x + Math.sin(zz.face) * (spit ? 0.8 : 2), zz.pos.y + zz.s * (spit ? 1.3 : 1.6), zz.pos.z + Math.cos(zz.face) * (spit ? 0.8 : 2));
+        const to = new THREE.Vector3(t.pos.x + t.vel.x * 0.45, t.pos.y + (spit ? 0.2 : 1), t.pos.z + t.vel.z * 0.45);
+        const T = Math.max(0.5, from.distanceTo(to) / (spit ? 22 : 34));
         const v = new THREE.Vector3((to.x - from.x) / T, (to.y - from.y) / T + 0.5 * 20 * T, (to.z - from.z) / T);
-        throwRock(from, v, true);
-        net.pendingZfx.push([2, r1(from.x), r1(from.y), r1(from.z), r1(v.x), r1(v.y), r1(v.z)]);
+        throwRock(from, v, true, spit ? 'spit' : 'rock');
+        net.pendingZfx.push([spit ? 3 : 2, r1(from.x), r1(from.y), r1(from.z), r1(v.x), r1(v.y), r1(v.z)]);
+        if (spit) sfx.play('splat', Math.max(0.1, 1 - me.pos.distanceTo(zz.pos) / 40), 1.7);
       }
       zz.act = 0;
     };
@@ -4645,10 +5032,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
       if (zz.burnT > 0) {
         zz.burnT -= dt;
-        applyZDamage(zz, (def.boss ? 30 : 14) * dt, false, zz.burnBy && zz.burnBy.id, zz.burnBy && zz.burnBy.name);
+        applyZDamage(zz, (def.boss ? 30 : 16) * dt, false, zz.burnBy && zz.burnBy.id, zz.burnBy && zz.burnBy.name);
         if (zz.dead) return;
       }
       zz.atkCd -= dt;
+      zz.spitCd -= dt;
       zz.thinkT -= dt;
       if (zz.thinkT <= 0) {
         zz.thinkT = 0.3 + Math.random() * 0.3;
@@ -4659,9 +5047,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           if (d < bd) { bd = d; best = f; }
         }
         zz.target = best;
+        zz.wp = best ? navStep(zz.pos, best.pos) : null;
       }
       const t = zz.target && !zz.target.dead ? zz.target : null;
-      let dx = 0, dz = 0, spd = zz.spd * (zz.rush ? 1.2 : 1) * (zz.enraged ? 1.35 : 1) * (world.bullT > 0 ? 1.2 : 1);
+      const flinchK = 1 - Math.min(0.85, zz.flinch * 2.6);
+      let dx = 0, dz = 0, spd = zz.spd * zd.spdMul * (zz.rush ? 1.2 : 1) * (zz.enraged ? 1.35 : 1) * (world.bullT > 0 ? 1.2 : 1) * flinchK;
       if (zz.actT > 0) {
         zz.actT -= dt;
         spd *= zz.act >= 2 ? 0 : 0.35;
@@ -4671,28 +5061,49 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (t) {
         const tx = t.pos.x - zz.pos.x, tz = t.pos.z - zz.pos.z, d = Math.hypot(tx, tz) || 1;
         const dy = t.pos.y - zz.pos.y;
-        dx = tx / d;
-        dz = tz / d;
-        let df = Math.atan2(tx, tz) - zz.face;
+        let gx = tx, gz = tz;
+        if (zz.wp) {
+          // through the doorway, not into the wall
+          const wpIn = regionOf({ x: zz.wp[0], y: 0, z: zz.wp[1] });
+          if (def.boss && wpIn !== 0) { gx = 0; gz = 0; }
+          else { gx = zz.wp[0] - zz.pos.x; gz = zz.wp[1] - zz.pos.z; }
+        }
+        const gl = Math.hypot(gx, gz);
+        if (gl > 0.01) { dx = gx / gl; dz = gz / gl; }
+        let df = Math.atan2(zz.wp ? gx : tx, zz.wp ? gz : tz) - zz.face;
         df = Math.atan2(Math.sin(df), Math.cos(df));
         zz.face += df * Math.min(1, dt * 8);
         if (!frozen && d < def.reach && Math.abs(dy) < 2.6 && zz.atkCd <= 0 && zz.actT <= 0) {
-          if (def.pop) {
-            killZombie(zz, null, '', false); // bloaters burst in your face
-            return;
-          }
-          zz.atkCd = def.cd * (zz.enraged ? 0.7 : 1);
-          zz.act = 1;
-          zz.actT = 0.3;
-          zz.swing = 1;
-          damage(t, zz, Math.round(def.dmg * zd.dmgMul), false);
-          if (def.boss && (t.isMe || t.isBot)) {
-            t.vel.x += dx * 16;
-            t.vel.z += dz * 16;
-            t.vel.y = Math.max(t.vel.y, 8);
-          }
+          const zc = new THREE.Vector3(zz.pos.x, zz.pos.y + 1.2, zz.pos.z);
+          if (hasLOS(zc, chestOf(t))) {
+            if (def.pop) {
+              killZombie(zz, null, '', false); // bloaters burst in your face
+              return;
+            }
+            zz.atkCd = def.cd * (zz.enraged ? 0.7 : 1);
+            zz.act = 1;
+            zz.actT = 0.3;
+            zz.swing = 1;
+            damage(t, zz, Math.round(def.dmg * zd.dmgMul), false);
+            if ((def.boss || zz.kind === 'brute') && (t.isMe || t.isBot)) {
+              const kb = def.boss ? 16 : 9;
+              t.vel.x += (tx / d) * kb;
+              t.vel.z += (tz / d) * kb;
+              t.vel.y = Math.max(t.vel.y, def.boss ? 8 : 5);
+            }
+          } else zz.atkCd = 0.25;
         }
-        if (d < def.reach * 0.6) { dx = 0; dz = 0; }
+        if (d < def.reach * 0.6 && !zz.wp) { dx = 0; dz = 0; }
+        // spitters keep their distance and lob acid
+        if (def.spit && !frozen && zz.actT <= 0) {
+          if (d < 24 && d > 6 && zz.spitCd <= 0 && hasLOS(new THREE.Vector3(zz.pos.x, zz.pos.y + zz.s * 1.3, zz.pos.z), chestOf(t))) {
+            zz.act = 4;
+            zz.actT = 0.65;
+            zz.spitCd = 3.2 + Math.random() * 1.5;
+            zz.rockTarget = t;
+          }
+          if (d < 13 && d > 4 && !zz.wp) { dx *= -0.4; dz *= -0.4; }
+        }
         if (def.boss && !frozen && zz.actT <= 0) {
           zz.slamCd -= dt;
           zz.rockCd -= dt;
@@ -4701,7 +5112,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             zz.actT = 0.85;
             zz.slamCd = (zz.enraged ? 5 : 7) + Math.random() * 3;
             sfx.play('roar', Math.max(0.2, 1 - me.pos.distanceTo(zz.pos) / 60));
-          } else if (zz.rockCd <= 0 && d > 13) {
+          } else if (zz.rockCd <= 0 && (d > 13 || zz.wp)) {
             zz.act = 3;
             zz.actT = 0.7;
             zz.rockCd = (zz.enraged ? 3.5 : 5.5) + Math.random() * 2.5;
@@ -4717,13 +5128,14 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (frozen) { dx = 0; dz = 0; }
       if (dx || dz) {
         const ux = dx, uz = dz;
-        if (zBlocked(zz.pos.x + ux * 2, zz.pos.z + uz * 2, zz.pos.y)) {
+        const look = zz.wp ? 1.2 : 2;
+        if (zBlocked(zz.pos.x + ux * look, zz.pos.z + uz * look, zz.pos.y)) {
           const side = zz.avoid || (Math.random() < 0.5 ? 1 : -1);
           let found = false;
-          for (const ang of [0.8, 1.5, 2.2]) {
+          for (const ang of [0.6, 1.2, 1.8, 2.4]) {
             const ca = Math.cos(ang * side), sa = Math.sin(ang * side);
             const nx = ux * ca - uz * sa, nz = ux * sa + uz * ca;
-            if (!zBlocked(zz.pos.x + nx * 2, zz.pos.z + nz * 2, zz.pos.y)) {
+            if (!zBlocked(zz.pos.x + nx * look, zz.pos.z + nz * look, zz.pos.y)) {
               dx = nx;
               dz = nz;
               zz.avoid = side;
@@ -4739,7 +5151,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       for (const o of zombies) {
         if (o === zz) continue;
         const ox = zz.pos.x - o.pos.x, oz = zz.pos.z - o.pos.z;
-        const rr = (def.s + o.def.s) * 0.4;
+        const rr = (zz.s + o.s) * 0.4;
         const dd = ox * ox + oz * oz;
         if (dd < rr * rr && dd > 1e-4) {
           const l = Math.sqrt(dd);
@@ -4751,7 +5163,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       zz.vel.z += (dz * spd + sz * 3 - zz.vel.z) * Math.min(1, dt * 6);
       zz.vel.y -= (world.moonT > 0 ? 9 : 26) * dt;
       const ox = zz.pos.x, oz = zz.pos.z;
-      zz.onGround = moveBody(zz.pos, zz.vel, Math.min(1.6, 0.42 * def.s * def.w), dt);
+      zz.onGround = moveBody(zz.pos, zz.vel, Math.min(1.6, 0.42 * zz.s * def.w), dt);
       const moved = Math.hypot(zz.pos.x - ox, zz.pos.z - oz);
       if ((dx || dz) && moved < spd * dt * 0.3) zz.stuckT += dt;
       else zz.stuckT = Math.max(0, zz.stuckT - dt);
@@ -4766,41 +5178,600 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
     };
 
+    // ---- squad chatter: speech bubbles, radio blips and (optional) voices ----
+    const CALLS = { reload: 'RELOADING!', help: 'HELP ME!', horde: 'HORDE INCOMING!', nade: 'FIRE IN THE HOLE!', med: 'CATCH — MEDKIT!', revive: 'I GOT YOU!', thanks: 'THANKS!', boss: 'RUG LORD! FOCUS FIRE!', brute: 'BIG ONE COMING!', bloater: 'BLOATER! SHOOT IT FROM RANGE!', spitter: 'SPITTER! WATCH THE ACID!', hurt: "I'M HURT BAD!", onme: 'ON ME! STICK TOGETHER!', clear: 'CLEAR!', barrel: 'SHOOT THE BARREL!' };
+    const CALL_IDS = Object.keys(CALLS);
+    let lastVoiceAt = 0, lastCallAt = 0;
+    const showBubble = (f, text) => {
+      if (!f.mesh) return;
+      if (!f.say) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 96;
+        const tex = srgbTex(new THREE.CanvasTexture(canvas));
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+        sprite.renderOrder = 50;
+        sprite.scale.set(3.8, 0.71, 1);
+        sprite.position.y = 4;
+        f.mesh.add(sprite);
+        f.say = { canvas, tex, sprite, t: 0 };
+      }
+      const g = f.say.canvas.getContext('2d');
+      g.clearRect(0, 0, 512, 96);
+      g.font = '900 40px "Arial Black", sans-serif';
+      const tw = Math.min(490, g.measureText(text).width + 36);
+      g.fillStyle = '#fde047';
+      g.strokeStyle = '#111827';
+      g.lineWidth = 5;
+      const x0 = 256 - tw / 2;
+      g.beginPath();
+      if (g.roundRect) g.roundRect(x0, 8, tw, 66, 18);
+      else g.rect(x0, 8, tw, 66);
+      g.fill();
+      g.stroke();
+      g.fillStyle = '#111827';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(text, 256, 42, 470);
+      f.say.tex.needsUpdate = true;
+      f.say.t = 2.4;
+      f.say.sprite.visible = true;
+    };
+    const speak = (f, text) => {
+      if (!voiceRef.current || sfx.isMuted() || !window.speechSynthesis || document.hidden) return;
+      const now = performance.now();
+      if (now - lastVoiceAt < 1400) return;
+      if (!f.isMe && me.pos.distanceTo(f.pos) > 50) return;
+      lastVoiceAt = now;
+      try {
+        const u = new SpeechSynthesisUtterance(text.replace(/[^A-Za-z' ]/g, ' ').toLowerCase());
+        let h = 0;
+        for (let i = 0; i < f.id.length; i++) h = (h * 31 + f.id.charCodeAt(i)) >>> 0;
+        u.pitch = f.isMe ? 1.05 : 0.5 + (h % 8) * 0.13;
+        u.rate = 1.25;
+        u.volume = f.isMe ? 0.6 : 0.95;
+        window.speechSynthesis.cancel();
+        window.speechSynthesis.speak(u);
+      } catch (e) {}
+    };
+    const callout = (f, code) => {
+      const text = CALLS[code];
+      if (!text || !f || !zombie) return;
+      const now = performance.now();
+      if (f.lastCode === code && now - (f.lastCall || 0) < 4500) return;
+      lastCallAt = now;
+      f.lastCall = now;
+      f.lastCode = code;
+      pushFeed(`💬 ${f.isMe ? 'You' : f.name}: ${text}`, f.isMe ? '#bbf7d0' : '#fde68a');
+      showBubble(f, text);
+      sfx.play('radio', 0.5);
+      speak(f, text);
+      if (f.isMe || (f.isBot && net.isHost)) {
+        f.callSeq = (f.callSeq || 0) + 1;
+        f.callIdx = CALL_IDS.indexOf(code);
+      }
+      if (code === 'onme') fighters.forEach(o => { if (o.isBot) { o.followT = 12; o.followWho = f; } });
+    };
+
+    // ---- healing ----
+    const applyHeal = (f, amt, fromName) => {
+      if (!f || f.dead) return;
+      if (f.downed) reviveFighter(f, 'kit');
+      f.hp = Math.min(100, f.hp + amt);
+      pushFeed(`➕ ${fromName || 'Someone'} healed ${f.isMe ? 'you' : f.name} +${amt}`, '#86efac');
+      for (let i = 0; i < 14; i++) spawnFx({ pos: new THREE.Vector3(f.pos.x + rnd() * 1.4, f.pos.y + 0.5 + Math.random() * 2, f.pos.z + rnd() * 1.4), size: 0.22, life: 0.9, color: 0x4ade80, add: true, vy: 2.5, drag: 1 });
+      if (f.isMe) {
+        announceNow(`➕ +${amt} HP`, '#4ade80');
+        sfx.play('revive');
+      }
+      if ((f.isMe || f.isBot) && fromName && fromName !== f.name) setTimeout(() => callout(f, 'thanks'), 600);
+    };
+    const giveHeal = (f, amt, from) => {
+      const fn = from ? from.name : '';
+      if (f.isMe || (f.isBot && net.isHost)) applyHeal(f, amt, fn);
+      else send({ t: 'heal', id: myId, to: f.id, a: amt, fn });
+    };
+
+    // ---- grenades + medkits you throw ----
+    const throwables = [];
+    let thSeq = 0;
+    const nadeGeo = new THREE.SphereGeometry(0.17, 10, 8);
+    const nadeMat = new THREE.MeshStandardMaterial({ color: 0x3f6212, roughness: 0.45, metalness: 0.4 });
+    const medGeo = new THREE.BoxGeometry(0.55, 0.38, 0.32);
+    const medMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.4, emissive: 0xdc2626, emissiveIntensity: 0.3 });
+    const medGlowTex = makeGlowTexture('rgba(134,239,172,1)', 'rgba(34,197,94,0)');
+    const spawnThrow = (kind, from, vel, owner, auth, id) => {
+      const m = new THREE.Mesh(kind === 'nade' ? nadeGeo : medGeo, kind === 'nade' ? nadeMat : medMat);
+      m.position.copy(from);
+      if (kind === 'med') {
+        const gl = new THREE.Sprite(new THREE.SpriteMaterial({ map: medGlowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+        gl.scale.set(1.6, 1.6, 1);
+        m.add(gl);
+      }
+      scene.add(m);
+      throwables.push({ id, kind, m, v: vel.clone(), owner, auth, t: kind === 'nade' ? 1.9 : 25, rest: false });
+    };
+    const removeThrow = i => {
+      const th = throwables[i];
+      scene.remove(th.m);
+      throwables.splice(i, 1);
+    };
+    const doThrow = (f, kind, at) => {
+      let from, vel;
+      if (f.isMe && kind === 'med' && !at) {
+        // aim assist: a medkit thrown roughly at a teammate arcs straight to them
+        camera.getWorldDirection(fwd);
+        let bestMate = null, bestA = 0.42;
+        fighters.forEach(o => {
+          if (o.isMe || o.dead) return;
+          const dx = o.pos.x - me.pos.x, dz = o.pos.z - me.pos.z, dl = Math.hypot(dx, dz);
+          if (dl < 1.5 || dl > 24) return;
+          const ang = Math.acos(Math.max(-1, Math.min(1, (dx * fwd.x + dz * fwd.z) / (dl * (Math.hypot(fwd.x, fwd.z) || 1)))));
+          if (ang < bestA) { bestA = ang; bestMate = o; }
+        });
+        if (bestMate) at = new THREE.Vector3(bestMate.pos.x + bestMate.vel.x * 0.3, bestMate.pos.y + 0.6, bestMate.pos.z + bestMate.vel.z * 0.3);
+      }
+      if (f.isMe && !at) {
+        camera.getWorldDirection(fwd);
+        from = camera.getWorldPosition(new THREE.Vector3()).addScaledVector(fwd, 0.7);
+        vel = fwd.clone().multiplyScalar(kind === 'nade' ? 20 : 15).add(new THREE.Vector3(0, 4.5, 0)).addScaledVector(me.vel, 0.4);
+      } else {
+        from = new THREE.Vector3(f.pos.x, f.pos.y + 2, f.pos.z);
+        const dx = at.x - from.x, dy = at.y + 0.4 - from.y, dz = at.z - from.z;
+        const T = Math.max(0.35, Math.hypot(dx, dz) / (kind === 'nade' ? 18 : 14));
+        vel = new THREE.Vector3(dx / T, dy / T + 0.5 * 22 * T, dz / T);
+      }
+      const id = `${myId}_${thSeq++}`;
+      spawnThrow(kind, from, vel, f, true, id);
+      send({ t: 'th', id: myId, k: kind === 'nade' ? 1 : 2, tid: id, p: [r1(from.x), r1(from.y), r1(from.z)], v: [r1(vel.x), r1(vel.y), r1(vel.z)] });
+      if (zombie) callout(f, kind === 'nade' ? 'nade' : 'med');
+      sfx.play('dash', 0.5);
+    };
+    const updateThrowables = dt => {
+      for (let i = throwables.length - 1; i >= 0; i--) {
+        const th = throwables[i];
+        th.t -= dt;
+        if (!th.rest && dt > 0) {
+          th.v.y -= 22 * dt;
+          const from = th.m.position.clone(), step = th.v.length() * dt;
+          if (step > 1e-4) {
+            const dir = th.v.clone().normalize();
+            const wh = wallHit(from, dir, step + 0.18);
+            if (wh) {
+              const n = wh.face ? wh.face.normal.clone().transformDirection(wh.object.matrixWorld) : new THREE.Vector3(0, 1, 0);
+              th.m.position.copy(wh.point).addScaledVector(n, 0.2);
+              th.v.reflect(n).multiplyScalar(0.42);
+              if (th.kind === 'nade' && th.v.length() > 2) sfx.play('bounce', Math.max(0.1, 0.6 - me.pos.distanceTo(th.m.position) / 50), 1.6);
+              if (th.v.length() < 1.4 && n.y > 0.5) {
+                th.rest = true;
+                th.v.set(0, 0, 0);
+              }
+            } else th.m.position.addScaledVector(th.v, dt);
+          }
+          if (th.m.position.y < 0.18) {
+            th.m.position.y = 0.18;
+            th.v.y = Math.abs(th.v.y) * 0.4;
+            th.v.x *= 0.7;
+            th.v.z *= 0.7;
+            if (th.v.length() < 1.4) th.rest = true;
+          }
+          th.m.rotation.x += dt * 8;
+          th.m.rotation.z += dt * 5;
+        }
+        if (th.kind === 'nade') {
+          if (Math.random() < 0.5) spawnFx({ pos: th.m.position.clone(), size: 0.12, life: 0.25, color: 0xff5a1a, add: true, opacity: 0.8 });
+          if (th.t <= 0) {
+            const p = th.m.position.clone().add(new THREE.Vector3(0, 0.3, 0));
+            removeThrow(i);
+            if (th.auth) explodeAt(p, th.owner, false, null, 1.45);
+          }
+          continue;
+        }
+        if (th.rest) th.m.rotation.y += dt * 1.5;
+        // medkit: flying into a teammate heals them; landed kits wait to be picked up
+        if (th.auth) {
+          const tp = th.m.position;
+          const hitF = fighters.find(f => !f.dead && (th.rest || f !== th.owner) && Math.hypot(f.pos.x - tp.x, f.pos.z - tp.z) < (th.rest ? 1.4 : 1.7) && Math.abs(f.pos.y + 1 - tp.y) < 2.2 && (f.downed || f.hp < 100));
+          if (hitF) {
+            giveHeal(hitF, 50, th.owner);
+            send({ t: 'mkx', id: myId, tid: th.id });
+            removeThrow(i);
+            continue;
+          }
+        }
+        if (th.t <= 0) {
+          if (th.auth) send({ t: 'mkx', id: myId, tid: th.id });
+          removeThrow(i);
+        }
+      }
+    };
+
+    // ---- explosive barrels (zombie map) ----
+    const BARREL_SPOTS = [[-18, -34], [18, 34], [-30, 14], [30, -14], [-8, -24], [8, 24], [-57, -15], [57, 15], [-26, 58], [26, -58], [-62, 50], [62, -50], [-46, -66], [46, 66], [-64, 22], [64, -22]];
+    const barrelGeo = new THREE.CylinderGeometry(0.55, 0.55, 1.3, 14);
+    const barrelMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.45, metalness: 0.5, emissive: 0x450a0a, emissiveIntensity: 0.6 });
+    const bandGeo = new THREE.CylinderGeometry(0.57, 0.57, 0.18, 14);
+    const bandMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, roughness: 0.5, emissive: 0x4a3a00, emissiveIntensity: 0.5 });
+    const barrels = zombie ? BARREL_SPOTS.map(([x, z], i) => {
+      const m = new THREE.Mesh(barrelGeo, barrelMat);
+      m.position.set(x, 0.65, z);
+      m.userData.barrel = i;
+      const band = new THREE.Mesh(bandGeo, bandMat);
+      band.position.y = 0.25;
+      m.add(band);
+      scene.add(m);
+      solids.push(m);
+      const col = { minX: x - 0.55, maxX: x + 0.55, minZ: z - 0.55, maxZ: z + 0.55, bottom: 0, top: 1.3 };
+      colliders.push(col);
+      return { i, x, z, m, col, hp: 30, dead: false, respawn: 0 };
+    }) : [];
+    const pendingBoom = [];
+    const detonateBarrel = (b, owner, auth) => {
+      if (!b || b.dead) return;
+      b.dead = true;
+      b.m.visible = false;
+      b.col.off = true;
+      b.respawn = 45;
+      const si = solids.indexOf(b.m);
+      if (si >= 0) solids.splice(si, 1);
+      if (auth) {
+        explodeAt(new THREE.Vector3(b.x, 0.9, b.z), owner, false, null, 1.6);
+        send({ t: 'bx', id: myId, i: b.i });
+      }
+    };
+    const hitBarrel = (i, dmg, owner) => {
+      const b = barrels[i];
+      if (!b || b.dead) return;
+      b.hp -= dmg;
+      spawnFx({ pos: new THREE.Vector3(b.x, 1, b.z), size: 0.5, grow: 1, life: 0.12, color: 0xffd28a, add: true });
+      if (b.hp <= 0) detonateBarrel(b, owner, true);
+    };
+    const tickBarrels = dt => {
+      for (let i = pendingBoom.length - 1; i >= 0; i--) {
+        pendingBoom[i].t -= dt;
+        if (pendingBoom[i].t <= 0) {
+          detonateBarrel(pendingBoom[i].b, pendingBoom[i].owner, true);
+          pendingBoom.splice(i, 1);
+        }
+      }
+      barrels.forEach(b => {
+        if (!b.dead) return;
+        b.respawn -= dt;
+        if (b.respawn > 0) return;
+        if (fighters.some(f => Math.hypot(f.pos.x - b.x, f.pos.z - b.z) < 2) || zombies.some(o => Math.hypot(o.pos.x - b.x, o.pos.z - b.z) < 2)) return;
+        b.dead = false;
+        b.hp = 30;
+        b.m.visible = true;
+        b.col.off = false;
+        solids.push(b.m);
+      });
+    };
+
+    // ---- squad bots (zombie mode): stick with the humans, focus threats, revive, heal, frag ----
+    const updateSquadBot = (b, dt, frozen) => {
+      if (b.dead) {
+        b.respawnT -= dt;
+        b.mesh.rotation.x += (-Math.PI / 2 - b.mesh.rotation.x) * Math.min(1, dt * 6);
+        b.vel.x *= Math.exp(-dt * 2.5);
+        b.vel.z *= Math.exp(-dt * 2.5);
+        b.vel.y -= 26 * dt;
+        moveBody(b.pos, b.vel, 0.7, dt);
+        if (b.respawnT <= 0) {
+          const [x, z] = pickSpawn(b);
+          b.pos.set(x, 0, z);
+          b.vel.set(0, 0, 0);
+          b.hp = 100;
+          b.dead = false;
+          b.downed = false;
+          b.protT = 2.5;
+          b.target = null;
+          b.mesh.rotation.x = 0;
+          if (b.golden) {
+            b.golden = false;
+            b.gunKey = null;
+            swapGun(b, b.mesh, b.wkey || 'ak');
+          }
+        }
+        return;
+      }
+      if (b.danceT > 0) {
+        b.danceT -= dt;
+        b.dancing = b.danceT > 0;
+        b.vel.x *= 0.85;
+        b.vel.z *= 0.85;
+        b.vel.y -= 26 * dt;
+        b.onGround = moveBody(b.pos, b.vel, 0.7, dt);
+        return;
+      }
+      if (b.downed) {
+        tickDowned(b, dt);
+        if (b.dead) return;
+        b.helpT = (b.helpT || 0) - dt;
+        if (b.helpT <= 0) {
+          b.helpT = 7;
+          callout(b, 'help');
+        }
+      }
+      b.mesh.rotation.x += ((b.downed ? -1.15 : 0) - b.mesh.rotation.x) * Math.min(1, dt * 6);
+      b.nadeCd = (b.nadeCd || 0) - dt;
+      b.medCd = (b.medCd || 0) - dt;
+      b.followT = (b.followT || 0) - dt;
+      if (b.reloadT > 0) b.reloadT -= dt;
+      const eye = eyeOf(b);
+      b.thinkT -= dt;
+      if (b.thinkT <= 0) {
+        b.thinkT = 0.2 + Math.random() * 0.2;
+        const fw = b.followWho;
+        b.leader = b.followT > 0 && fw && !fw.dead && fighters.includes(fw) ? fw : fighters.find(f => !f.isBot && !f.dead && !f.downed) || null;
+        b.mate = b.downed ? null : fighters.find(f => f !== b && f.downed && !f.dead && Math.hypot(f.pos.x - b.pos.x, f.pos.z - b.pos.z) < 45) || null;
+        const cand = [];
+        let nearest = 1e9, nearZ = null;
+        for (const zz of zombies) {
+          if (zz.dead || zz.hp <= 0 || zz.rise > 0) continue;
+          const d = Math.hypot(zz.pos.x - b.pos.x, zz.pos.z - b.pos.z);
+          if (d < nearest) { nearest = d; nearZ = zz; }
+          if (d < 55) cand.push([d, zz]);
+        }
+        b.nearZ = nearZ;
+        b.nearD = nearest;
+        cand.sort((x, y) => x[0] - y[0]);
+        let best = null, bs = -1e9;
+        for (let ci = 0; ci < Math.min(6, cand.length); ci++) {
+          const [d, zz] = cand[ci];
+          let sc = -d;
+          if (zz.def.pop) sc += d > 7 ? 14 : -25;
+          if (zz.def.spit) sc += 10;
+          if (zz.def.boss) sc += 5;
+          const tg = zz.target;
+          if (tg && tg !== b && Math.hypot(zz.pos.x - tg.pos.x, zz.pos.z - tg.pos.z) < 5) sc += 8; // protect whoever it's chasing
+          if (sc <= bs) continue;
+          const hb = zz.def.hb || ZHB;
+          if (hasLOS(eye, new THREE.Vector3(zz.pos.x + Math.sin(zz.face) * hb[5] * zz.s, zz.pos.y + zz.s * hb[2], zz.pos.z + Math.cos(zz.face) * hb[5] * zz.s))) {
+            bs = sc;
+            best = zz;
+          }
+        }
+        if (best !== b.target) {
+          b.target = best;
+          b.react = Math.max(0.08, 0.2 + BOT.react * 0.5 + Math.random() * 0.2);
+          if (best && !best.called && (best.def.boss || best.def.pop || best.def.spit || best.kind === 'brute')) {
+            best.called = true;
+            callout(b, best.def.boss ? 'boss' : best.def.pop ? 'bloater' : best.def.spit ? 'spitter' : 'brute');
+          }
+        }
+        // frag a packed group that isn't on top of the squad
+        if (!frozen && !b.downed && (b.nades || 0) > 0 && b.nadeCd <= 0 && cand.length >= 3) {
+          for (let ci = 0; ci < Math.min(14, cand.length); ci++) {
+            const [d, zz] = cand[ci];
+            if (d < 7.5 || d > 30) continue;
+            const pack = cand.filter(([, o]) => Math.hypot(o.pos.x - zz.pos.x, o.pos.z - zz.pos.z) < 5.5).length;
+            const safe = fighters.every(f => f.dead || Math.hypot(f.pos.x - zz.pos.x, f.pos.z - zz.pos.z) > 6.5);
+            if ((pack >= 3 || zz.kind === 'brute' || zz.def.boss) && safe && hasLOS(eye, chestOf(zz))) {
+              doThrow(b, 'nade', new THREE.Vector3(zz.pos.x + zz.vel.x * 0.8, zz.pos.y, zz.pos.z + zz.vel.z * 0.8));
+              b.nades -= 1;
+              b.nadeCd = 9;
+              break;
+            }
+          }
+        }
+        // patch up a hurt teammate (or yourself)
+        if (!frozen && !b.downed && (b.medkits || 0) > 0 && b.medCd <= 0) {
+          const hurt = fighters.find(f => f !== b && !f.dead && (f.downed || f.hp < 45) && Math.hypot(f.pos.x - b.pos.x, f.pos.z - b.pos.z) < 15 && Math.hypot(f.pos.x - b.pos.x, f.pos.z - b.pos.z) > 2.2 && hasLOS(eye, chestOf(f)));
+          if (hurt) {
+            doThrow(b, 'med', hurt.pos.clone());
+            b.medkits -= 1;
+            b.medCd = 10;
+          } else if (b.hp < 30 && b.nearD > 8) {
+            b.medkits -= 1;
+            b.medCd = 10;
+            applyHeal(b, 50, b.name);
+          }
+        }
+        // a red barrel in the middle of a pack? light it up
+        b.barrelT = null;
+        if (!frozen && !b.downed && barrels.length) {
+          for (const br of barrels) {
+            if (br.dead) continue;
+            const db = Math.hypot(br.x - b.pos.x, br.z - b.pos.z);
+            if (db < 9 || db > 34) continue;
+            const near = cand.filter(([, o]) => Math.hypot(o.pos.x - br.x, o.pos.z - br.z) < 5).length;
+            const safe = fighters.every(f => f.dead || Math.hypot(f.pos.x - br.x, f.pos.z - br.z) > 7);
+            if (near >= 2 && safe && hasLOS(eye, new THREE.Vector3(br.x, 0.8, br.z))) {
+              b.barrelT = br;
+              callout(b, 'barrel');
+              break;
+            }
+          }
+        }
+        if (b.hp < 35 && !b.downed) callout(b, 'hurt');
+        // where to stand
+        const L0 = b.leader;
+        const ladderUp = L0 && map.ladders && map.ladders.length && L0.pos.y - b.pos.y > 2.5 && b.pos.y < 1.5;
+        b.ladder = null;
+        if (b.mate && (!best || b.nearD > 6)) b.goal = new THREE.Vector3(b.mate.pos.x, b.mate.pos.y, b.mate.pos.z);
+        else if (ladderUp) {
+          const lt = map.ladders.reduce((a, l) => (Math.hypot(l.x - L0.pos.x, l.z - L0.pos.z) < Math.hypot(a.x - L0.pos.x, a.z - L0.pos.z) ? l : a), map.ladders[0]);
+          b.goal = new THREE.Vector3(lt.x, 0, lt.z);
+          b.ladder = lt;
+        } else if (L0) {
+          const bots = fighters.filter(f => f.isBot);
+          const slot = [Math.PI - 0.75, Math.PI + 0.75, Math.PI, Math.PI - 1.6][Math.max(0, bots.indexOf(b)) % 4];
+          const lf = L0.isMe ? me.yaw + Math.PI : L0.face || 0;
+          const gx = L0.pos.x + Math.sin(lf + slot) * 4, gz = L0.pos.z + Math.cos(lf + slot) * 4;
+          if (!b.goal || Math.hypot(gx - b.goal.x, gz - b.goal.z) > 3 || Math.abs(b.goal.y - L0.pos.y) > 1) b.goal = new THREE.Vector3(gx, L0.pos.y, gz);
+        } else if (!b.goal || b.goal.distanceTo(b.pos) < 2 || b.stuckT > 1.2) {
+          b.goal = new THREE.Vector3((Math.random() - 0.5) * 12, 0, (Math.random() - 0.5) * 12);
+          b.stuckT = 0;
+        }
+        b.wp = b.goal ? navStep(b.pos, b.goal) : null;
+      }
+      let dx = 0, dz = 0;
+      const speed = 7.2;
+      const t = b.target && !b.target.dead && b.target.hp > 0 ? b.target : null;
+      const reviving = b.mate && b.mate.downed && (!t || b.nearD > 6);
+      if (b.barrelT && !b.barrelT.dead && !b.downed && !frozen) {
+        const br = b.barrelT;
+        b.face = Math.atan2(br.x - b.pos.x, br.z - b.pos.z);
+        b.fireCd -= dt;
+        if (b.fireCd <= 0) {
+          b.fireCd = 0.14;
+          const mz = new THREE.Vector3(b.pos.x + Math.sin(b.face) * 0.9, b.pos.y + 1.45, b.pos.z + Math.cos(b.face) * 0.9);
+          const tp = new THREE.Vector3(br.x, 0.8, br.z);
+          spawnTracer(mz, tp);
+          queueTracer(mz, tp);
+          sfx.play('shot_ak', Math.max(0, 1 - me.pos.distanceTo(b.pos) / 70) * 0.5);
+          hitBarrel(br.i, 12, b);
+        }
+      } else if (t && !b.downed) {
+        b.face = Math.atan2(t.pos.x - b.pos.x, t.pos.z - b.pos.z);
+        b.react -= dt;
+        b.fireCd -= dt;
+        if (!frozen && b.react <= 0 && b.fireCd <= 0 && !(b.reloadT > 0)) {
+          const tdist = Math.hypot(t.pos.x - b.pos.x, t.pos.z - b.pos.z);
+          if (b.wkey === 'rpg' && !b.golden) {
+            b.fireCd = 2.6 + Math.random() * 1.5;
+            if (tdist > 9) {
+              const fx0 = Math.sin(b.face), fz0 = Math.cos(b.face);
+              const mz = new THREE.Vector3(b.pos.x + fx0 * 1.2, b.pos.y + 1.7, b.pos.z + fz0 * 1.2);
+              const aim = new THREE.Vector3(t.pos.x + (Math.random() - 0.5) * 2, t.pos.y + 0.9, t.pos.z + (Math.random() - 0.5) * 2);
+              fireRocket(mz, aim.sub(mz).normalize(), b);
+              sfx.play('shot_rpg', Math.max(0, 1 - me.pos.distanceTo(b.pos) / 70) * 0.6);
+            } else botShoot(b, t);
+          } else {
+            const gat = b.wkey === 'gatling' && !b.golden;
+            if (b.burst > 0) {
+              b.burst -= 1;
+              b.fireCd = gat ? 0.06 : 0.12;
+            } else {
+              b.burst = gat ? 12 + Math.floor(Math.random() * 10) : 3 + Math.floor(Math.random() * 3);
+              b.fireCd = 0.3 + Math.random() * 0.4;
+            }
+            botShoot(b, t);
+          }
+          b.mag = (b.mag == null ? 30 : b.mag) - 1;
+          if (b.mag <= 0) {
+            b.reloadT = 1.2;
+            b.mag = b.wkey === 'gatling' ? 90 : b.wkey === 'rpg' ? 3 : 30;
+            if (b.nearD < 22 && !(zombie && world.frenzyT > 0)) callout(b, 'reload');
+          }
+        }
+      }
+      const goal = b.wp ? new THREE.Vector3(b.wp[0], 0, b.wp[1]) : b.goal;
+      if (goal) {
+        const gx = goal.x - b.pos.x, gz = goal.z - b.pos.z, d = Math.hypot(gx, gz);
+        if (d > (reviving ? 1.2 : b.wp ? 0.4 : 1.6)) {
+          dx = gx / d;
+          dz = gz / d;
+        }
+        if (!t) b.face = Math.atan2(gx, gz);
+      }
+      // keep a safe distance (more from bloaters and the boss)
+      if (b.nearZ && !reviving) {
+        const keep = b.nearZ.def.pop ? 8 : b.nearZ.def.boss ? 11 : 5;
+        if (b.nearD < keep) {
+          const ax = b.pos.x - b.nearZ.pos.x, az = b.pos.z - b.nearZ.pos.z, al = Math.hypot(ax, az) || 1;
+          const push = ((keep - b.nearD) / keep) * 1.8;
+          dx += (ax / al) * push;
+          dz += (az / al) * push;
+        }
+      }
+      if (frozen || b.downed) { dx = 0; dz = 0; } // downed bots stay put so you can reach them
+      if (dx || dz) {
+        const blocked = (ax, az) => colliders.some(c => !c.off && c.top > b.pos.y + 0.6 && c.bottom < b.pos.y + 2 && ax > c.minX - 0.6 && ax < c.maxX + 0.6 && az > c.minZ - 0.6 && az < c.maxZ + 0.6);
+        const ll = Math.hypot(dx, dz) || 1;
+        const ux = dx / ll, uz = dz / ll;
+        const look = b.wp ? 1.2 : 2.4;
+        if (blocked(b.pos.x + ux * look, b.pos.z + uz * look)) {
+          const side = b.avoid || (Math.random() < 0.5 ? 1 : -1);
+          let found = false;
+          for (const ang of [0.6, 1.2, 1.8, 2.4]) {
+            const ca = Math.cos(ang * side), sa = Math.sin(ang * side);
+            const nx = ux * ca - uz * sa, nz = ux * sa + uz * ca;
+            if (!blocked(b.pos.x + nx * look, b.pos.z + nz * look)) {
+              dx = nx * ll;
+              dz = nz * ll;
+              b.avoid = side;
+              found = true;
+              break;
+            }
+          }
+          if (!found) b.avoid = -side;
+        } else b.avoid = 0;
+      }
+      const l = Math.hypot(dx, dz);
+      if (l > 1) { dx /= l; dz /= l; }
+      b.vel.x += (dx * speed - b.vel.x) * Math.min(1, dt * 8);
+      b.vel.z += (dz * speed - b.vel.z) * Math.min(1, dt * 8);
+      b.vel.y -= (world.moonT > 0 ? 9 : 26) * dt;
+      // ladders: follow the leader up to the roof
+      if (map.ladders && !b.downed) {
+        const ld = map.ladders.find(lq => Math.hypot(b.pos.x - lq.x, b.pos.z - lq.z) < 1 && b.pos.y < lq.top + 0.3);
+        if (ld && b.leader && b.leader.pos.y - b.pos.y > 1.2) {
+          b.vel.y = 6.5;
+          b.vel.x = -ld.nx * 1;
+          b.vel.z = -ld.nz * 1;
+          if (b.pos.y > ld.top - 0.45) {
+            b.vel.x = -ld.nx * 6;
+            b.vel.z = -ld.nz * 6;
+            b.vel.y = 3.5;
+          }
+        }
+      }
+      const ox = b.pos.x, oz = b.pos.z;
+      b.onGround = moveBody(b.pos, b.vel, 0.7, dt);
+      const moved = Math.hypot(b.pos.x - ox, b.pos.z - oz);
+      if (l > 0.3 && moved < speed * dt * 0.3) b.stuckT += dt;
+      else b.stuckT = Math.max(0, b.stuckT - dt);
+      if (b.stuckT > 0.6 && b.onGround && !b.downed) b.vel.y = 10;
+    };
+
     // ---- director (host) ----
     const onHorde = hs => {
       if (hs === 1) {
         announceNow('⚠️ HORDE INCOMING!', '#f87171');
         sfx.play('siren');
         sfx.setRush(true);
-        pushFeed('🚨 A horde is coming · group up and face the marker', '#f87171');
+        pushFeed('🚨 A horde is coming · check the minimap and group up', '#f87171');
         buzz([60, 40, 60]);
-      } else if (hs === 2) announceNow('🧟 HERE THEY COME!', '#fb923c');
+        const yeller = fighters.find(f => f.isBot && !f.dead) || me;
+        if (yeller.isMe || net.isHost) callout(yeller, 'horde');
+      } else if (hs === 2) {
+        announceNow('🧟 HERE THEY COME! · ♾️ BOTTOMLESS MAGS', '#fb923c');
+        world.frenzyT = 18;
+      }
     };
     const onPhase = ph => {
       if (ph === 'prep') {
         const n = zd.wave;
-        announceNow(isBossWave(n) ? '👹 BOSS WAVE NEXT · STOCK UP' : `🧟 WAVE ${n} · GET READY`, isBossWave(n) ? '#c084fc' : '#a3e635');
+        announceNow(isBossWave(n) ? (isFinalWave(n) ? '👑 FINAL WAVE NEXT · STOCK UP' : '👹 BOSS WAVE NEXT · STOCK UP') : `🧟 WAVE ${n} · GET READY`, isBossWave(n) ? '#c084fc' : '#a3e635');
         sfx.setRush(false);
-        // the squad regroups between waves: the fallen come back, the downed get up
+        // the squad regroups between waves: the fallen come back, the downed get up, supplies top up
         if (me.dead) spawnMe();
         else if (me.downed) reviveFighter(me, 'wave');
         else me.hp = Math.min(100, me.hp + 40);
+        if (n >= 2) {
+          me.grenades = Math.min(4, (me.grenades || 0) + 1);
+          if (n % 2 === 1) me.medkits = Math.min(2, (me.medkits || 0) + 1);
+        }
         if (net.isHost) fighters.forEach(f => {
           if (!f.isBot) return;
           if (f.dead) f.respawnT = 0;
           else if (f.downed) reviveFighter(f, 'wave');
           else f.hp = Math.min(100, f.hp + 40);
+          f.nades = Math.min(3, (f.nades || 0) + 1);
+          f.medkits = Math.min(1, (f.medkits || 0) + 1);
         });
-        if (n >= 2) pushFeed('💚 Squad regrouped · fallen teammates are back', '#4ade80');
+        if (n >= 2) pushFeed('💚 Squad regrouped · +1 💣 · fallen teammates are back', '#4ade80');
         if (n >= 2 && n % 2 === 0) {
           match.evIdx = n;
           spawnAirdrop();
         }
       } else if (ph === 'wave') {
         if (isBossWave(zd.wave)) {
-          announceNow('👹 THE RUG LORD AWAKENS', '#c084fc');
+          announceNow(isFinalWave(zd.wave) ? '👑 FINAL WAVE · THE RUG LORD RETURNS' : '👹 THE RUG LORD AWAKENS', '#c084fc');
           sfx.play('roar');
           sfx.setRush(true);
+          world.frenzyT = 25;
         } else {
           announceNow(`🧟 WAVE ${zd.wave}${zmode === 'incoming' ? '' : ` / ${ZOMBIE_RAID_WAVES}`}`, '#a3e635');
           sfx.play('streak', 0.6);
@@ -4809,6 +5780,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         announceNow(`✅ WAVE ${zd.wave} CLEARED`, '#4ade80');
         sfx.play('streak');
         sfx.setRush(false);
+        const yeller = fighters.find(f => f.isBot && !f.dead);
+        if (yeller && net.isHost) callout(yeller, 'clear');
       } else if (ph === 'over') endMatch('over');
       else if (ph === 'won') endMatch('won');
     };
@@ -4820,19 +5793,24 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const startWave = () => {
       const w = zd.wave, c = crowd();
       zd.bossWave = isBossWave(w);
-      zd.hpMul = 1 + (w - 1) * (zmode === 'incoming' ? 0.14 : 0.1);
-      zd.dmgMul = 1 + (w - 1) * 0.06;
-      zd.toSpawn = Math.round((zd.bossWave ? 8 : 10 + w * 5) * c);
+      zd.hpMul = 1 + (w - 1) * (zmode === 'incoming' ? 0.18 : 0.16);
+      zd.dmgMul = 1 + (w - 1) * 0.08;
+      zd.spdMul = 1 + Math.min(0.3, (w - 1) * 0.03);
+      zd.toSpawn = Math.round((zd.bossWave ? 8 + w : 10 + w * 5) * c);
       zd.spawned = 0;
       zd.horde = 0;
-      zd.hordeLeft = Math.round((zd.bossWave ? 10 : 8 + w * 4) * c);
+      zd.hordeLeft = Math.round((zd.bossWave ? 10 + w : 8 + w * 4) * c);
       zd.bossDown = false;
       zd.brutes = 0;
+      zd.spitters = 0;
       setPhase('wave', 1.2);
       if (zd.bossWave) {
         const [bx, bz] = zSpawnPoint(30);
-        const hp = Math.round(4500 * (0.7 + 0.3 * fighters.length) * (zmode === 'incoming' ? 1 + (w / 5 - 1) * 0.6 : 1));
-        spawnZ('boss', bx, bz, hp);
+        const fin = isFinalWave(w);
+        const hp = Math.round(4500 * (0.7 + 0.3 * fighters.length) * (1 + (w / 5 - 1) * 0.7) * (fin ? 1.3 : 1));
+        const boss = spawnZ('boss', bx, bz, hp);
+        boss.final = fin;
+        if (fin) [0, 1].forEach(() => spawnZ('brute', bx, bz));
       }
     };
     const zTick = dt => {
@@ -4862,7 +5840,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
       // --- wave in progress: trickle spawns ---
       if (zd.spawned < zd.toSpawn && zd.t <= 0 && zombies.length < ZMAX) {
-        zd.t = Math.max(0.3, 1.5 - zd.wave * 0.1) / crowd();
+        zd.t = Math.max(0.25, 1.5 - zd.wave * 0.1) / crowd();
         const [sx, sz] = zSpawnPoint(26);
         spawnZ(pickKind(false), sx, sz);
         zd.spawned += 1;
@@ -4898,15 +5876,15 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         }
       }
       if (zd.spawned >= zd.toSpawn && zd.horde === 3 && zombies.length === 0 && (!zd.bossWave || zd.bossDown)) {
-        if (zmode !== 'incoming' && zd.bossWave) setPhase('won', 0);
+        if (zd.bossWave && isFinalWave(zd.wave)) setPhase('won', 0);
         else setPhase('clear', 4);
       }
     };
 
     // ---- sync ----
     const r2z = v => Math.round(v * 100) / 100;
-    const packZ = () => zombies.map(zz => [zz.id, ZKIND_IDS.indexOf(zz.kind), r1(zz.pos.x), r1(zz.pos.y), r1(zz.pos.z), r2z(zz.face), Math.max(0, Math.round(zz.hp)), zz.act, zz.rise > 0 ? 1 : 0, Math.round(zz.maxHp), zz.burnT > 0 ? 1 : 0]);
-    const packZd = () => [zd.wave, ZPHASES.indexOf(zd.phase), Math.round(zd.t * 10) / 10, zd.toSpawn, zd.spawned, zd.horde, r1(zd.hordeAt[0]), r1(zd.hordeAt[1]), zd.bossDown ? 1 : 0, zd.bossWave ? 1 : 0, zd.hordeLeft, Math.round(zd.hpMul * 100), Math.round(zd.dmgMul * 100)];
+    const packZ = () => zombies.map(zz => [zz.id, ZKIND_IDS.indexOf(zz.kind), r1(zz.pos.x), r1(zz.pos.y), r1(zz.pos.z), r2z(zz.face), Math.max(0, Math.round(zz.hp)), zz.act, zz.rise > 0 ? 1 : 0, Math.round(zz.maxHp), zz.burnT > 0 ? 1 : 0, zz.final ? 1 : 0]);
+    const packZd = () => [zd.wave, ZPHASES.indexOf(zd.phase), Math.round(zd.t * 10) / 10, zd.toSpawn, zd.spawned, zd.horde, r1(zd.hordeAt[0]), r1(zd.hordeAt[1]), zd.bossDown ? 1 : 0, zd.bossWave ? 1 : 0, zd.hordeLeft, Math.round(zd.hpMul * 100), Math.round(zd.dmgMul * 100), Math.round(zd.spdMul * 100)];
     const applyZState = (zs, zda) => {
       const n = (a, i, lo, hi, d = 0) => netNum(a[i], lo, hi, d);
       const ph = ZPHASES[n(zda, 1, 0, ZPHASES.length - 1)] || 'wave';
@@ -4920,6 +5898,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       zd.hordeLeft = n(zda, 10, 0, 999);
       zd.hpMul = n(zda, 11, 50, 2000, 100) / 100;
       zd.dmgMul = n(zda, 12, 50, 2000, 100) / 100;
+      zd.spdMul = n(zda, 13, 50, 300, 100) / 100;
       const hs = n(zda, 5, 0, 3);
       if (hs !== zd.horde) {
         zd.horde = hs;
@@ -4931,7 +5910,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
       const seen = new Set();
       const nowT = performance.now();
-      zs.slice(0, 80).forEach(a => {
+      zs.slice(0, 90).forEach(a => {
         if (!Array.isArray(a)) return;
         const id = n(a, 0, 1, 1e9);
         const kind = ZKIND_IDS[n(a, 1, 0, ZKIND_IDS.length - 1)];
@@ -4947,20 +5926,136 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         zz.tz = n(a, 4, -200, 200);
         zz.tface = n(a, 5, -50, 50);
         zz.maxHp = mx;
-        zz.hp = nowT - zz.predT < 400 ? Math.min(zz.hp, hp) : hp;
-        const act = n(a, 7, 0, 3);
+        const newHp = nowT - zz.predT < 400 ? Math.min(zz.hp, hp) : hp;
+        if (newHp < zz.hp - 1) zz.flinch = Math.min(0.4, zz.flinch + 0.1);
+        zz.hp = newHp;
+        const act = n(a, 7, 0, 4);
         if (act === 1 && zz.act !== 1) zz.swing = 1;
         zz.act = act;
         zz.rise = a[8] ? Math.max(zz.rise, 0.05) : 0;
         zz.burnT = a[10] ? 0.3 : 0;
-        if (zz.def.boss) zz.enraged = hp < mx * 0.5;
+        zz.final = !!a[11];
+        if (zz.def.boss) zz.enraged = hp < mx * (zz.final ? 0.6 : 0.5);
       });
       zombies.slice().forEach(zz => {
         if (!seen.has(zz.id)) {
           zombieDeathFx(zz, false);
-          dropZombie(zz);
+          toCorpse(zz, false, false);
         }
       });
+    };
+
+    // ---- minimap (rotates with you; forward is up) ----
+    const miniRects = colliders.filter(c => c.top > 1 && c.top < 40 && c.maxX - c.minX < 70 && c.maxZ - c.minZ < 70);
+    const drawMini = now => {
+      const cv = miniRef.current;
+      if (!cv) return;
+      const g = cv.getContext('2d');
+      const S = cv.width, R = S / 2, range = 55, k = (R - 6) / range;
+      const cyw = Math.cos(me.yaw), syw = Math.sin(me.yaw);
+      const P = (x, z) => {
+        const dx = x - me.pos.x, dz = z - me.pos.z;
+        return [R + (dx * cyw - dz * syw) * k, R + (dx * syw + dz * cyw) * k];
+      };
+      const edge = (x, z, rad) => {
+        const [px, py] = P(x, z);
+        const vx = px - R, vy = py - R, l = Math.hypot(vx, vy) || 1;
+        return l > rad ? [R + (vx / l) * rad, R + (vy / l) * rad, true] : [px, py, false];
+      };
+      g.clearRect(0, 0, S, S);
+      g.save();
+      g.beginPath();
+      g.arc(R, R, R - 2, 0, Math.PI * 2);
+      g.fillStyle = 'rgba(2,6,23,0.8)';
+      g.fill();
+      g.clip();
+      g.fillStyle = 'rgba(148,163,184,0.6)';
+      for (const c of miniRects) {
+        if (c.off) continue;
+        if (Math.abs((c.minX + c.maxX) / 2 - me.pos.x) > range + 35 || Math.abs((c.minZ + c.maxZ) / 2 - me.pos.z) > range + 35) continue;
+        const a = P(c.minX, c.minZ), b = P(c.maxX, c.minZ), cc = P(c.maxX, c.maxZ), d = P(c.minX, c.maxZ);
+        g.beginPath();
+        g.moveTo(a[0], a[1]);
+        g.lineTo(b[0], b[1]);
+        g.lineTo(cc[0], cc[1]);
+        g.lineTo(d[0], d[1]);
+        g.closePath();
+        g.fill();
+      }
+      g.fillStyle = '#facc15';
+      (map.ladders || []).forEach(l => { const [x, y] = P(l.x, l.z); g.fillRect(x - 2, y - 2, 4, 4); });
+      g.fillStyle = '#4ade80';
+      throwables.forEach(th => {
+        if (th.kind !== 'med') return;
+        const [x, y] = P(th.m.position.x, th.m.position.z);
+        g.fillRect(x - 3.5, y - 1, 7, 2);
+        g.fillRect(x - 1, y - 3.5, 2, 7);
+      });
+      barrels.forEach(b => {
+        if (b.dead) return;
+        const [x, y] = P(b.x, b.z);
+        g.fillStyle = '#f97316';
+        g.fillRect(x - 1.5, y - 1.5, 3, 3);
+      });
+      zombies.forEach(zz => {
+        if (zz.dead) return;
+        const big = zz.def.boss;
+        const [x, y, out] = big ? edge(zz.pos.x, zz.pos.z, R - 8) : [...P(zz.pos.x, zz.pos.z), false];
+        g.fillStyle = big ? '#c084fc' : zz.def.spit ? '#bef264' : zz.def.pop ? '#facc15' : zz.kind === 'brute' ? '#ef4444' : '#f87171';
+        g.beginPath();
+        g.arc(x, y, big ? (out ? 4 : 6) : zz.kind === 'brute' ? 3.4 : 2.2, 0, Math.PI * 2);
+        g.fill();
+      });
+      fighters.forEach(f => {
+        if (f.isMe || f.dead) return;
+        const [x, y] = edge(f.pos.x, f.pos.z, R - 7);
+        if (f.downed) {
+          if (Math.floor(now / 300) % 2) return;
+          g.fillStyle = '#ef4444';
+          g.fillRect(x - 5, y - 1.5, 10, 3);
+          g.fillRect(x - 1.5, y - 5, 3, 10);
+          return;
+        }
+        g.fillStyle = f.color;
+        g.strokeStyle = '#ffffff';
+        g.lineWidth = 1.5;
+        g.beginPath();
+        g.arc(x, y, 3.8, 0, Math.PI * 2);
+        g.fill();
+        g.stroke();
+      });
+      if (zd.horde === 1 || zd.horde === 2) {
+        const [x, y] = edge(zd.hordeAt[0], zd.hordeAt[1], R - 12);
+        const pulse = 0.6 + Math.sin(now * 0.012) * 0.4;
+        g.fillStyle = `rgba(239,68,68,${pulse})`;
+        g.beginPath();
+        g.arc(x, y, 10, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = '#ffffff';
+        g.font = '900 13px sans-serif';
+        g.textAlign = 'center';
+        g.textBaseline = 'middle';
+        g.fillText('!', x, y + 1);
+      }
+      g.restore();
+      g.fillStyle = '#ffffff';
+      g.beginPath();
+      g.moveTo(R, R - 7);
+      g.lineTo(R - 5, R + 5);
+      g.lineTo(R + 5, R + 5);
+      g.closePath();
+      g.fill();
+      g.strokeStyle = 'rgba(163,230,53,0.75)';
+      g.lineWidth = 2;
+      g.beginPath();
+      g.arc(R, R, R - 2, 0, Math.PI * 2);
+      g.stroke();
+      const [nx, ny] = edge(me.pos.x, me.pos.z - 1000, R - 9);
+      g.fillStyle = '#e2e8f0';
+      g.font = '900 11px sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText('N', nx, ny);
     };
 
     // ---- per-frame: simulate (host) or follow (clients), then animate ----
@@ -4988,22 +6083,31 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           zz.face += df * Math.min(1, dt * 10);
           if (zz.rise > 0) zz.rise = Math.max(0, zz.rise - dt * 0.2);
         }
-        const def = zz.def, s0 = def.s, m = zz.mesh, ud = m.userData;
+        const def = zz.def, s0 = zz.s, m = zz.mesh, ud = m.userData;
         const sp = Math.hypot(zz.vel.x, zz.vel.z);
         zz.walk += dt * (2 + sp * 1.5);
         const gait = Math.min(1, sp / 2);
-        ud.legs[0].rotation.x = Math.sin(zz.walk) * 0.75 * gait;
-        ud.legs[1].rotation.x = -Math.sin(zz.walk) * 0.75 * gait;
+        zz.flinch = Math.max(0, zz.flinch - dt * 1.6);
         zz.swing = Math.max(0, zz.swing - dt * 3.5);
-        let armX = -0.12 + Math.sin(zz.walk * 0.5) * 0.12 * gait;
-        if (zz.swing > 0) armX = -0.12 - Math.sin(zz.swing * Math.PI) * 1.3;
-        if (def.boss && zz.act === 2) armX = -2.4; // both arms up before the slam
-        ud.arms[0].rotation.x = armX + Math.sin(zz.walk * 0.5 + 1) * 0.1;
-        ud.arms[1].rotation.x = def.boss && zz.act === 3 ? -2.7 : armX - Math.sin(zz.walk * 0.5 + 1) * 0.1;
-        const lean = zz.kind === 'runner' || zz.rush ? 0.32 : 0.14;
-        m.rotation.set(lean * gait, zz.face, 0);
         const riseOff = zz.rise > 0 ? -Math.min(1, zz.rise / 0.9) * s0 * 1.6 : 0;
-        m.position.set(zz.pos.x, zz.pos.y + riseOff + Math.abs(Math.sin(zz.walk)) * 0.06 * s0 * gait, zz.pos.z);
+        if (def.crawl) {
+          ud.arms[0].rotation.x = -0.3 + Math.sin(zz.walk) * 0.9;
+          ud.arms[1].rotation.x = -0.3 - Math.sin(zz.walk) * 0.9;
+          m.rotation.set(1.3 - zz.flinch * 0.6, zz.face, Math.sin(zz.walk) * 0.1);
+          m.position.set(zz.pos.x, zz.pos.y + riseOff, zz.pos.z);
+        } else {
+          ud.legs[0].rotation.x = Math.sin(zz.walk) * 0.75 * gait * ud.limp;
+          ud.legs[1].rotation.x = -Math.sin(zz.walk) * 0.75 * gait;
+          let armX = -0.12 + Math.sin(zz.walk * 0.5) * 0.12 * gait;
+          if (zz.swing > 0) armX = -0.12 - Math.sin(zz.swing * Math.PI) * 1.3;
+          if (def.boss && zz.act === 2) armX = -2.4; // both arms up before the slam
+          ud.arms[0].rotation.x = ud.hang === 0 && zz.swing <= 0 ? 1.25 : armX + Math.sin(zz.walk * 0.5 + 1) * 0.1;
+          ud.arms[1].rotation.x = def.boss && zz.act === 3 ? -2.7 : ud.hang === 1 && zz.swing <= 0 ? 1.25 : armX - Math.sin(zz.walk * 0.5 + 1) * 0.1;
+          ud.head.rotation.x = zz.act === 4 ? -0.7 : zz.flinch * -1.2;
+          const lean = (zz.kind === 'runner' || zz.rush ? 0.32 : 0.14) * gait - zz.flinch * 1.3;
+          m.rotation.set(lean, zz.face, Math.sin(zz.walk * 0.5) * 0.06 * gait);
+          m.position.set(zz.pos.x, zz.pos.y + riseOff + Math.abs(Math.sin(zz.walk)) * 0.06 * s0 * gait, zz.pos.z);
+        }
         if (zz.rise > 0 && Math.random() < dt * 14) puff(new THREE.Vector3(zz.pos.x + rnd() * 1.2, 0.2, zz.pos.z + rnd() * 1.2), '#5b4a3a', 2, 3);
         if (zz.burnT > 0 && Math.random() < dt * 20) spawnFx({ pos: new THREE.Vector3(zz.pos.x + rnd() * s0 * 0.6, zz.pos.y + Math.random() * s0 * 1.5, zz.pos.z + rnd() * s0 * 0.6), size: 0.25 * s0, grow: 1.2, life: 0.4, color: Math.random() < 0.5 ? 0xff7a1a : 0xffc04a, add: true, opacity: 0.9, vy: 3, drag: 1 });
         if (def.boss && zz.enraged && !zz.enrageShown) {
@@ -5014,9 +6118,44 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (groanT <= 0 && Math.random() < dt * 0.6) {
           const vol = Math.max(0, 1 - me.pos.distanceTo(zz.pos) / 32);
           if (vol > 0.1) {
-            sfx.play(def.boss ? 'roar' : 'groan', vol * (def.boss ? 0.4 : 0.7), def.boss ? 1 : 0.75 + Math.random() * 0.5 + (zz.kind === 'runner' ? 0.3 : 0));
+            sfx.play(def.boss ? 'roar' : 'groan', vol * (def.boss ? 0.4 : 0.7), def.boss ? 1 : 0.75 + Math.random() * 0.5 + (zz.kind === 'runner' ? 0.3 : 0) - (zz.kind === 'brute' ? 0.25 : 0));
             groanT = 0.45;
           }
+        }
+      }
+      // corpses fall, lie still, then sink into the ground
+      for (let i = corpses.length - 1; i >= 0; i--) {
+        const c = corpses[i];
+        c.t += dt;
+        const ud = c.m.userData;
+        if (c.dir) c.m.rotation.x = c.rx0 + (c.dir * 1.45 - c.rx0) * Math.min(1, c.t / 0.45);
+        ud.arms.forEach((a, j) => { a.rotation.x += ((j ? 0.6 : -0.4) - a.rotation.x) * Math.min(1, dt * 4); });
+        if (c.t > 4) c.m.position.y -= dt * 0.9;
+        if (c.t > 5.4) {
+          poolZMesh(c.kind, c.m);
+          corpses.splice(i, 1);
+        }
+      }
+      // acid pools hurt anyone standing in them
+      for (let i = acids.length - 1; i >= 0; i--) {
+        const a = acids[i];
+        a.t -= dt;
+        a.m.material.opacity = Math.min(0.55, a.t * 0.4) * (0.85 + Math.sin(now * 0.01 + i) * 0.15);
+        if (Math.random() < dt * 6) spawnFx({ pos: new THREE.Vector3(a.x + rnd() * 3.5, a.y + 0.1, a.z + rnd() * 3.5), size: 0.2, grow: 0.6, life: 0.6, color: 0xbef264, add: true, opacity: 0.7, vy: 1.2 });
+        if (a.auth && net.isHost) {
+          a.tick -= dt;
+          if (a.tick <= 0) {
+            a.tick = 0.5;
+            fighters.forEach(f => {
+              if (f.dead || Math.hypot(f.pos.x - a.x, f.pos.z - a.z) > 2.4 || Math.abs(f.pos.y - a.y) > 1.6) return;
+              damage(f, { id: 'zspit', name: 'FUD SPITTER' }, Math.round(7 * zd.dmgMul), false);
+            });
+          }
+        }
+        if (a.t <= 0) {
+          scene.remove(a.m);
+          a.m.material.dispose();
+          acids.splice(i, 1);
         }
       }
       for (let i = zRocks.length - 1; i >= 0; i--) {
@@ -5037,11 +6176,14 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (hitP) {
           scene.remove(rk.m);
           zRocks.splice(i, 1);
-          rockImpact(hitP, rk.auth && net.isHost);
+          rockImpact(hitP, rk.auth && net.isHost, rk.kind);
           continue;
         }
         rk.m.position.copy(next);
-        if (Math.random() < 0.5) puff(from, '#8a7560', 1, 0.8);
+        if (Math.random() < 0.5) {
+          if (rk.kind === 'spit') spawnFx({ pos: from, size: 0.3, life: 0.35, color: 0xa3e635, add: true, opacity: 0.7 });
+          else puff(from, '#8a7560', 1, 0.8);
+        }
       }
     };
 
@@ -5079,6 +6221,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (e.code === 'KeyV') c.dance = true;
       if (e.code === 'KeyC' && clipRef.current) { clipRef.current.highlight('MY CLIP', 1200); setClipToast('🎬 Saving the last 30–60 s…'); }
       if (e.code === 'KeyG') c.strike = true;
+      if (e.code === 'KeyF') c.nade = true;
+      if (e.code === 'KeyH') c.med = true;
+      if (e.code === 'KeyT') c.onme = true;
       if (e.code === 'KeyQ') c.swap = true;
       if (/^Digit[1-5]$/.test(e.code)) c.slot = Number(e.code.slice(5)) - 1;
       if (e.code === 'KeyM') {
@@ -5146,7 +6291,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     let everLocked = false;
 
     // ---------- surprise events: low gravity, bull run, golden AK airdrops ----------
-    const world = { moonT: 0, bullT: 0 };
+    const world = { moonT: 0, bullT: 0, frenzyT: 0 };
     const drops = [];
     const spawnAirdrop = () => {
       const dropList = map.dropSpots || map.spawns;
@@ -5271,6 +6416,16 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         f.rv = netNum(d.rv, 0, 100) / 100;
         if (f.downed && !wasDown) pushFeed(`🆘 ${f.name} is down!`, '#f87171');
         else if (wasDown && !f.downed && !f.dead) pushFeed(`💚 ${f.name} is back up`, '#4ade80');
+        f.revTo = typeof d.rt === 'string' && d.rt ? d.rt.slice(0, 40) : null;
+        if (Array.isArray(d.cl)) {
+          const sq = netNum(d.cl[0], 0, 1e7);
+          if (f.clSeq === undefined) f.clSeq = sq;
+          else if (sq !== f.clSeq) {
+            f.clSeq = sq;
+            const code = CALL_IDS[netNum(d.cl[1], -1, 99, -1)];
+            if (code) callout(f, code);
+          }
+        }
       }
       if (f.mesh && d.cos !== undefined && f.cosApplied !== d.cos) {
         applyCosmetic(f.mesh, d.cos);
@@ -5314,7 +6469,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             (d.zfx || []).forEach(zfxPlay);
           }
         }
-        (d.ex || []).forEach(e => explodeAt(new THREE.Vector3(e[0], e[1], e[2]), null, true));
+        (d.ex || []).forEach(e => explodeAt(new THREE.Vector3(netNum(e[0], -300, 300), netNum(e[1], -50, 200), netNum(e[2], -300, 300)), null, true, null, netNum(e[3], 5, 30, 10) / 10));
         (d.tr || []).forEach(t => {
           const a = new THREE.Vector3(t[0], t[1], t[2]), b = new THREE.Vector3(t[3], t[4], t[5]);
           spawnTracer(a, b);
@@ -5341,6 +6496,25 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           }
       } else if (d.t === 'x') {
         handleDeath(d);
+      } else if (d.t === 'th') {
+        const pp = Array.isArray(d.p) ? d.p : [], vv = Array.isArray(d.v) ? d.v : [];
+        const from = new THREE.Vector3(netNum(pp[0], -300, 300), netNum(pp[1], -20, 200), netNum(pp[2], -300, 300));
+        const vel = new THREE.Vector3(netNum(vv[0], -80, 80), netNum(vv[1], -80, 80), netNum(vv[2], -80, 80));
+        const owner = fighters.find(f => f.id === d.id) || null;
+        spawnThrow(d.k === 1 ? 'nade' : 'med', from, vel, owner, false, String(d.tid || '').slice(0, 60));
+      } else if (d.t === 'mkx') {
+        const i = throwables.findIndex(th => th.id === d.tid);
+        if (i >= 0) removeThrow(i);
+      } else if (d.t === 'heal') {
+        const amt = netNum(d.a, 0, 100);
+        const fn = String(d.fn || '').slice(0, 24);
+        if (d.to === myId) applyHeal(me, amt, fn);
+        else if (net.isHost) {
+          const bt = fighters.find(f => f.id === d.to && f.isBot);
+          if (bt) applyHeal(bt, amt, fn);
+        }
+      } else if (d.t === 'bx' && zombie) {
+        detonateBarrel(barrels[netNum(d.i, 0, 999, -1)], null, false);
       } else if (d.t === 'zh' && zombie) {
         if (net.isHost) {
           const zz = zById.get(d.z);
@@ -5350,7 +6524,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               zz.burnT = 2.5;
               zz.burnBy = sh ? { id: sh.id, name: sh.name } : null;
             }
-            applyZDamage(zz, netNum(d.d, 0, 600), !!d.hs, d.id, sh ? sh.name : '');
+            applyZDamage(zz, netNum(d.d, 0, 600), !!d.hs, d.id, sh ? sh.name : '', !!d.g, d.kx || d.kz ? [netNum(d.kx, -20, 20), netNum(d.kz, -20, 20)] : null);
           }
         }
       } else if (d.t === 'zk' && zombie) {
@@ -5359,7 +6533,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (zz) {
           zombieDeathFx(zz, !!d.hs);
           const pos = zz.pos.clone();
-          dropZombie(zz);
+          toCorpse(zz, !!d.hs, !!d.g || kdef.pop);
           if (kdef.pop) bloaterPop(pos, false);
         }
         if (kdef.boss) bossDown();
@@ -5470,6 +6644,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         }
       }
       if (world.moonT > 0) world.moonT -= dt;
+      if (world.frenzyT > 0) world.frenzyT -= dt;
       if (world.bullT > 0) world.bullT -= dt;
       const grav = world.moonT > 0 ? 9 : 26;
 
@@ -5593,6 +6768,29 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         me.vel.z += (wz * speed - me.vel.z) * Math.min(1, dt * accel);
         if (c.jump && me.onGround && !frozen) me.vel.y = 10.5;
         me.vel.y -= grav * dt;
+        // ladders: walk into one to climb onto the roof
+        me.nearLadder = false;
+        if (map.ladders && !me.downed && !frozen) {
+          const ld = map.ladders.find(l => Math.hypot(me.pos.x - l.x, me.pos.z - l.z) < 1.05 && me.pos.y < l.top + 0.3);
+          const into = ld ? wx * -ld.nx + wz * -ld.nz : 0;
+          me.nearLadder = !!ld && me.pos.y < 0.5;
+          if (ld && (into > 0.3 || (me.climbing && fwdIn > 0.2) || (c.jump && me.pos.y > 0.3))) {
+            me.climbing = true;
+            me.vel.y = 6.5;
+            me.vel.x *= 0.3;
+            me.vel.z *= 0.3;
+            if (me.pos.y > ld.top - 0.45) {
+              me.vel.x = -ld.nx * 6;
+              me.vel.z = -ld.nz * 6;
+              me.vel.y = 3.5;
+            }
+            me.ladderStep = (me.ladderStep || 0) - dt;
+            if (me.ladderStep <= 0) {
+              me.ladderStep = 0.3;
+              sfx.play('land', 0.25);
+            }
+          } else me.climbing = false;
+        }
         const preVy = me.vel.y;
         const wasGround = me.onGround;
         me.onGround = moveBody(me.pos, me.vel, 0.6, dt);
@@ -5639,8 +6837,32 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             w.mag = def.mag;
           }
         }
-        const autoShoot = IS_TOUCH && autoFireRef.current && me.autoAim && !me.dancing && !me.dead && me.reloadT <= 0;
-        if ((c.firing || autoShoot) && !frozen) {
+        // hold left click / FIRE next to a downed teammate to pick them up
+        const reviveMate = zombie && !me.downed ? fighters.find(o => o !== me && o.downed && !o.dead && Math.hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z) < 2.8 && Math.abs(o.pos.y - me.pos.y) < 2.2) : null;
+        const wasRev = me.revTo;
+        me.revTo = reviveMate && c.firing && !frozen ? reviveMate.id : null;
+        me.nearDowned = reviveMate;
+        if (me.revTo && me.revTo !== wasRev) callout(me, 'revive');
+        if (c.nade) {
+          c.nade = false;
+          if (me.grenades > 0 && !frozen && !me.downed) {
+            me.grenades -= 1;
+            doThrow(me, 'nade');
+          } else if (!frozen) announceNow('💣 NO GRENADES', '#94a3b8');
+        }
+        if (c.med) {
+          c.med = false;
+          if (me.medkits > 0 && !frozen && !me.downed) {
+            me.medkits -= 1;
+            doThrow(me, 'med');
+          } else if (!frozen && zombie) announceNow('➕ NO MEDKITS', '#94a3b8');
+        }
+        if (c.onme) {
+          c.onme = false;
+          callout(me, 'onme');
+        }
+        const autoShoot = IS_TOUCH && autoFireRef.current && me.autoAim && !me.dancing && !me.dead && me.reloadT <= 0 && !reviveMate;
+        if ((c.firing || autoShoot) && !frozen && !me.revTo) {
           if (def.auto || IS_TOUCH) fireMe();
           else if (!me.semiHeld) { fireMe(); me.semiHeld = true; }
         }
@@ -5660,6 +6882,12 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             if (p.kind === 'burger') {
               if (me.hp >= 100) return;
               me.hp = Math.min(100, me.hp + 50);
+            } else if (p.kind === 'medkit') {
+              if (me.medkits >= 2) return;
+              me.medkits += 1;
+            } else if (p.kind === 'nade') {
+              if (me.grenades >= 4) return;
+              me.grenades = Math.min(4, me.grenades + 2);
             } else {
               addWeapon(p.kind);
             }
@@ -5726,7 +6954,17 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         }
       });
 
-      if (zombie) animZombies(paused ? 0 : dt, now, frozen);
+      if (zombie) {
+        animZombies(paused ? 0 : dt, now, frozen);
+        tickBarrels(paused ? 0 : dt);
+      }
+      updateThrowables(paused ? 0 : dt);
+      fighters.forEach(f => {
+        if (f.say && f.say.t > 0) {
+          f.say.t -= dt;
+          if (f.say.t <= 0) f.say.sprite.visible = false;
+        }
+      });
 
       // ----- fx -----
       tracers.forEach(t => {
@@ -5755,7 +6993,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           scene.remove(rk.g);
           rk.g.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); });
           rockets.splice(i, 1);
-          explodeAt(hitPoint, rk.owner, false, rk.start);
+          explodeAt(hitPoint, rk.owner, false, rk.start, zombie ? 1.35 : 1);
           continue;
         }
         rk.g.position.copy(next);
@@ -5767,7 +7005,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         const k = bm.t / 0.45;
         bm.ring.scale.setScalar(1 + k * 8);
         bm.ring.material.opacity = Math.max(0, 1 - k);
-        bm.glow.scale.setScalar(4 + k * 10);
+        bm.glow.scale.setScalar((4 + k * 10) * (bm.s || 1));
         bm.glow.material.opacity = Math.max(0, 1 - k * 1.3);
         if (k >= 1) {
           scene.remove(bm.ring, bm.glow);
@@ -5975,10 +7213,12 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (zombie) {
           pkt.dw = me.downed ? 1 : 0;
           pkt.rv = Math.round((me.revive || 0) * 100);
+          pkt.rt = me.revTo || '';
+          pkt.cl = [me.callSeq || 0, me.callIdx == null ? -1 : me.callIdx];
         }
         if (net.isHost) {
           pkt.left = Math.round(match.left * 10) / 10;
-          pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.cls.id, x: r2(b.pos.x), y: r2(b.pos.y), z: r2(b.pos.z), f: r2(b.face), hp: Math.round(b.hp), dd: b.dead ? 1 : 0, k: b.kills, dt: b.deaths, dn: b.danceT > 0 ? 1 : 0, w: b.golden ? 'golden' : b.wkey || 'ak', sp: b.protT > 0 ? 1 : 0, tm: b.team, dw: b.downed ? 1 : 0, rv: Math.round((b.revive || 0) * 100) }));
+          pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.cls.id, x: r2(b.pos.x), y: r2(b.pos.y), z: r2(b.pos.z), f: r2(b.face), hp: Math.round(b.hp), dd: b.dead ? 1 : 0, k: b.kills, dt: b.deaths, dn: b.danceT > 0 ? 1 : 0, w: b.golden ? 'golden' : b.wkey || 'ak', sp: b.protT > 0 ? 1 : 0, tm: b.team, dw: b.downed ? 1 : 0, rv: Math.round((b.revive || 0) * 100), cl: [b.callSeq || 0, b.callIdx == null ? -1 : b.callIdx] }));
           if (siege) pkt.obj = [obj.stage, Math.round(obj.prog), obj.contested ? 1 : 0, obj.capturing ? 1 : 0];
           if (zombie) {
             pkt.zs = packZ();
@@ -6024,16 +7264,17 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         };
         let zHud = null, squad = [], zmarks = [], reviving = null;
         if (zombie) {
+          drawMini(now);
           const boss = zombies.find(o => o.def.boss);
           const left = Math.max(0, zd.toSpawn - zd.spawned) + (zd.horde < 3 ? zd.hordeLeft : 0) + zombies.length;
-          zHud = { wave: zd.wave, phase: zd.phase, t: Math.max(0, Math.ceil(zd.t)), left, horde: zd.horde, bossWave: zd.bossWave, mode: zmode, boss: boss ? { hp: Math.max(0, boss.hp), max: boss.maxHp, enraged: !!boss.enraged } : null };
+          zHud = { wave: zd.wave, phase: zd.phase, t: Math.max(0, Math.ceil(zd.t)), left, horde: zd.horde, bossWave: zd.bossWave, final: isFinalWave(zd.wave), mode: zmode, boss: boss ? { hp: Math.max(0, boss.hp), max: boss.maxHp, enraged: !!boss.enraged } : null };
           squad = fighters.map(f => ({ id: f.id, name: f.name, color: f.color, hp: Math.max(0, Math.round(f.hp)), downed: !!f.downed, dead: f.dead, isMe: f.isMe, bot: f.isBot }));
           if ((zd.horde === 1 || zd.horde === 2) && !me.dead) zmarks.push({ k: '⚠️', c: '#ef4444', ...proj(zd.hordeAt[0], 3, zd.hordeAt[1]) });
           if (boss && !me.dead) zmarks.push({ k: '👹', c: '#a855f7', ...proj(boss.pos.x, boss.pos.y + boss.def.s * 2, boss.pos.z) });
           fighters.forEach(f => {
             if (f.isMe || !f.downed || f.dead) return;
             zmarks.push({ k: '🆘', c: '#f87171', name: f.name, ...proj(f.pos.x, f.pos.y + 2, f.pos.z) });
-            if (!me.dead && !me.downed && Math.hypot(f.pos.x - me.pos.x, f.pos.z - me.pos.z) < 2.8) reviving = { name: f.name, p: Math.min(1, (f.isBot && net.isHost ? f.revive : f.rv) || 0) };
+            if (me.revTo === f.id) reviving = { name: f.name, p: Math.min(1, (f.isBot && net.isHost ? f.revive : f.rv) || 0) };
           });
         }
         const w = me.weapons[me.slot];
@@ -6058,6 +7299,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           zmarks,
           reviving,
           downed: me.downed && !me.dead ? { bleed: Math.max(0, Math.ceil(me.bleed)), revive: me.revive || 0 } : null,
+          nades: me.grenades || 0,
+          meds: me.medkits || 0,
+          frenzy: zombie ? Math.max(0, Math.ceil(world.frenzyT)) : 0,
+          reviveHint: zombie && me.nearDowned && !me.revTo && !me.dead ? me.nearDowned.name : null,
+          ladderHint: !!me.nearLadder && !me.climbing,
           siege,
           team: me.team,
           obj: siege ? { stage: obj.stage, prog: Math.min(100, Math.round(obj.prog)), contested: obj.contested, capturing: obj.capturing, name: obj.stage < 2 ? `${map.objectives[obj.stage].key} · ${map.objectives[obj.stage].name}` : 'ALL CAPTURED' } : null,
@@ -6159,7 +7405,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         {hud.zombie ? (
           <>
             <div className="font-game text-lg md:text-2xl px-3 py-0.5 rounded-lg bg-slate-950/85 text-lime-300 shadow border border-lime-400/40">
-              {hud.zombie.bossWave ? '👹 BOSS WAVE' : `🧟 WAVE ${hud.zombie.wave || 1}`}
+              {hud.zombie.bossWave ? (hud.zombie.final ? '👑 FINAL WAVE' : `👹 BOSS WAVE ${hud.zombie.wave}`) : `🧟 WAVE ${hud.zombie.wave || 1}`}
               {hud.zombie.mode !== 'incoming' && <span className="text-slate-400 text-sm md:text-base"> / {ZOMBIE_RAID_WAVES}</span>}
             </div>
             <div className={`text-[9px] md:text-[11px] font-black px-2 py-0.5 rounded ${hud.zombie.horde === 1 || hud.zombie.horde === 2 ? 'bg-rose-600/90 text-white animate-pulse' : 'bg-slate-900/75 text-slate-200'}`}>
@@ -6170,10 +7416,13 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 : hud.zombie.horde === 2 ? `🧟 HORDE RUSH · ${hud.zombie.left} LEFT`
                 : `🧟 ${hud.zombie.left} ZOMBIES LEFT`}
             </div>
+            {hud.frenzy > 0 && (
+              <div className="text-[10px] md:text-xs font-black px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 animate-pulse">♾️ BOTTOMLESS MAGS · {hud.frenzy}s</div>
+            )}
             {hud.zombie.boss && (
               <div className="w-[240px] md:w-[420px] bg-slate-950/85 rounded-xl px-2.5 py-1.5 border border-purple-500/60">
                 <div className="flex justify-between text-[10px] md:text-xs font-black">
-                  <span className="text-purple-300">👹 THE RUG LORD{hud.zombie.boss.enraged ? ' · 😡 ENRAGED' : ''}</span>
+                  <span className="text-purple-300">{hud.zombie.final ? '👑 THE RUG LORD · FINAL FORM' : '👹 THE RUG LORD'}{hud.zombie.boss.enraged ? ' · 😡' : ''}</span>
                   <span className="font-mono text-white">{Math.ceil(hud.zombie.boss.hp)}</span>
                 </div>
                 <div className="h-2.5 mt-1 bg-slate-700 rounded overflow-hidden">
@@ -6232,6 +7481,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
 
       {/* top right: mini scoreboard + feed */}
       <div className="absolute right-0 top-0 safe-top safe-x pointer-events-none flex flex-col items-end gap-1.5">
+        {hud.zombie ? (
+          <canvas ref={miniRef} width={IS_TOUCH ? 112 : 176} height={IS_TOUCH ? 112 : 176} className={`${IS_TOUCH ? 'w-[112px] h-[112px]' : 'w-[176px] h-[176px]'} rounded-full shadow-xl`} />
+        ) : (
         <div className="bg-white/90 text-slate-900 rounded-lg p-1.5 w-[130px] md:w-[200px] shadow">
           {hud.board.slice(0, IS_SMALL() ? 3 : 5).map((r, i) => (
             <div key={r.id} className={`flex items-center justify-between text-[10px] md:text-[11px] px-1 rounded ${r.isMe ? 'bg-emerald-200 font-black' : 'font-semibold'}`}>
@@ -6240,7 +7492,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             </div>
           ))}
         </div>
-        <div className={`${IS_TOUCH ? 'hidden md:flex' : 'flex'} flex-col items-end gap-1`}>
+        )}
+        <div className={`${IS_TOUCH ? (hud.zombie ? 'hidden' : 'hidden md:flex') : 'flex'} flex-col items-end gap-1`}>
           {hud.feed.map(f => (
             <div key={f.id} className="text-[11px] font-bold px-2 py-0.5 rounded bg-slate-950/70" style={{ color: f.color }}>{f.msg}</div>
           ))}
@@ -6256,7 +7509,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       </div>
 
       {/* bottom right: ammo */}
-      <div className={`absolute right-0 safe-x pointer-events-none text-right ${IS_TOUCH ? 'top-[calc(env(safe-area-inset-top)+86px)]' : 'bottom-0 safe-bottom'}`}>
+      <div className={`absolute right-0 safe-x pointer-events-none text-right ${IS_TOUCH ? (hud.zombie ? 'top-[calc(env(safe-area-inset-top)+124px)]' : 'top-[calc(env(safe-area-inset-top)+86px)]') : 'bottom-0 safe-bottom'}`}>
         <div className="flex flex-wrap justify-end gap-1 mb-1 max-w-[260px] ml-auto">
           {hud.weapons.map((wp, i) => (
             <div
@@ -6267,9 +7520,19 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               <span className="opacity-50 mr-0.5">{i + 1}</span>{wp.icon} {wp.short}
             </div>
           ))}
+          <div
+            onPointerDown={IS_TOUCH ? e => { e.stopPropagation(); c.nade = true; } : undefined}
+            className={`${IS_TOUCH ? 'pointer-events-auto px-2 py-1 text-[10px]' : 'px-1.5 py-0.5 text-[9px] md:text-[10px]'} rounded-md font-black shadow ${hud.nades ? 'bg-lime-300 text-slate-900' : 'bg-slate-900/70 text-slate-500'}`}
+          >{IS_TOUCH ? '' : <span className="opacity-60 mr-0.5">F</span>}💣 {hud.nades}</div>
+          {hud.zombie && (
+            <div
+              onPointerDown={IS_TOUCH ? e => { e.stopPropagation(); c.med = true; } : undefined}
+              className={`${IS_TOUCH ? 'pointer-events-auto px-2 py-1 text-[10px]' : 'px-1.5 py-0.5 text-[9px] md:text-[10px]'} rounded-md font-black shadow ${hud.meds ? 'bg-rose-300 text-slate-900' : 'bg-slate-900/70 text-slate-500'}`}
+            >{IS_TOUCH ? '' : <span className="opacity-60 mr-0.5">H</span>}➕ {hud.meds}</div>
+          )}
         </div>
         <div className={`inline-block ${hud.wkey === 'golden' ? 'bg-yellow-300/95' : 'bg-sky-300/95'} text-slate-900 rounded-lg px-3 py-1 shadow`}>
-          <div className="font-game text-xl md:text-3xl leading-none">{hud.mag}<span className="text-sm md:text-base text-slate-700"> / {hud.reserve === Infinity ? '∞' : hud.reserve}</span></div>
+          <div className="font-game text-xl md:text-3xl leading-none">{hud.frenzy > 0 ? '∞' : hud.mag}<span className="text-sm md:text-base text-slate-700"> / {hud.reserve === Infinity ? '∞' : hud.reserve}</span></div>
           <div className="text-[9px] md:text-[10px] font-black">{hud.wname}</div>
           {hud.reloading > 0 && <div className="h-1 mt-0.5 bg-slate-700/30 rounded overflow-hidden"><div className="h-full bg-slate-900" style={{ width: `${hud.reloading * 100}%` }} /></div>}
         </div>
@@ -6305,16 +7568,24 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         <div className="absolute left-1/2 top-[60%] -translate-x-1/2 pointer-events-none text-center">
           <div className="bg-rose-700/90 text-white px-5 py-2 rounded-lg shadow-xl border-2 border-white/70 w-[270px]">
             <div className="font-game text-base md:text-lg">🆘 YOU'RE DOWN</div>
-            <div className="text-[11px] font-bold opacity-90">{hud.downed.revive > 0.02 ? 'A teammate is reviving you… hold on' : `Keep shooting · a teammate must reach you · ${hud.downed.bleed}s`}</div>
+            <div className="text-[11px] font-bold opacity-90">{hud.downed.revive > 0.02 ? 'A teammate is reviving you… hold on' : `Keep shooting · a teammate (or a thrown ➕) can save you · ${hud.downed.bleed}s`}</div>
             <div className="h-2 mt-1 bg-black/40 rounded overflow-hidden">
               <div className={`h-full ${hud.downed.revive > 0.02 ? 'bg-emerald-400' : 'bg-white'}`} style={{ width: `${hud.downed.revive > 0.02 ? hud.downed.revive * 100 : Math.min(100, (hud.downed.bleed / 28) * 100)}%` }} />
             </div>
           </div>
         </div>
       )}
+      {hud.reviveHint && !hud.reviving && !hud.downed && !results && (
+        <div className="absolute left-1/2 top-[63%] -translate-x-1/2 pointer-events-none text-center">
+          <div className="text-[12px] md:text-sm font-black px-3 py-1 rounded-full bg-emerald-500/90 text-slate-950 animate-pulse">💚 HOLD {IS_TOUCH ? 'FIRE' : 'LEFT CLICK'} TO REVIVE {hud.reviveHint}</div>
+        </div>
+      )}
+      {hud.ladderHint && !hud.reviveHint && !results && (
+        <div className="absolute left-1/2 top-[66%] -translate-x-1/2 pointer-events-none text-[11px] md:text-xs font-black px-3 py-1 rounded-full bg-amber-300/90 text-slate-950">🪜 Walk into the ladder to climb to the roof</div>
+      )}
       {hud.reviving && !hud.downed && !hud.dead && !results && (
         <div className="absolute left-1/2 top-[63%] -translate-x-1/2 pointer-events-none text-center">
-          <div className="text-[12px] md:text-sm font-black text-emerald-300" style={{ textShadow: '0 1px 2px #000' }}>💚 REVIVING {hud.reviving.name} · stay close</div>
+          <div className="text-[12px] md:text-sm font-black text-emerald-300" style={{ textShadow: '0 1px 2px #000' }}>💚 REVIVING {hud.reviving.name} · keep holding</div>
           <div className="w-44 h-2 mt-1 bg-black/50 rounded overflow-hidden mx-auto"><div className="h-full bg-emerald-400" style={{ width: `${hud.reviving.p * 100}%` }} /></div>
         </div>
       )}
@@ -6371,7 +7642,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         <div className="absolute inset-0 bg-slate-950/70 flex items-center justify-center pointer-events-auto cursor-default">
           <div className="glass border border-slate-600 rounded-3xl p-6 text-center w-[min(92vw,470px)]">
             <div className="font-game text-3xl text-white">{hud.started ? 'PAUSED' : 'NGMI SHOOTOUT'}</div>
-            <div className="text-slate-300 text-sm mt-1">{hud.peers > 1 ? 'Online match — it keeps running while you are paused' : hud.started ? 'Game paused · bots are frozen' : variant === 'zombie' ? (zmode === 'incoming' ? '🚨 INCOMING · endless waves, boss every 5th' : '👹 BOSS RAID · survive 4 waves, then drop the Rug Lord') : `Free-for-all · first to ${KILL_TARGET} · 3 minutes`}</div>
+            <div className="text-slate-300 text-sm mt-1">{hud.peers > 1 ? 'Online match — it keeps running while you are paused' : hud.started ? 'Game paused · bots are frozen' : variant === 'zombie' ? (zmode === 'incoming' ? '🚨 INCOMING · endless waves, boss every 5th' : '👹 BOSS RAID · 10 waves · Rug Lord on wave 5 and 10') : `Free-for-all · first to ${KILL_TARGET} · 3 minutes`}</div>
             <div className="flex flex-col gap-2 mt-4">
               <button
                 onClick={() => {
@@ -6400,7 +7671,13 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               <span className="keycap">WHEEL</span><span>Switch weapon (or <span className="keycap">1</span>–<span className="keycap">5</span>, <span className="keycap">Q</span> last gun)</span>
               <span className="keycap">SPACE</span><span>Jump · cyan pads launch you onto rooftops</span>
               <span className="keycap">R</span><span>Reload · ammo is endless</span>
-              {variant === 'zombie' && (<><span className="text-base">🆘</span><span>Downed teammate? Stand next to them to revive</span></>)}
+              <span className="keycap">F</span><span>Throw a grenade 💣</span>
+              {variant === 'zombie' && (<>
+                <span className="keycap">H</span><span>Throw a medkit ➕ at a teammate (or at your feet)</span>
+                <span className="keycap">T</span><span>Shout "ON ME!" · bots regroup on you</span>
+                <span className="keycap">HOLD 🖱️</span><span>Hold left click next to a downed teammate to revive</span>
+                <span className="text-base">🪜</span><span>Walk into a yellow ladder to climb onto the roof</span>
+              </>)}
               <span className="keycap">V</span><span>Dance 💃 · heals +15 HP/s up to 100</span>
               <span className="keycap">TAB</span><span>Scoreboard</span>
               <span className="keycap">G</span><span>Moon Strike (earned every 4-kill streak)</span>
@@ -6419,6 +7696,15 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 className="w-full accent-emerald-400"
               />
             </div>
+            {variant === 'zombie' && (
+              <button
+                onClick={() => { const v = !voiceRef.current; voiceRef.current = v; setVoiceUi(v); saveProfile({ ...loadProfile(), squadVoice: v }); if (!v && window.speechSynthesis) window.speechSynthesis.cancel(); }}
+                className="w-full mt-3 flex items-center justify-between px-3 py-2 rounded-xl bg-slate-900/80 border border-slate-700 cursor-pointer"
+              >
+                <span className="text-left text-sm font-black text-white">🗣️ Squad voices <span className="block text-[11px] font-semibold text-slate-400">Teammates yell "Reloading!", "Help me!", "Horde incoming!"</span></span>
+                <span className={`w-12 h-7 rounded-full relative transition ${voiceUi ? 'bg-emerald-400' : 'bg-slate-600'}`}><span className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-all ${voiceUi ? 'left-6' : 'left-1'}`} /></span>
+              </button>
+            )}
             <div className="text-[11px] text-slate-400 mt-3">Press <span className="keycap">ESC</span> any time to pause and free your mouse</div>
           </div>
         </div>
@@ -6485,6 +7771,15 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               <span className="text-left"><span className="block text-sm font-black text-white">🎯 Auto-fire</span><span className="block text-[11px] text-slate-400">Shoots when your crosshair is on an enemy</span></span>
               <span className={`w-12 h-7 rounded-full relative transition ${autoFireUi ? 'bg-emerald-400' : 'bg-slate-600'}`}><span className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-all ${autoFireUi ? 'left-6' : 'left-1'}`} /></span>
             </button>
+            {variant === 'zombie' && (
+              <button
+                onClick={() => { const v = !voiceRef.current; voiceRef.current = v; setVoiceUi(v); saveProfile({ ...loadProfile(), squadVoice: v }); if (!v && window.speechSynthesis) window.speechSynthesis.cancel(); }}
+                className="w-full mt-3 flex items-center justify-between px-3 py-3 rounded-xl bg-slate-900/80 border border-slate-700 cursor-pointer"
+              >
+                <span className="text-left"><span className="block text-sm font-black text-white">🗣️ Squad voices</span><span className="block text-[11px] text-slate-400">Teammates yell callouts out loud</span></span>
+                <span className={`w-12 h-7 rounded-full relative transition ${voiceUi ? 'bg-emerald-400' : 'bg-slate-600'}`}><span className={`absolute top-1 w-5 h-5 rounded-full bg-white transition-all ${voiceUi ? 'left-6' : 'left-1'}`} /></span>
+              </button>
+            )}
             <div className="grid grid-cols-2 gap-2 mt-4">
               <button onClick={() => { const m = !muted; sfx.setMuted(m); setMutedS(m); }} className="py-3 rounded-xl bg-slate-800 font-black text-sm cursor-pointer">{muted ? '🔇 Sound off' : '🔊 Sound on'}</button>
               <button onClick={onExit} className="py-3 rounded-xl bg-rose-600 font-black text-sm cursor-pointer">🏠 Lobby</button>
@@ -9538,7 +10833,7 @@ function App() {
                         {[
                           { id: 'ffa', icon: '🏙️', title: 'FREE-FOR-ALL', sub: 'Cartoon Town · first to 25' },
                           { id: 'siege', icon: '🏰', title: 'SIEGE', sub: 'Fort HODL · attack or defend' },
-                          { id: 'zombie', icon: '🧟', title: 'ZOMBIES', sub: 'Co-op squad of 4 · hordes & a boss', tag: 'NEW' }
+                          { id: 'zombie', icon: '🧟', title: 'ZOMBIES', sub: 'Co-op squad of 4 · 10 waves · rooms, ladders & a boss', tag: 'NEW' }
                         ].map(v => (
                           <button key={v.id} onClick={() => setSoVariant(v.id)} className={`relative text-left rounded-xl border-2 px-3 py-2 cursor-pointer transition ${v.id === 'zombie' ? 'col-span-2' : ''} ${soVariant === v.id ? (v.id === 'zombie' ? 'border-lime-300 bg-lime-300/10' : 'border-amber-300 bg-amber-300/10') : 'border-slate-800 hover:border-slate-600'}`}>
                             {v.tag && <span className="absolute right-2 top-2 text-[9px] font-black px-1.5 py-0.5 rounded bg-lime-300 text-slate-900">{v.tag}</span>}
@@ -9556,9 +10851,9 @@ function App() {
                           </div>
                           <div className="text-[11px] text-slate-400 leading-snug">
                             {soZMode === 'raid'
-                              ? <>Survive <b className="text-white">4 waves</b>, each ending in a <b className="text-rose-300">⚠️ horde rush</b>, then team up to drop <b className="text-purple-300">THE RUG LORD</b>.</>
+                              ? <>Survive <b className="text-white">10 waves</b>, each tougher than the last, with <b className="text-rose-300">⚠️ horde rushes</b>. <b className="text-purple-300">THE RUG LORD</b> hits on wave 5 and returns in his final form on wave 10.</>
                               : <>Endless waves, each with a <b className="text-rose-300">⚠️ HORDE INCOMING</b> rush and a boss every 5th wave. How long can your squad last?</>}
-                            {' '}Friends fill the squad first, bots fill the rest. Downed teammates get back up when you stand next to them.
+                            {' '}Walk-in buildings, ladders to the rooftops, explosive barrels, grenades 💣 and throwable medkits ➕. Hold fire next to a downed teammate to revive.
                           </div>
                         </div>
                       )}
