@@ -1572,7 +1572,7 @@ function createClipper({ src, onClip, crosshair = false, stat = null }) {
   const mime = pickClipMime();
   const cv = document.createElement('canvas');
   const g = cv.getContext('2d');
-  const longSide = IS_TOUCH ? 960 : 1280;
+  const longSide = IS_TOUCH ? 720 : 1280;
   const size = () => {
     const w = src.width || 1280, h = src.height || 720;
     const k = Math.min(1, longSide / Math.max(w, h));
@@ -1647,10 +1647,12 @@ function createClipper({ src, onClip, crosshair = false, stat = null }) {
     g.fillStyle = fill;
     g.fillText(txt, x, y);
   };
-  const frame = () => {
+  // copying the game screen into the recorder isn't free: ~24 fps on phones, and when the game
+  // itself is struggling (slow = true) the highlight reel drops to ~10 fps so gameplay stays smooth
+  const frame = (slow = false) => {
     if (!alive) return;
     const now = performance.now();
-    if (now - lastFrame < 30) return;
+    if (now - lastFrame < (slow ? 100 : IS_TOUCH ? 41 : 30)) return;
     lastFrame = now;
     if (Math.abs(src.width / src.height - cv.width / cv.height) > 0.02) size();
     try { g.drawImage(src, 0, 0, cv.width, cv.height); } catch (e) { return; }
@@ -3050,10 +3052,77 @@ function buildZombieMesh(kind) {
     }
     [-1, 1].forEach(sd => add(K.spike, K.gold, sd * 0.5, 1.2, -0.05, 2, 2, 2).rotation.z = -sd * 0.6);
   }
-  root.scale.setScalar(def.s);
   // limp: one leg drags, one arm hangs
   root.userData = { head, arms, legs, limp: Math.random() < 0.4 ? 0.5 + Math.random() * 0.4 : 1, hang: Math.random() < 0.35 ? (Math.random() < 0.5 ? 0 : 1) : -1 };
-  return mergeStaticParts(root);
+  const out = skinZombie(root);
+  out.scale.setScalar(def.s);
+  return out;
+}
+// A zombie is a puppet of 6 rigid parts. Instead of 6+ separate meshes (one draw call each),
+// bake every part into ONE skinned mesh whose bones are the head, arms and legs: the GPU bends it,
+// the CPU just turns the bones exactly like it turned the groups before. ~8 draw calls → ~2.
+let ZSKIN_MAT = null;
+function skinZombie(src) {
+  if (!ZSKIN_MAT) ZSKIN_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88 });
+  const ud = src.userData;
+  src.updateMatrixWorld(true);
+  const groups = [src, ud.head, ...ud.arms, ...ud.legs];
+  const bones = groups.map((g, i) => {
+    const b = new THREE.Bone();
+    if (i) {
+      b.position.copy(g.position);
+      b.rotation.copy(g.rotation);
+      if (!g.visible) b.scale.setScalar(0.001); // crawlers have no legs
+    }
+    return b;
+  });
+  for (let i = 1; i < bones.length; i++) bones[0].add(bones[i]);
+  const boneOf = o => {
+    for (let q = o.parent; q; q = q.parent) {
+      const k = groups.indexOf(q);
+      if (k >= 0) return k;
+    }
+    return 0;
+  };
+  const pos = [], nor = [], col = [], si = [], sw = [], rigid = [];
+  src.traverse(o => {
+    if (!o.isMesh) return;
+    const m = o.material;
+    // glowing bits (eyes, warts, the boss's gold) keep their own material, riding on a bone
+    if ((m.isMeshBasicMaterial && m !== zombieKit.mouth) || (m.emissive && m.emissive.getHex() !== 0)) {
+      rigid.push(o);
+      return;
+    }
+    const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    g.applyMatrix4(o.matrixWorld);
+    const bi = boneOf(o), P = g.attributes.position, N = g.attributes.normal;
+    for (let i = 0; i < P.count; i++) {
+      pos.push(P.getX(i), P.getY(i), P.getZ(i));
+      nor.push(N.getX(i), N.getY(i), N.getZ(i));
+      col.push(m.color.r, m.color.g, m.color.b);
+      si.push(bi, 0, 0, 0);
+      sw.push(1, 0, 0, 0);
+    }
+    g.dispose();
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(si, 4));
+  geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(sw, 4));
+  geo.computeBoundingSphere();
+  geo.boundingSphere.radius += 0.6; // limbs swing a little outside the bind pose
+  const out = new THREE.Group();
+  out.rotation.order = 'YXZ';
+  const sk = new THREE.SkinnedMesh(geo, ZSKIN_MAT);
+  sk.add(bones[0]);
+  out.add(sk);
+  out.updateMatrixWorld(true);
+  sk.bind(new THREE.Skeleton(bones));
+  rigid.forEach(o => bones[boneOf(o)].add(o)); // local transform relative to its group == relative to its bone
+  out.userData = { head: bones[1], arms: [bones[2], bones[3]], legs: [bones[4], bones[5]], limp: ud.limp, hang: ud.hang, skin: sk };
+  return mergeStaticParts(out);
 }
 
 function makeInkTexture() {
@@ -5472,7 +5541,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const m = pl.pop() || buildZombieMesh(kind);
       m.visible = true;
       m.rotation.set(0, 0, 0);
-      m.userData.head.visible = true;
+      m.userData.head.scale.setScalar(1);
       m.userData.head.rotation.x = 0;
       scene.add(m);
       return m;
@@ -5747,20 +5816,26 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       return srgbTex(new THREE.CanvasTexture(c));
     })();
     const splatMat = new THREE.MeshBasicMaterial({ map: splatTex, color: 0x4d7c0f, transparent: true, opacity: 0.85, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 });
-    const splats = [];
+    // every splat on the floor is one instance of a single mesh → one draw call for all of them
+    const SPLAT_MAX = IS_TOUCH ? 40 : 64;
+    const splatInst = new THREE.InstancedMesh(inkGeo, splatMat, SPLAT_MAX);
+    splatInst.count = 0;
+    splatInst.frustumCulled = false;
+    splatInst.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    scene.add(splatInst);
+    let splatNext = 0;
+    const splatM = new THREE.Matrix4(), splatQ = new THREE.Quaternion(), splatE = new THREE.Euler(), splatS = new THREE.Vector3(), splatP = new THREE.Vector3();
     const splat = (p, size) => {
-      let m;
-      if (splats.length >= 70) m = splats.shift();
-      else {
-        m = new THREE.Mesh(inkGeo, splatMat);
-        m.rotation.x = -Math.PI / 2;
-        scene.add(m);
-      }
-      m.position.set(p.x, p.y + 0.03, p.z);
-      m.rotation.z = Math.random() * 6.28;
       const sc = size * (0.7 + Math.random() * 0.6);
-      m.scale.set(sc, sc, 1);
-      splats.push(m);
+      splatE.set(-Math.PI / 2, 0, Math.random() * 6.28);
+      splatQ.setFromEuler(splatE);
+      splatP.set(p.x, p.y + 0.03, p.z);
+      splatS.set(sc, sc, 1);
+      splatM.compose(splatP, splatQ, splatS);
+      splatInst.setMatrixAt(splatNext, splatM);
+      splatNext = (splatNext + 1) % SPLAT_MAX;
+      splatInst.count = Math.min(SPLAT_MAX, splatInst.count + 1);
+      splatInst.instanceMatrix.needsUpdate = true;
     };
     const gibGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
     const gibFx = zz => {
@@ -5802,9 +5877,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         poolZMesh(zz.kind, m);
         return;
       }
-      if (head) m.userData.head.visible = false;
+      if (head) m.userData.head.scale.setScalar(0.001);
       corpses.push({ m, kind: zz.kind, t: 0, dir: zz.def.crawl ? 0 : Math.random() < 0.6 ? -1 : 1, rx0: m.rotation.x });
-      if (corpses.length > 28) {
+      // the busier the fight, the fewer bodies we keep on the floor
+      const cap = zombies.length > ZMAX * 0.6 ? (IS_TOUCH ? 5 : 8) : IS_TOUCH ? 10 : 16;
+      while (corpses.length > cap) {
         const c0 = corpses.shift();
         poolZMesh(c0.kind, c0.m);
       }
@@ -6156,7 +6233,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       for (const o of zombies) {
         if (o === zz) continue;
         const ox = zz.pos.x - o.pos.x, oz = zz.pos.z - o.pos.z;
-        const rr = (zz.s + o.s) * 0.4;
+        const rr = (zz.s + o.s) * 0.5;
         const dd = ox * ox + oz * oz;
         if (dd < rr * rr && dd > 1e-4) {
           const l = Math.sqrt(dd);
@@ -6164,8 +6241,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           sz += (oz / l) * (rr - l);
         }
       }
-      zz.vel.x += (dx * spd + sx * 3 - zz.vel.x) * Math.min(1, dt * 6);
-      zz.vel.z += (dz * spd + sz * 3 - zz.vel.z) * Math.min(1, dt * 6);
+      zz.vel.x += (dx * spd + sx * 4 - zz.vel.x) * Math.min(1, dt * 6);
+      zz.vel.z += (dz * spd + sz * 4 - zz.vel.z) * Math.min(1, dt * 6);
       zz.vel.y -= (world.moonT > 0 ? 9 : 26) * dt;
       const ox = zz.pos.x, oz = zz.pos.z;
       zz.onGround = moveBody(zz.pos, zz.vel, def.boss ? Math.min(1.6, 0.42 * zz.s * def.w) : Math.min(0.75, 0.42 * zz.s * def.w), dt);
@@ -6867,7 +6944,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         }
       } else if (zd.horde === 2) {
         zd.hordeT -= dt;
-        if (zd.hordeT <= 0 && zombies.length < ZMAX + 12) {
+        if (zd.hordeT <= 0 && zombies.length < ZMAX + (IS_TOUCH ? 4 : 10)) {
           zd.hordeT = 0.3;
           for (let k = 0; k < 3 && zd.hordeLeft > 0; k++) {
             const zz = spawnZ(pickKind(true), zd.hordeAt[0], zd.hordeAt[1]);
@@ -6936,6 +7013,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         zd.phase = ph;
         onPhase(ph);
       }
+      if (!Array.isArray(zs)) return; // big hordes: zombie positions come every other packet
       const seen = new Set();
       const nowT = performance.now();
       zs.slice(0, 90).forEach(a => {
@@ -7328,8 +7406,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         const ud = c.m.userData;
         if (c.dir) c.m.rotation.x = c.rx0 + (c.dir * 1.45 - c.rx0) * Math.min(1, c.t / 0.45);
         ud.arms.forEach((a, j) => { a.rotation.x += ((j ? 0.6 : -0.4) - a.rotation.x) * Math.min(1, dt * 4); });
-        if (c.t > 4) c.m.position.y -= dt * 0.9;
-        if (c.t > 5.4) {
+        if (c.t > 3.2) c.m.position.y -= dt * 1.1;
+        if (c.t > 4.4) {
           poolZMesh(c.kind, c.m);
           corpses.splice(i, 1);
         }
@@ -7655,7 +7733,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           }
           if (typeof d.left === 'number' && Math.abs(match.left - d.left) > 1.5) match.left = d.left;
         }
-        if (zombie && Array.isArray(d.zs) && Array.isArray(d.zd)) {
+        if (zombie && Array.isArray(d.zd)) {
           // follow the host's horde; a fresh host adopts a match already in progress
           const theirWave = netNum(d.zd[0], 0, 999);
           if ((!net.isHost && d.id === net.hostId) || (net.isHost && theirWave > zd.wave)) {
@@ -7831,6 +7909,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           if (perf.warm > 0) perf.warm -= perf.t;
           else if (avg > 1 / 42 && perf.pr > perf.min) setPR(Math.max(perf.min, perf.pr - 0.15));
           else if (avg < 1 / 57 && perf.pr < perf.max) setPR(Math.min(perf.max, perf.pr + 0.1));
+          if (perf.warm <= 0) perf.slow = avg > 1 / 42 ? true : avg < 1 / 52 ? false : perf.slow;
           perf.acc = 0;
           perf.n = 0;
           perf.t = 0;
@@ -8456,7 +8535,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
       if (post) post.render(now * 0.001);
       else renderer.render(scene, camera);
-      if (clipRef.current) clipRef.current.frame();
+      if (clipRef.current) clipRef.current.frame(perf.slow);
 
       // ----- network -----
       if (now - lastNet > 66) {
@@ -8474,7 +8553,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.cls.id, x: r2(b.pos.x), y: r2(b.pos.y), z: r2(b.pos.z), f: r2(b.face), hp: Math.round(b.hp), dd: b.dead ? 1 : 0, k: b.kills, dt: b.deaths, dn: b.danceT > 0 ? 1 : 0, w: b.golden ? 'golden' : b.wkey || 'ak', sp: b.protT > 0 ? 1 : 0, tm: b.team, dw: b.downed ? 1 : 0, rv: Math.round((b.revive || 0) * 100), cl: [b.callSeq || 0, b.callIdx == null ? -1 : b.callIdx] }));
           if (siege) pkt.obj = [obj.stage, Math.round(obj.prog), obj.contested ? 1 : 0, obj.capturing ? 1 : 0];
           if (zombie) {
-            pkt.zs = packZ();
+            net.zTick = (net.zTick || 0) + 1;
+            if (zombies.length <= 20 || net.zTick % 2 === 0) pkt.zs = packZ();
             pkt.zd = packZd();
             pkt.zfx = net.pendingZfx;
           }
