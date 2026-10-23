@@ -2240,6 +2240,39 @@ function mergeStaticParts(root) {
   });
   return root;
 }
+// ---- soft shadow textures (drawn once) ----
+let SOFT_RECT_TEX = null, SOFT_DOT_TEX = null;
+function softRectTex() {
+  if (SOFT_RECT_TEX) return SOFT_RECT_TEX;
+  const N = 128, c = document.createElement('canvas');
+  c.width = c.height = N;
+  const g = c.getContext('2d'), img = g.createImageData(N, N);
+  const edge = v => { const d = Math.min(v, 1 - v) / 0.32; const t = Math.min(1, Math.max(0, d)); return t * t * (3 - 2 * t); };
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const a = edge((x + 0.5) / N) * edge((y + 0.5) / N);
+    img.data[(y * N + x) * 4 + 3] = Math.round(a * 255);
+  }
+  g.putImageData(img, 0, 0);
+  SOFT_RECT_TEX = new THREE.CanvasTexture(c);
+  SOFT_RECT_TEX.userData.shared = true;
+  return SOFT_RECT_TEX;
+}
+function softDotTex() {
+  if (SOFT_DOT_TEX) return SOFT_DOT_TEX;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, 'rgba(0,0,0,1)');
+  gr.addColorStop(0.55, 'rgba(0,0,0,0.6)');
+  gr.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = gr;
+  g.fillRect(0, 0, 64, 64);
+  SOFT_DOT_TEX = new THREE.CanvasTexture(c);
+  SOFT_DOT_TEX.userData.shared = true;
+  return SOFT_DOT_TEX;
+}
+// environment reflections for the first-person gun only (small on screen, so it's cheap)
+let GUN_ENV = null;
 // ---- shared helpers for baking static meshes together ----
 const colHex = c => (c && c.getHex ? c.getHex() : '');
 function mergeable(c, keep) {
@@ -2256,7 +2289,7 @@ function mergeKey(c, extra) {
   const rough = bake ? Math.round((m.roughness ?? 1) * 3) / 3 : m.roughness, metal = bake ? Math.round((m.metalness ?? 0) * 2) / 2 : m.metalness;
   return [m.type, bake ? 'vc' : colHex(m.color), rough, metal, colHex(m.emissive), m.emissiveIntensity, m.map ? m.map.uuid : '', m.transparent, m.opacity, m.side, m.depthWrite, m.depthTest, m.blending, m.flatShading, m.alphaTest, m.fog, m.toneMapped, m.wireframe, attrs, c.castShadow, c.receiveShadow, extra].join('|');
 }
-function bakeMeshes(list, matrixOf) {
+function bakeMeshes(list, matrixOf, ao = false) {
   const m0 = list[0].material;
   const bake = colorBakes(m0) && !list[0].geometry.attributes.color;
   const geos = list.map(c => {
@@ -2273,6 +2306,18 @@ function bakeMeshes(list, matrixOf) {
       gg.setAttribute('color', new THREE.BufferAttribute(arr, 3));
     }
     gg.applyMatrix4(matrixOf(c));
+    if (bake && ao) {
+      // fake ambient occlusion: walls darken toward the ground, undersides sit in shadow
+      const pos = gg.attributes.position, nor = gg.attributes.normal, colA = gg.attributes.color;
+      for (let i = 0; i < pos.count; i++) {
+        const y = pos.getY(i), ny = nor.getY(i);
+        const t = Math.min(1, Math.max(0, y / 3.2));
+        let f = 0.56 + 0.44 * t * t * (3 - 2 * t);
+        if (ny > 0.7) f = Math.max(f, 0.97);
+        else if (ny < -0.7) f *= 0.72;
+        colA.setXYZ(i, colA.getX(i) * f, colA.getY(i) * f, colA.getZ(i) * f);
+      }
+    }
     return gg;
   });
   let mat = m0;
@@ -2324,7 +2369,7 @@ function mergeSceneStatic(scene, keepRefs) {
   buckets.forEach(list => {
     before += list.length;
     if (list.length < 2) { after += 1; return; }
-    scene.add(bakeMeshes(list, c => c.matrixWorld));
+    scene.add(bakeMeshes(list, c => c.matrixWorld, true));
     after += 1;
     list.forEach(c => c.parent && c.parent.remove(c)); // detached, still raycastable via `solids`
   });
@@ -2788,7 +2833,7 @@ function drawShooterTag(canvas, name, hp, color) {
 function makeGunModel(key, view) {
   const g = new THREE.Group();
   let order = 1000;
-  const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.35, depthTest: !view, depthWrite: !view, fog: !view, ...extra });
+  const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.35, depthTest: !view, depthWrite: !view, fog: !view, envMap: view ? GUN_ENV : null, envMapIntensity: 1.1, ...extra });
   const part = (w, h, d, x, y, z, m) => {
     const p = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
     p.position.set(x, y, z);
@@ -2993,6 +3038,9 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
     return [x - w / 2 - out, z + along];
   };
   const winMat = new THREE.MeshStandardMaterial({ color: 0x1d3550, roughness: 0.25, metalness: 0.4, emissive: 0x0b1a2a, emissiveIntensity: 0.4 });
+  // at night some windows still have the lights on
+  const winLit = new THREE.MeshStandardMaterial({ color: 0x3a2a10, roughness: 0.4, emissive: 0xffb347, emissiveIntensity: 0.95 });
+  const winPick = () => (zmap && Math.random() < 0.45 ? winLit : winMat);
   const building = (x, z, w, h, d, color, roof, label, face, signBg, signFg) => {
     if (zmap && WALK[label]) return walkIn(x, z, w, d, 4.8, color, roof, label, { ...WALK[label], signBg, signFg });
     box(x, z, w, h, d, color);
@@ -3006,7 +3054,7 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
         const along = (i - (k - 1) / 2) * (fs / k);
         if (f === face && Math.abs(along) < 2.5) continue; // door space
         const [px, pz] = faceOffset(f, x, z, w, d, along, 0.03);
-        plane(1.8, 1.5, winMat, px, Math.min(h - 1.6, 3.4), pz, ROT[f]);
+        plane(1.8, 1.5, winPick(), px, Math.min(h - 1.6, 3.4), pz, ROT[f]);
       }
     });
     const [dx, dz] = faceOffset(face, x, z, w, d, 0, 0.03);
@@ -3150,7 +3198,7 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
         if (gaps.some(gp => Math.abs(gp - along) < 2.6)) continue;
         const px = alongX ? x + along : nx > 0 ? maxX + 0.03 : minX - 0.03;
         const pz = alongX ? (nz > 0 ? maxZ + 0.03 : minZ - 0.03) : z + along;
-        plane(1.6, 1.2, winMat, px, 2.2, pz, ROT[sd]);
+        plane(1.6, 1.2, winPick(), px, 2.2, pz, ROT[sd]);
       }
     });
     // roof you can stand on (reach it by ladder)
@@ -3309,7 +3357,9 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
   });
 
   // ---- lamps ----
-  [[-6, -20], [6, 20], [-20, 6], [20, -6], [-46, -22], [46, 22]].forEach(([x, z]) => {
+  const lamps = [[-6, -20], [6, 20], [-20, 6], [20, -6], [-46, -22], [46, 22]];
+  if (zmap) lamps.push([-60, -34], [60, 34], [-34, 60], [34, -60], [-60, 30], [60, -30], [30, 60], [-30, -60]);
+  lamps.forEach(([x, z]) => {
     box(x, z, 0.25, 6, 0.25, 0x2f3542, { noEdge: true });
     box(x + 0.6, z, 1.4, 0.25, 0.5, 0x2f3542, { y: 6, noCollide: true, noEdge: true });
   });
@@ -3446,7 +3496,7 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
     pickupSpots.push([-76, -5, 'medkit'], [-76, 5, 'medkit'], [-71, -3, 'nade'], [0, 71, 'rpg'], [10, 71, 'nade'], [-5, -76, 'medkit'], [5, -72, 'sniper'], [74, -8, 'burger'], [74, 8, 'flamer'], [-70, -70, 'gatling'], [70, 70, 'revolver'], [66, 66, 'medkit'], [-44, -40, 'nade'], [42, 40, 'medkit']);
   }
   const zspawns = zmap ? [[-82, -40], [-82, 40], [82, -40], [82, 40], [-40, -82], [40, -82], [-40, 82], [40, 82], [-82, -82], [82, 82], [82, -82], [-82, 82], [-60, -60], [60, -60], [-60, 60], [60, 60], [-82, 0], [0, 82]] : null;
-  return { colliders, solids, spawns, pickupSpots, clouds, pads, rooms, portals, ladders, zspawns };
+  return { colliders, solids, spawns, pickupSpots, clouds, pads, rooms, portals, ladders, zspawns, lamps };
 }
 
 function makeSmokeTexture() {
@@ -3853,6 +3903,87 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     }
     const obj = { stage: 0, prog: 0, contested: false, capturing: false, warnAt: 0 };
     const { colliders, solids } = map;
+    // gun reflections: a tiny sky/ground environment rendered once
+    {
+      const pm = new THREE.PMREMGenerator(renderer);
+      const es = new THREE.Scene();
+      const eg = new THREE.SphereGeometry(10, 24, 12);
+      const top = new THREE.Color(zombie ? 0x2a3656 : siege ? 0xffc89a : 0xcfe9ff), bot = new THREE.Color(zombie ? 0x07080c : siege ? 0x5a3a2a : 0x8a7a63);
+      const ec = new Float32Array(eg.attributes.position.count * 3);
+      for (let i = 0; i < eg.attributes.position.count; i++) {
+        const t = Math.min(1, Math.max(0, eg.attributes.position.getY(i) / 10 * 0.5 + 0.5));
+        const cc = bot.clone().lerp(top, t);
+        ec[i * 3] = cc.r;
+        ec[i * 3 + 1] = cc.g;
+        ec[i * 3 + 2] = cc.b;
+      }
+      eg.setAttribute('color', new THREE.BufferAttribute(ec, 3));
+      es.add(new THREE.Mesh(eg, new THREE.MeshBasicMaterial({ side: THREE.BackSide, vertexColors: true })));
+      const panel = new THREE.Mesh(new THREE.PlaneGeometry(6, 3), new THREE.MeshBasicMaterial({ color: zombie ? 0x8fa6d6 : 0xffffff, side: THREE.DoubleSide }));
+      panel.position.set(-4, 6, 3);
+      panel.lookAt(0, 0, 0);
+      es.add(panel);
+      GUN_ENV = pm.fromScene(es, 0.03).texture;
+      pm.dispose();
+      eg.dispose();
+    }
+    // soft contact shadows around everything that stands on the ground (baked into one mesh below)
+    {
+      const shMat = new THREE.MeshBasicMaterial({ map: softRectTex(), color: 0x000000, transparent: true, opacity: zombie ? 0.55 : 0.4, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+      colliders.forEach(c => {
+        const w = c.maxX - c.minX, d = c.maxZ - c.minZ;
+        if (c.bottom > 0.1 || c.top < 0.9 || c.top > 40 || w > 60 || d > 60 || w * d < 0.5) return;
+        const pad = Math.min(2.6, 0.9 + Math.min(c.top, 8) * 0.22);
+        const q = new THREE.Mesh(new THREE.PlaneGeometry(w + pad * 2, d + pad * 2), shMat);
+        q.rotation.x = -Math.PI / 2;
+        q.position.set((c.minX + c.maxX) / 2, 0.025, (c.minZ + c.maxZ) / 2);
+        scene.add(q);
+      });
+    }
+    if (zombie) {
+      // street lamps: warm pools of light on the ground, glowing bulbs and a faint light cone
+      const poolMat = new THREE.MeshBasicMaterial({ map: softDotTex(), color: 0xffb35c, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
+      const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffe2a8 });
+      const coneMat = new THREE.MeshBasicMaterial({ color: 0xffc27a, transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+      const bulbGlow = new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(255,214,150,1)', 'rgba(255,170,80,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+      (map.lamps || []).forEach(([x, z]) => {
+        const lx = x + 1.1;
+        const pool = new THREE.Mesh(new THREE.PlaneGeometry(11, 11), poolMat);
+        pool.rotation.x = -Math.PI / 2;
+        pool.position.set(lx, 0.03, z);
+        const bulb = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.1, 0.36), bulbMat);
+        bulb.position.set(lx, 5.84, z);
+        const cone = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 3.2, 5.8, 16, 1, true), coneMat);
+        cone.position.set(lx, 2.95, z);
+        const glow = new THREE.Sprite(bulbGlow);
+        glow.position.set(lx, 5.7, z);
+        glow.scale.set(3.2, 3.2, 1);
+        scene.add(pool, bulb, cone, glow);
+      });
+      // sky dome with a little colour and stars
+      const skyG = new THREE.SphereGeometry(420, 32, 16);
+      const sc = new Float32Array(skyG.attributes.position.count * 3);
+      const zen = new THREE.Color(0x02040b), hor = new THREE.Color(0x1a2440), haze = new THREE.Color(0x24331f);
+      for (let i = 0; i < skyG.attributes.position.count; i++) {
+        const t = Math.max(0, skyG.attributes.position.getY(i) / 420);
+        const cc = t < 0.08 ? haze.clone().lerp(hor, t / 0.08) : hor.clone().lerp(zen, Math.min(1, (t - 0.08) * 2.2));
+        sc[i * 3] = cc.r;
+        sc[i * 3 + 1] = cc.g;
+        sc[i * 3 + 2] = cc.b;
+      }
+      skyG.setAttribute('color', new THREE.BufferAttribute(sc, 3));
+      scene.add(new THREE.Mesh(skyG, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false })));
+      const starN = 700, sp = new Float32Array(starN * 3);
+      for (let i = 0; i < starN; i++) {
+        const a = Math.random() * Math.PI * 2, el = 0.12 + Math.random() * 1.3;
+        sp[i * 3] = Math.cos(a) * Math.cos(el) * 400;
+        sp[i * 3 + 1] = Math.sin(el) * 400;
+        sp[i * 3 + 2] = Math.sin(a) * Math.cos(el) * 400;
+      }
+      const stG = new THREE.BufferGeometry();
+      stG.setAttribute('position', new THREE.BufferAttribute(sp, 3));
+      scene.add(new THREE.Points(stG, new THREE.PointsMaterial({ color: 0xdfe8ff, size: 1.6, sizeAttenuation: false, fog: false, transparent: true, opacity: 0.85, depthWrite: false })));
+    }
     mergeSceneStatic(scene, [map.pads, map.anim, map.clouds]);
     // uniform grid over the colliders (rebuilt automatically if more are added, e.g. barrels)
     const GRID = 8;
@@ -7115,6 +7246,38 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     sfx.onTrack(n => pushFeed(`🎵 ${n}`, '#c084fc'));
     sfx.startMusic(zombie ? 'zombie' : 'main');
 
+    // ---------- blob shadows: every panda and zombie gets a soft shadow, all in one draw call ----------
+    const BLOB_MAX = 72;
+    const blobs = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: softDotTex(), color: 0x000000, transparent: true, opacity: zombie ? 0.6 : 0.45, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }), BLOB_MAX);
+    blobs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    blobs.frustumCulled = false;
+    scene.add(blobs);
+    const blobM = new THREE.Matrix4(), blobS = new THREE.Vector3(), blobQ = new THREE.Quaternion(), blobP = new THREE.Vector3();
+    const updateBlobs = () => {
+      let n = 0;
+      const put = (pos, ground, size) => {
+        if (n >= BLOB_MAX) return;
+        const h = Math.max(0, pos.y - ground);
+        const k = Math.max(0.35, 1 - h / 7);
+        blobP.set(pos.x, ground + 0.04, pos.z);
+        blobS.set(size * k, 1, size * k);
+        blobM.compose(blobP, blobQ, blobS);
+        blobs.setMatrixAt(n++, blobM);
+      };
+      fighters.forEach(f => {
+        if (f.dead && !f.isMe) return;
+        if (f.onGround || f.groundY === undefined) f.groundY = f.pos.y;
+        put(f.pos, Math.min(f.groundY, f.pos.y), f.downed ? 2.6 : 2.1);
+      });
+      zombies.forEach(zz => {
+        if (zz.dead || zz.rise > 0.3) return;
+        if (zz.onGround || zz.groundY === undefined) zz.groundY = zz.pos.y;
+        put(zz.pos, Math.min(zz.groundY, zz.pos.y), zz.s * zz.def.w * (zz.def.crawl ? 1.6 : 1.15));
+      });
+      blobs.count = n;
+      blobs.instanceMatrix.needsUpdate = true;
+    };
+
     // ---------- main loop ----------
     let raf, prev = performance.now(), lastNet = 0, lastHud = 0, bob = 0;
     // adaptive resolution: if the device can't hold ~45 fps, render fewer pixels; raise them back when it can
@@ -7312,6 +7475,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             puff(new THREE.Vector3(me.pos.x, me.pos.y + 3, me.pos.z), me.hp >= 100 ? '#facc15' : '#f472b6', 3, 2.5);
           }
         }
+        me.strIn = strIn;
         const sy = Math.sin(me.yaw), cy = Math.cos(me.yaw);
         let wx = -sy * fwdIn + cy * strIn, wz = -cy * fwdIn - sy * strIn;
         const wl = Math.hypot(wx, wz);
@@ -7516,6 +7680,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         tickLitter(paused ? 0 : dt);
       }
       updateThrowables(paused ? 0 : dt);
+      updateBlobs();
       fighters.forEach(f => {
         if (f.say && f.say.t > 0) {
           f.say.t -= dt;
@@ -7717,7 +7882,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         const by = me.onGround ? Math.sin(bob * 1.6) * 0.06 : 0;
         camera.position.set(me.pos.x, me.pos.y + (me.downed ? 0.85 : 2.25) + by, me.pos.z);
         camera.rotation.order = 'YXZ';
-        camera.rotation.set(me.pitch + me.recoil, me.yaw, me.downed ? 0.18 : 0);
+        me.roll = (me.roll || 0) + ((me.onGround ? -(me.strIn || 0) * 0.028 : 0) - (me.roll || 0)) * Math.min(1, dt * 7);
+        camera.rotation.set(me.pitch + me.recoil, me.yaw, (me.downed ? 0.18 : 0) + me.roll);
         const def = SHOOT_WEAPONS[me.weapons[me.slot].key];
         const zoom = 1 + (def.zoom - 1) * me.adsT;
         const fov = BASE_FOV / zoom + (me.sprinting ? 7 : 0);
@@ -7910,6 +8076,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       window.removeEventListener('blur', releaseInputs);
       if (document.pointerLockElement) document.exitPointerLock();
       try { if (net.client) net.client.end(true); } catch (e) {}
+      if (GUN_ENV) { GUN_ENV.dispose(); GUN_ENV = null; }
       if (post) post.dispose();
       renderer.dispose();
       if (renderer.forceContextLoss) renderer.forceContextLoss();
@@ -7932,6 +8099,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
   return (
     <div className="game-layer absolute inset-0 z-30 bg-[#9ed0f2] text-white select-none overflow-hidden">
       <div ref={mountRef} className="absolute inset-0" />
+      <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(ellipse at center, transparent 58%, rgba(0,0,0,${variant === 'zombie' ? 0.5 : 0.28}) 100%)` }} />
 
       {/* crosshair + hit marker */}
       {!hud.scope && !hud.dead && (
