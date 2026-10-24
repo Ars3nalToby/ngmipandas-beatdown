@@ -2934,6 +2934,11 @@ const SHOOT_WEAPONS = {
   flamer: { name: 'DRAGON BREATH', short: 'FLAMER', icon: '🐉', dmg: 9, rate: 0.05, mag: 160, reload: 1.1, spread: 0.075, moveSpread: 0.02, pellets: 3, auto: true, recoil: 0.002, snd: 'shot_flame', zoom: 1.1, flame: true, range: 14 },
   revolver: { name: 'DIAMOND REVOLVER', short: 'REVOLVER', icon: '💎', dmg: 62, rate: 0.32, mag: 8, reload: 0.8, spread: 0.006, moveSpread: 0.02, pellets: 1, auto: false, recoil: 0.065, snd: 'shot_revolver', zoom: 1.35 }
 };
+// Pickup rules: a better gun is never swapped for a worse one. RPG outranks everything,
+// is never auto-dropped, and a second RPG turns it into a DUAL RPG (2 rockets per shot).
+const WEAPON_RANK = { pistol: 1, revolver: 2, smg: 2, shotgun: 3, rifle: 3, flamer: 3, ak: 4, sniper: 4, gatling: 5, golden: 6, rpg: 9 };
+const weaponRank = k => WEAPON_RANK[k] || 1;
+const weaponMag = w => SHOOT_WEAPONS[w.key].mag * (w.dual ? 2 : 1);
 const SHOOT_PICKUPS = {
   ak: { icon: '🔥', label: 'AK-47', color: '#f97316' },
   gatling: { icon: '🌀', label: 'WOODEN GATLING · hold fire to spin up', color: '#d6a76a' },
@@ -4995,6 +5000,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     };
     // ---------- downed / revive (zombie co-op) ----------
     const REVIVE_TIME = 2.6;
+    const REVIVE_RANGE = 3.6; // same reach for you and the bots, so "I'm next to them" always counts
     const goDown = f => {
       f.downed = true;
       f.hp = 0;
@@ -5028,7 +5034,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const tickDowned = (f, dt) => {
       f.bleed -= dt;
       // bots revive by standing close; players hold left click / FIRE next to you
-      const helper = fighters.some(o => o !== f && !o.dead && !o.downed && Math.hypot(o.pos.x - f.pos.x, o.pos.z - f.pos.z) < 2.9 && Math.abs(o.pos.y - f.pos.y) < 2.2 && (o.isBot || o.revTo === f.id));
+      const helper = fighters.some(o => o !== f && !o.dead && !o.downed && Math.hypot(o.pos.x - f.pos.x, o.pos.z - f.pos.z) < REVIVE_RANGE && Math.abs(o.pos.y - f.pos.y) < 2.2 && (o.isBot || o.revTo === f.id));
       f.revive = helper ? (f.revive || 0) + dt / REVIVE_TIME : Math.max(0, (f.revive || 0) - dt * 0.6);
       if (f.revive >= 1) reviveFighter(f, 'mate');
       else if (f.bleed <= 0) {
@@ -5055,7 +5061,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         return;
       }
       me.shotCd = (def.spinUp ? def.slowRate + (def.rate - def.slowRate) * me.spin : def.rate) * (world.bullT > 0 ? 0.8 : 1);
-      if (!(zombie && world.frenzyT > 0)) w.mag -= 1;
+      if (!(zombie && world.frenzyT > 0)) w.mag -= (w.dual ? Math.min(2, w.mag) : 1); // dual RPG spends two rockets per volley
       if (!def.flame && Math.random() < 0.35) spawnFx({ pos: gunModel.userData.muzzle.getWorldPosition(new THREE.Vector3()), size: 0.12, grow: 0.9, life: 0.45, color: 0xd6d3d1, smoke: true, opacity: 0.35, vy: 0.8, drag: 2 });
       sfx.play(def.snd, 1);
       me.recoil += def.recoil;
@@ -5073,7 +5079,15 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       camera.getWorldDirection(fwd);
       if (def.rocket) {
         const from = origin.clone().addScaledVector(fwd, 1.2).add(new THREE.Vector3(0, -0.15, 0));
-        fireRocket(from, fwd.clone(), me);
+        if (w.dual) {
+          // two launchers: a rocket off each shoulder, slightly toed-in so the blasts overlap
+          const side = new THREE.Vector3(-fwd.z, 0, fwd.x).normalize();
+          [-1, 1].forEach(sg => {
+            const d2 = fwd.clone().addScaledVector(side, -sg * 0.012).normalize();
+            fireRocket(from.clone().addScaledVector(side, sg * 0.45), d2, me);
+          });
+          me.shake = Math.max(me.shake, 0.2);
+        } else fireRocket(from, fwd.clone(), me);
         for (let i = 0; i < 8; i++) {
           spawnFx({ pos: origin.clone().addScaledVector(fwd, -1.2).add(new THREE.Vector3(0.3, -0.3, 0)), size: 0.6, grow: 2.6, life: 1.1 + Math.random() * 0.5, color: 0xd1d5db, smoke: true, opacity: 0.55, vx: -fwd.x * (5 + Math.random() * 4) + rnd() * 2, vy: rnd() * 1.5 + 0.5, vz: -fwd.z * (5 + Math.random() * 4) + rnd() * 2, drag: 2.2 });
         }
@@ -5144,7 +5158,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const startReload = () => {
       const w = me.weapons[me.slot];
       const def = SHOOT_WEAPONS[w.key];
-      if (me.reloadT > 0 || w.mag >= def.mag) return;
+      if (me.reloadT > 0 || w.mag >= weaponMag(w)) return;
       me.reloadT = def.reload;
       sfx.play('reload');
       if (zombie && zombies.some(zz => zz.pos.distanceTo(me.pos) < 20)) callout(me, 'reload');
@@ -5272,18 +5286,47 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       equipModel(me.weapons[i].key);
       sfx.play('reload', 0.45);
     };
+    // returns null when the pickup is NOT taken (slots full and it is no better than what you carry),
+    // otherwise a label to announce ('' = the pickup's normal label)
     const addWeapon = key => {
+      const cur = me.weapons[me.slot];
       const i = me.weapons.findIndex(w => w.key === key);
       if (i >= 0) {
-        me.weapons[i].mag = SHOOT_WEAPONS[key].mag;
-        selectSlot(i);
-        return;
+        const w = me.weapons[i];
+        if (key === 'rpg') {
+          // second RPG = DUAL RPG: two rockets per shot, double the magazine
+          const wasDual = !!w.dual;
+          w.dual = true;
+          w.mag = weaponMag(w);
+          selectSlot(i);
+          return wasDual ? '🚀🚀 DUAL RPG · REFILLED' : '🚀🚀 DUAL RPG · 2 ROCKETS PER SHOT';
+        }
+        w.mag = weaponMag(w); // same gun again = ammo refill, never a forced switch
+        if (cur && cur.key !== 'rpg' && weaponRank(key) > weaponRank(cur.key)) selectSlot(i);
+        return '';
       }
-      if (me.weapons.length >= 5) me.weapons.splice(me.slot, 1, { key, mag: SHOOT_WEAPONS[key].mag });
-      else me.weapons.push({ key, mag: SHOOT_WEAPONS[key].mag });
-      const idx = me.weapons.findIndex(w => w.key === key);
-      me.slot = -1;
-      selectSlot(idx);
+      const nw = { key, mag: SHOOT_WEAPONS[key].mag };
+      let idx;
+      if (me.weapons.length < 5) {
+        me.weapons.push(nw);
+        idx = me.weapons.length - 1;
+      } else {
+        // full: drop the weakest gun (never the RPG), and only if the new one is better than it
+        let lo = -1;
+        me.weapons.forEach((w, j) => {
+          if (w.key === 'rpg') return;
+          if (lo < 0 || weaponRank(w.key) < weaponRank(me.weapons[lo].key)) lo = j;
+        });
+        if (lo < 0 || (key !== 'rpg' && weaponRank(me.weapons[lo].key) >= weaponRank(key))) return null;
+        me.weapons[lo] = nw;
+        idx = lo;
+      }
+      // only jump to the new gun if it is clearly better, and NEVER away from an RPG
+      if (!cur || (cur.key !== 'rpg' && weaponRank(key) > weaponRank(cur.key))) {
+        me.slot = -1;
+        selectSlot(idx);
+      }
+      return '';
     };
     const botShoot = (b, t) => {
       const fx0 = Math.sin(b.face), fz0 = Math.cos(b.face);
@@ -6262,7 +6305,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     };
 
     // ---- squad chatter: speech bubbles, radio blips and (optional) voices ----
-    const CALLS = { reload: 'RELOADING!', help: 'HELP ME!', horde: 'HORDE INCOMING!', nade: 'FIRE IN THE HOLE!', med: 'CATCH — MEDKIT!', revive: 'I GOT YOU!', thanks: 'THANKS!', boss: 'RUG LORD! FOCUS FIRE!', brute: 'BIG ONE COMING!', bloater: 'BLOATER! SHOOT IT FROM RANGE!', spitter: 'SPITTER! WATCH THE ACID!', hurt: "I'M HURT BAD!", onme: 'ON ME! STICK TOGETHER!', clear: 'CLEAR!', barrel: 'SHOOT THE BARREL!' };
+    const CALLS = { reload: 'RELOADING!', help: 'HELP ME!', horde: 'HORDE INCOMING!', nade: 'FIRE IN THE HOLE!', med: 'CATCH — MEDKIT!', revive: 'I GOT YOU!', thanks: 'THANKS!', boss: 'RUG LORD! FOCUS FIRE!', brute: 'BIG ONE COMING!', bloater: 'BLOATER! SHOOT IT FROM RANGE!', spitter: 'SPITTER! WATCH THE ACID!', hurt: "I'M HURT BAD!", onme: 'ON ME! STICK TOGETHER!', clear: 'CLEAR!', barrel: 'SHOOT THE BARREL!', medrun: 'GETTING A MEDKIT!', cover: "I'LL COVER YOU!", gotkit: 'GOT A KIT · HOLD ON!' };
     const CALL_IDS = Object.keys(CALLS);
     let lastVoiceAt = 0;
     const showBubble = (f, text) => {
@@ -6530,6 +6573,42 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     };
 
     // ---- squad bots (zombie mode): stick with the humans, focus threats, revive, heal, frag ----
+    // Squad medkit plan (host only, shared by every bot, refreshed ~2x a second):
+    //  'bring' = a bot already carries a kit -> it walks it to the hurt teammate
+    //  'fetch' = nobody has a kit -> the bot nearest a medkit pickup goes for it, a second bot escorts it
+    let medPlan = null, medPlanAt = -1e9;
+    const planMedRun = () => {
+      const t0 = performance.now();
+      if (t0 - medPlanAt < 450) return medPlan;
+      medPlanAt = t0;
+      medPlan = null;
+      if (!zombie) return null;
+      const alive = fighters.filter(f => !f.dead);
+      const hurt = alive.filter(f => !f.downed && f.hp < 40).sort((p, q) => p.hp - q.hp)[0];
+      if (!hurt) return null;
+      if (hurt.isBot && (hurt.medkits || 0) > 0) return null; // it patches itself up
+      if (hurt.isMe && (me.medkits || 0) > 0) return null;
+      const dist = (p, q) => Math.hypot(p.pos.x - q.pos.x, p.pos.z - q.pos.z);
+      const carriers = alive.filter(f => f.isBot && !f.downed && f !== hurt && (f.medkits || 0) > 0).sort((p, q) => dist(p, hurt) - dist(q, hurt));
+      if (carriers.length) {
+        medPlan = { kind: 'bring', medic: carriers[0], hurt };
+        return medPlan;
+      }
+      const crew = alive.filter(f => f.isBot && !f.downed && f !== hurt);
+      const spots = pickups.filter(p => p.kind === 'medkit' && p.t <= 0 && p.y < 1.5);
+      if (!crew.length || !spots.length) return null;
+      let best = null;
+      for (const sp of spots) {
+        for (const f of crew) {
+          const d = Math.hypot(sp.x - f.pos.x, sp.z - f.pos.z);
+          if (!best || d < best.d) best = { sp, f, d };
+        }
+      }
+      if (!best || best.d > 95) return null;
+      const escort = crew.filter(f => f !== best.f).sort((p, q) => dist(p, best.f) - dist(q, best.f))[0] || null;
+      medPlan = { kind: 'fetch', medic: best.f, escort, spot: best.sp, hurt };
+      return medPlan;
+    };
     const updateSquadBot = (b, dt, frozen) => {
       if (b.dead) {
         b.respawnT -= dt;
@@ -6585,7 +6664,37 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         b.thinkT = 0.2 + Math.random() * 0.2;
         const fw = b.followWho;
         b.leader = b.followT > 0 && fw && !fw.dead && fighters.includes(fw) ? fw : fighters.find(f => !f.isBot && !f.dead && !f.downed) || null;
-        b.mate = b.downed ? null : fighters.find(f => f !== b && f.downed && !f.dead && Math.hypot(f.pos.x - b.pos.x, f.pos.z - b.pos.z) < 45) || null;
+        // ---- squad chemistry ----
+        // revives: only the nearest bot(s) run in (two for a human, one for a bot, none if a human is already on it);
+        // everyone else turns into cover and keeps the zombies off the medic
+        b.mate = null;
+        b.cover = null;
+        if (!b.downed) {
+          for (const m of fighters) {
+            if (m === b || !m.downed || m.dead || Math.hypot(m.pos.x - b.pos.x, m.pos.z - b.pos.z) > 45) continue;
+            const humanOnIt = fighters.some(o => !o.isBot && !o.dead && !o.downed && o.revTo === m.id);
+            const slots = humanOnIt ? 0 : m.isBot ? 1 : 2;
+            const crew = fighters.filter(o => o.isBot && o !== m && !o.dead && !o.downed).sort((p, q) => Math.hypot(p.pos.x - m.pos.x, p.pos.z - m.pos.z) - Math.hypot(q.pos.x - m.pos.x, q.pos.z - m.pos.z));
+            const rank = crew.indexOf(b);
+            if (rank >= 0 && rank < slots) { b.mate = m; break; }
+            if (!b.cover) b.cover = m;
+          }
+        }
+        // medkit run: someone is hurt, nobody holds a kit -> a pair (medic + escort) fetches one and brings it back
+        const mp = b.downed ? null : planMedRun();
+        const wasRole = b.medRole;
+        b.medRole = null;
+        if (mp) {
+          if (mp.medic === b) b.medRole = mp.kind;
+          else if (mp.kind === 'fetch' && mp.escort === b) b.medRole = 'escort';
+        }
+        if (b.medRole !== wasRole && b.medRole) {
+          if (b.medRole === 'fetch') callout(b, 'medrun');
+          else if (b.medRole === 'escort') callout(b, 'cover');
+        }
+        const medic = mp ? mp.medic : null;
+        const focus = new Map();
+        fighters.forEach(o => { if (o !== b && o.isBot && o.target && !o.target.dead && o.target.hp > 0) focus.set(o.target, (focus.get(o.target) || 0) + 1); });
         const cand = [];
         let nearest = 1e9, nearZ = null;
         for (const zz of zombies) {
@@ -6606,6 +6715,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           if (zz.def.boss) sc += 5;
           const tg = zz.target;
           if (tg && tg !== b && Math.hypot(zz.pos.x - tg.pos.x, zz.pos.z - tg.pos.z) < 5) sc += 8; // protect whoever it's chasing
+          // team play: finish what a teammate started, cover a revive, screen the medic
+          sc += Math.min(8, (focus.get(zz) || 0) * 4);
+          if (b.cover && Math.hypot(zz.pos.x - b.cover.pos.x, zz.pos.z - b.cover.pos.z) < 9) sc += 16;
+          if (medic && medic !== b && Math.hypot(zz.pos.x - medic.pos.x, zz.pos.z - medic.pos.z) < 8) sc += b.medRole === 'escort' ? 18 : 8;
+          if (b.leader && !b.leader.isBot && Math.hypot(zz.pos.x - b.leader.pos.x, zz.pos.z - b.leader.pos.z) < 6) sc += 6; // keep the human safe
           if (sc <= bs) continue;
           const hb = zz.def.hb || ZHB;
           if (hasLOS(eye, new THREE.Vector3(zz.pos.x + Math.sin(zz.face) * hb[5] * zz.s, zz.pos.y + zz.s * hb[2], zz.pos.z + Math.cos(zz.face) * hb[5] * zz.s))) {
@@ -6638,11 +6752,13 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         }
         // patch up a hurt teammate (or yourself)
         if (!frozen && !b.downed && (b.medkits || 0) > 0 && b.medCd <= 0) {
-          const hurt = fighters.find(f => f !== b && !f.dead && (f.downed || f.hp < 45) && Math.hypot(f.pos.x - b.pos.x, f.pos.z - b.pos.z) < 15 && Math.hypot(f.pos.x - b.pos.x, f.pos.z - b.pos.z) > 2.2 && hasLOS(eye, chestOf(f)));
+          // the most hurt (downed first) teammate in throwing range
+          const hurt = fighters.filter(f => f !== b && !f.dead && (f.downed || f.hp < 50) && Math.hypot(f.pos.x - b.pos.x, f.pos.z - b.pos.z) < 16 && Math.hypot(f.pos.x - b.pos.x, f.pos.z - b.pos.z) > 2.2 && hasLOS(eye, chestOf(f))).sort((p, q) => (p.hp - (p.downed ? 1000 : 0)) - (q.hp - (q.downed ? 1000 : 0)))[0];
           if (hurt) {
             doThrow(b, 'med', hurt.pos.clone());
             b.medkits -= 1;
-            b.medCd = 10;
+            b.medCd = 6;
+            callout(b, 'med');
           } else if (b.hp < 30 && b.nearD > 8) {
             b.medkits -= 1;
             b.medCd = 10;
@@ -6671,7 +6787,20 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         const ladderUp = L0 && map.ladders && map.ladders.length && L0.pos.y - b.pos.y > 2.5 && b.pos.y < 1.5;
         b.ladder = null;
         if (b.mate && (!best || b.nearD > 6)) b.goal = new THREE.Vector3(b.mate.pos.x, b.mate.pos.y, b.mate.pos.z);
-        else if (ladderUp) {
+        else if (b.medRole === 'fetch' && mp && mp.spot) b.goal = new THREE.Vector3(mp.spot.x, mp.spot.y, mp.spot.z);
+        else if (b.medRole === 'bring' && mp && mp.hurt) b.goal = new THREE.Vector3(mp.hurt.pos.x, mp.hurt.pos.y, mp.hurt.pos.z);
+        else if (b.medRole === 'escort' && medic) b.goal = new THREE.Vector3(medic.pos.x + Math.sin(medic.face + 2.4) * 2.5, medic.pos.y, medic.pos.z + Math.cos(medic.face + 2.4) * 2.5);
+        else if (b.cover && Math.hypot(b.cover.pos.x - b.pos.x, b.cover.pos.z - b.pos.z) < 32) {
+          // stand between the downed mate and the nearest zombie
+          const cm = b.cover;
+          let ox = 0, oz = 0;
+          if (b.nearZ) {
+            const zx = b.nearZ.pos.x - cm.pos.x, zz2 = b.nearZ.pos.z - cm.pos.z, zl = Math.hypot(zx, zz2) || 1;
+            ox = (zx / zl) * 3.5;
+            oz = (zz2 / zl) * 3.5;
+          }
+          b.goal = new THREE.Vector3(cm.pos.x + ox, cm.pos.y, cm.pos.z + oz);
+        } else if (ladderUp) {
           const lt = map.ladders.reduce((a, l) => (Math.hypot(l.x - L0.pos.x, l.z - L0.pos.z) < Math.hypot(a.x - L0.pos.x, a.z - L0.pos.z) ? l : a), map.ladders[0]);
           b.goal = new THREE.Vector3(lt.x, 0, lt.z);
           b.ladder = lt;
@@ -6686,6 +6815,17 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           b.stuckT = 0;
         }
         b.wp = b.goal ? navStep(b.pos, b.goal) : null;
+      }
+      // medic reaches the kit -> grabs it (the host owns the bots; everyone else hides the pickup via the 'p' packet)
+      if (b.medRole === 'fetch' && !b.downed && !frozen && medPlan && medPlan.medic === b && medPlan.spot && medPlan.spot.t <= 0 && (b.medkits || 0) < 2 && Math.hypot(b.pos.x - medPlan.spot.x, b.pos.z - medPlan.spot.z) < 2.2) {
+        const sp = medPlan.spot;
+        sp.t = 15;
+        sp.grp.visible = false;
+        send({ t: 'p', id: myId, i: pickups.indexOf(sp) });
+        b.medkits = Math.min(2, (b.medkits || 0) + 1);
+        callout(b, 'gotkit');
+        play3d('powerup', b.pos, 0.6, 1, 60);
+        medPlanAt = -1e9; // re-plan now: with a kit in hand the medic switches to 'bring'
       }
       let dx = 0, dz = 0;
       const speed = 7.2;
@@ -6755,6 +6895,18 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           const push = ((keep - b.nearD) / keep) * 1.8;
           dx += (ax / al) * push;
           dz += (az / al) * push;
+        }
+      }
+      // don't stack on top of each other: gentle spacing from standing teammates (never from the one being revived)
+      if (!b.downed) {
+        for (const o of fighters) {
+          if (o === b || o.dead || o.downed || Math.abs(o.pos.y - b.pos.y) > 2) continue;
+          const sx = b.pos.x - o.pos.x, sz = b.pos.z - o.pos.z, sd = Math.hypot(sx, sz);
+          if (sd > 0.01 && sd < 2.4) {
+            const push = ((2.4 - sd) / 2.4) * 1.3;
+            dx += (sx / sd) * push;
+            dz += (sz / sd) * push;
+          }
         }
       }
       if (frozen || b.downed) { dx = 0; dz = 0; } // downed bots stay put so you can reach them
@@ -8162,11 +8314,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (me.reloadT > 0) {
           me.reloadT -= dt;
           if (me.reloadT <= 0) {
-            w.mag = def.mag;
+            w.mag = weaponMag(w);
           }
         }
         // hold left click / FIRE next to a downed teammate to pick them up
-        const reviveMate = zombie && !me.downed ? fighters.find(o => o !== me && o.downed && !o.dead && Math.hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z) < 2.8 && Math.abs(o.pos.y - me.pos.y) < 2.2) : null;
+        const reviveMate = zombie && !me.downed ? fighters.find(o => o !== me && o.downed && !o.dead && Math.hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z) < REVIVE_RANGE - 0.3 && Math.abs(o.pos.y - me.pos.y) < 2.2) : null;
         const wasRev = me.revTo;
         me.revTo = reviveMate && c.firing && !frozen ? reviveMate.id : null;
         me.nearDowned = reviveMate;
@@ -8207,6 +8359,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           p.grp.rotation.y += dt;
           if (!me.downed && !me.dead && Math.hypot(me.pos.x - p.x, me.pos.z - p.z) < 2.2 && Math.abs(me.pos.y - p.y) < 2) {
             const pd = SHOOT_PICKUPS[p.kind];
+            let pickMsg = '';
             if (p.kind === 'burger') {
               if (me.hp >= 100) return;
               me.hp = Math.min(100, me.hp + 50);
@@ -8217,12 +8370,21 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               if (me.grenades >= 4) return;
               me.grenades = Math.min(4, me.grenades + 2);
             } else {
-              addWeapon(p.kind);
+              const got = addWeapon(p.kind);
+              if (got === null) {
+                // inventory full and this gun is no upgrade: leave it on the floor
+                if (now - (me.fullMsgAt || 0) > 2500) {
+                  me.fullMsgAt = now;
+                  announceNow('🎒 SLOTS FULL · this gun is no better than yours', '#94a3b8');
+                }
+                return;
+              }
+              pickMsg = got;
             }
             p.t = 15;
             p.grp.visible = false;
             send({ t: 'p', id: myId, i: pi });
-            announceNow(`${pd.icon} ${pd.label}`, pd.color);
+            announceNow(pickMsg || `${pd.icon} ${pd.label}`, pd.color);
             sfx.play('powerup');
           }
         });
@@ -8604,7 +8766,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           const boss = zombies.find(o => o.def.boss);
           const left = Math.max(0, zd.toSpawn - zd.spawned) + (zd.horde < 3 ? zd.hordeLeft : 0) + zombies.length;
           zHud = { wave: zd.wave, phase: zd.phase, t: Math.max(0, Math.ceil(zd.t)), left, horde: zd.horde, bossWave: zd.bossWave, final: isFinalWave(zd.wave), mode: zmode, boss: boss ? { hp: Math.max(0, boss.hp), max: boss.maxHp, enraged: !!boss.enraged } : null };
-          squad = fighters.map(f => ({ id: f.id, name: f.name, color: f.color, hp: Math.max(0, Math.round(f.hp)), downed: !!f.downed, dead: f.dead, isMe: f.isMe, bot: f.isBot }));
+          squad = fighters.map(f => ({ id: f.id, name: f.name, color: f.color, hp: Math.max(0, Math.round(f.hp)), downed: !!f.downed, dead: f.dead, isMe: f.isMe, bot: f.isBot, kills: f.kills || 0, meds: f.medkits || 0, near: !f.isMe && !f.dead ? Math.round(Math.hypot(f.pos.x - me.pos.x, f.pos.z - me.pos.z)) : 0 }));
           if ((zd.horde === 1 || zd.horde === 2) && !me.dead) zmarks.push({ k: '⚠️', c: '#ef4444', ...proj(zd.hordeAt[0], 3, zd.hordeAt[1]) });
           if (boss && !me.dead) zmarks.push({ k: '👹', c: '#a855f7', ...proj(boss.pos.x, boss.pos.y + boss.def.s * 2, boss.pos.z) });
           if (huntOn() && !me.dead) zombies.forEach(o => { if (!o.def.boss && !o.dead) zmarks.push({ k: '🧟', c: '#a3e635', ...proj(o.pos.x, o.pos.y + o.s * 1.9, o.pos.z) }); });
@@ -8625,7 +8787,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           hp: Math.max(0, Math.round(me.hp)),
           mag: w.mag,
           reserve: Infinity,
-          wname: def.name,
+          wname: w.dual ? 'DUAL RPG-7 · ×2' : def.name,
           wkey: w.key,
           reloading: me.reloadT > 0 ? 1 - me.reloadT / def.reload : 0,
           kills: me.kills,
@@ -8657,7 +8819,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             return { k: o.key, x: Math.max(4, Math.min(96, x)), y: Math.max(10, Math.min(90, y)), d: Math.round(Math.hypot(o.x - me.pos.x, o.z - me.pos.z)) };
           })(),
           scope: w.key === 'sniper' && me.adsT > 0.8 && !me.dead,
-          weapons: me.weapons.map((wp, i) => ({ key: wp.key, short: SHOOT_WEAPONS[wp.key].short, icon: SHOOT_WEAPONS[wp.key].icon, active: i === me.slot })),
+          weapons: me.weapons.map((wp, i) => ({ key: wp.key, short: wp.dual ? 'DUAL RPG' : SHOOT_WEAPONS[wp.key].short, icon: wp.dual ? '🚀🚀' : SHOOT_WEAPONS[wp.key].icon, active: i === me.slot })),
           moon: Math.max(0, Math.ceil(world.moonT)),
           bull: Math.max(0, Math.ceil(world.bullT)),
           prot: me.protT > 0 && !me.dead,
@@ -8738,7 +8900,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
 
       {hud.aim && !hud.dead && (
         <div className="absolute left-1/2 top-[56%] -translate-x-1/2 pointer-events-none text-center">
-          <div className="text-[12px] font-black" style={{ color: hud.aim.color, textShadow: '0 1px 2px #000' }}>{hud.aim.name}</div>
+          <div className="text-[15px] md:text-lg font-black" style={{ color: hud.aim.color, textShadow: '0 1px 3px #000' }}>{hud.aim.name}</div>
           <div className="w-24 h-1.5 bg-black/50 rounded mt-0.5 overflow-hidden"><div className="h-full bg-rose-500" style={{ width: `${hud.aim.hp}%` }} /></div>
         </div>
       )}
@@ -8747,11 +8909,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       <div className="absolute left-1/2 -translate-x-1/2 top-0 safe-top flex flex-col items-center gap-1 pointer-events-none">
         {hud.zombie ? (
           <>
-            <div className="font-game text-lg md:text-2xl px-3 py-0.5 rounded-lg bg-slate-950/85 text-lime-300 shadow border border-lime-400/40">
+            <div className="font-game text-2xl md:text-4xl px-4 py-1 rounded-xl bg-slate-950/85 text-lime-300 shadow border border-lime-400/40">
               {hud.zombie.bossWave ? (hud.zombie.final ? '👑 FINAL WAVE' : `👹 BOSS WAVE ${hud.zombie.wave}`) : `🧟 WAVE ${hud.zombie.wave || 1}`}
               {hud.zombie.mode !== 'incoming' && <span className="text-slate-400 text-sm md:text-base"> / {ZOMBIE_RAID_WAVES}</span>}
             </div>
-            <div className={`text-[9px] md:text-[11px] font-black px-2 py-0.5 rounded ${hud.zombie.horde === 1 || hud.zombie.horde === 2 ? 'bg-rose-600/90 text-white animate-pulse' : 'bg-slate-900/75 text-slate-200'}`}>
+            <div className={`text-[14px] md:text-xl font-black px-3 py-1 rounded-lg ${hud.zombie.horde === 1 || hud.zombie.horde === 2 ? 'bg-rose-600/90 text-white animate-pulse' : 'bg-slate-900/80 text-slate-100'}`}>
               {hud.zombie.phase === 'boot' ? '🔦 SURVIVORS · STICK TOGETHER'
                 : hud.zombie.phase === 'prep' ? `NEXT WAVE IN ${hud.zombie.t}s · grab weapons`
                 : hud.zombie.phase === 'clear' ? '✅ WAVE CLEARED'
@@ -8760,11 +8922,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 : `🧟 ${hud.zombie.left} ZOMBIES LEFT`}
             </div>
             {hud.frenzy > 0 && (
-              <div className="text-[10px] md:text-xs font-black px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 animate-pulse">♾️ BOTTOMLESS MAGS · {hud.frenzy}s</div>
+              <div className="text-sm md:text-lg font-black px-3 py-1 rounded-full bg-amber-400 text-slate-950 animate-pulse">♾️ BOTTOMLESS MAGS · {hud.frenzy}s</div>
             )}
             {hud.zombie.boss && (
-              <div className="w-[240px] md:w-[420px] bg-slate-950/85 rounded-xl px-2.5 py-1.5 border border-purple-500/60">
-                <div className="flex justify-between text-[10px] md:text-xs font-black">
+              <div className="w-[260px] md:w-[460px] bg-slate-950/85 rounded-xl px-3 py-2 border border-purple-500/60">
+                <div className="flex justify-between text-sm md:text-lg font-black">
                   <span className="text-purple-300">{hud.zombie.final ? '👑 THE RUG LORD · FINAL FORM' : '👹 THE RUG LORD'}{hud.zombie.boss.enraged ? ' · 😡' : ''}</span>
                   <span className="font-mono text-white">{Math.ceil(hud.zombie.boss.hp)}</span>
                 </div>
@@ -8808,7 +8970,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       {/* top left */}
       <div className="absolute left-0 top-0 safe-top safe-x pointer-events-auto">
         <div className="flex items-center gap-2 bg-slate-950/75 rounded-xl px-2.5 py-1.5">
-          <div className="leading-none"><span className="text-[9px] text-slate-400 font-bold block">K / D</span><span className="font-game text-base text-emerald-300">{hud.kills}<span className="text-slate-500">/</span><span className="text-rose-300">{hud.deaths}</span></span></div>
+          {hud.zombie ? (
+            <div className="leading-none"><span className="text-[11px] md:text-sm text-lime-200 font-black block">🧟 YOU KILLED</span><span className="font-game text-3xl md:text-4xl text-lime-300">{hud.kills}</span></div>
+          ) : (
+            <div className="leading-none"><span className="text-[11px] md:text-sm text-slate-300 font-black block">K / D</span><span className="font-game text-2xl md:text-3xl text-emerald-300">{hud.kills}<span className="text-slate-500">/</span><span className="text-rose-300">{hud.deaths}</span></span></div>
+          )}
           <span className="hidden md:inline text-[10px] font-bold text-cyan-300">● {hud.net} ({hud.peers})</span>
           <button onClick={() => { const m = !muted; sfx.setMuted(m); setMutedS(m); }} className="touch-btn w-8 h-8 rounded-lg bg-slate-800 text-sm cursor-pointer">{muted ? '🔇' : '🔊'}</button>
           {IS_TOUCH && clips.length > 0 && (
@@ -8838,63 +9004,86 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         )}
         <div className={`${IS_TOUCH ? (hud.zombie ? 'hidden' : 'hidden md:flex') : 'flex'} flex-col items-end gap-1`}>
           {hud.feed.map(f => (
-            <div key={f.id} className="text-[11px] font-bold px-2 py-0.5 rounded bg-slate-950/70" style={{ color: f.color }}>{f.msg}</div>
+            <div key={f.id} className="text-[13px] md:text-sm font-bold px-2 py-0.5 rounded bg-slate-950/75" style={{ color: f.color }}>{f.msg}</div>
           ))}
         </div>
       </div>
 
       {/* bottom left: HP */}
-      <div className={`absolute left-0 safe-x pointer-events-none ${IS_TOUCH ? 'top-[64px]' : 'bottom-0 safe-bottom'}`}>
-        <div className="flex items-center gap-2 bg-white/90 rounded-lg px-2 py-1 shadow">
-          <span className="font-game text-slate-900 text-lg md:text-xl w-10 text-right">{hud.hp}</span>
-          <div className="w-24 md:w-40 h-3 bg-slate-300 rounded overflow-hidden"><div className={`h-full ${hud.hp > 50 ? 'bg-emerald-500' : hud.hp > 25 ? 'bg-amber-400' : 'bg-rose-500'}`} style={{ width: `${hud.hp}%` }} /></div>
+      <div className={`absolute left-0 safe-x pointer-events-none ${IS_TOUCH ? 'top-[calc(env(safe-area-inset-top)+80px)]' : 'bottom-0 safe-bottom'}`}>
+        <div className={`flex items-center gap-2 bg-white/90 rounded-lg px-2.5 shadow ${IS_TOUCH ? 'py-1' : 'py-1.5'}`}>
+          <span className={`font-game text-slate-900 text-right ${IS_TOUCH ? 'text-xl w-11' : 'text-2xl md:text-4xl w-14 md:w-20'}`}>{hud.hp}</span>
+          <div className={`bg-slate-300 rounded overflow-hidden ${IS_TOUCH ? 'w-24 h-3.5' : 'w-28 md:w-56 h-4 md:h-5'}`}><div className={`h-full ${hud.hp > 50 ? 'bg-emerald-500' : hud.hp > 25 ? 'bg-amber-400' : 'bg-rose-500'}`} style={{ width: `${hud.hp}%` }} /></div>
         </div>
       </div>
 
       {/* bottom right: ammo */}
       <div className={`absolute right-0 safe-x pointer-events-none text-right ${IS_TOUCH ? (hud.zombie ? 'top-[calc(env(safe-area-inset-top)+124px)]' : 'top-[calc(env(safe-area-inset-top)+86px)]') : 'bottom-0 safe-bottom'}`}>
-        <div className="flex flex-wrap justify-end gap-1 mb-1 max-w-[260px] ml-auto">
+        <div className="flex flex-wrap justify-end gap-1.5 mb-1 max-w-[300px] ml-auto">
           {hud.weapons.map((wp, i) => (
             <div
               key={i}
               onPointerDown={IS_TOUCH ? e => { e.stopPropagation(); c.slot = i; } : undefined}
-              className={`${IS_TOUCH ? 'pointer-events-auto px-2 py-1 text-[10px]' : 'px-1.5 py-0.5 text-[9px] md:text-[10px]'} rounded-md font-black shadow ${wp.active ? (wp.key === 'golden' ? 'bg-yellow-300 text-slate-900' : 'bg-white text-slate-900') : 'bg-slate-900/70 text-slate-300'}`}
+              className={`${IS_TOUCH ? 'pointer-events-auto px-2.5 py-1.5 text-[13px]' : 'px-2.5 py-1 text-xs md:text-sm'} rounded-lg font-black shadow ${wp.active ? (wp.key === 'golden' ? 'bg-yellow-300 text-slate-900' : wp.key === 'rpg' ? 'bg-lime-300 text-slate-900' : 'bg-white text-slate-900') : 'bg-slate-900/75 text-slate-300'}`}
             >
               <span className="opacity-50 mr-0.5">{i + 1}</span>{wp.icon} {wp.short}
             </div>
           ))}
-          <div
-            onPointerDown={IS_TOUCH ? e => { e.stopPropagation(); c.nade = true; } : undefined}
-            className={`${IS_TOUCH ? 'pointer-events-auto px-2 py-1 text-[10px]' : 'px-1.5 py-0.5 text-[9px] md:text-[10px]'} rounded-md font-black shadow ${hud.nades ? 'bg-lime-300 text-slate-900' : 'bg-slate-900/70 text-slate-500'}`}
-          >{IS_TOUCH ? '' : <span className="opacity-60 mr-0.5">F</span>}💣 {hud.nades}</div>
-          {hud.zombie && (
-            <div
-              onPointerDown={IS_TOUCH ? e => { e.stopPropagation(); c.med = true; } : undefined}
-              className={`${IS_TOUCH ? 'pointer-events-auto px-2 py-1 text-[10px]' : 'px-1.5 py-0.5 text-[9px] md:text-[10px]'} rounded-md font-black shadow ${hud.meds ? 'bg-rose-300 text-slate-900' : 'bg-slate-900/70 text-slate-500'}`}
-            >{IS_TOUCH ? '' : <span className="opacity-60 mr-0.5">H</span>}➕ {hud.meds}</div>
+          {!IS_TOUCH && (
+            <div className={`px-3 py-1 text-sm md:text-base rounded-lg font-black shadow ${hud.nades ? 'bg-lime-300 text-slate-900' : 'bg-slate-900/75 text-slate-500'}`}><span className="opacity-60 mr-1 text-xs">F</span>💣 {hud.nades}</div>
+          )}
+          {!IS_TOUCH && hud.zombie && (
+            <div className={`px-3 py-1 text-sm md:text-base rounded-lg font-black shadow ${hud.meds ? 'bg-rose-300 text-slate-900' : 'bg-slate-900/75 text-slate-500'}`}><span className="opacity-60 mr-1 text-xs">H</span>➕ {hud.meds}</div>
           )}
         </div>
         <div className={`inline-block ${hud.wkey === 'golden' ? 'bg-yellow-300/95' : 'bg-sky-300/95'} text-slate-900 rounded-lg px-3 py-1 shadow`}>
-          <div className="font-game text-xl md:text-3xl leading-none">{hud.frenzy > 0 ? '∞' : hud.mag}<span className="text-sm md:text-base text-slate-700"> / {hud.reserve === Infinity ? '∞' : hud.reserve}</span></div>
-          <div className="text-[9px] md:text-[10px] font-black">{hud.wname}</div>
+          <div className="font-game text-[28px] md:text-5xl leading-none">{hud.frenzy > 0 ? '∞' : hud.mag}<span className="text-base md:text-xl text-slate-700"> / {hud.reserve === Infinity ? '∞' : hud.reserve}</span></div>
+          <div className="text-xs md:text-base font-black">{hud.wname}</div>
           {hud.reloading > 0 && <div className="h-1 mt-0.5 bg-slate-700/30 rounded overflow-hidden"><div className="h-full bg-slate-900" style={{ width: `${hud.reloading * 100}%` }} /></div>}
         </div>
       </div>
 
       {/* zombie co-op: squad status, markers, downed + revive */}
       {hud.zombie && hud.squad.length > 0 && (
-        <div className={`absolute left-0 safe-x pointer-events-none flex flex-col gap-1 ${IS_TOUCH ? 'top-[100px]' : ''}`} style={IS_TOUCH ? undefined : { bottom: 'calc(env(safe-area-inset-bottom) + 50px)' }}>
-          {hud.squad.map(m => (
-            <div key={m.id} className={`flex items-center gap-1.5 rounded-md px-1.5 py-0.5 w-[150px] md:w-[190px] ${m.isMe ? 'bg-emerald-900/75' : 'bg-slate-950/70'}`}>
-              <span className="w-2 h-2 rounded-full shrink-0" style={{ background: m.color }} />
-              <span className="text-[10px] md:text-[11px] font-black truncate flex-1">{m.isMe ? 'YOU' : m.name}{m.bot ? ' 🤖' : ''}</span>
-              {m.dead ? (
-                <span className="text-[10px] font-black text-slate-400">💀 NEXT WAVE</span>
-              ) : m.downed ? (
-                <span className="text-[10px] font-black text-rose-400 animate-pulse">🆘 DOWN</span>
-              ) : (
-                <div className="w-12 md:w-16 h-1.5 bg-slate-700 rounded overflow-hidden">
+        <div className={`absolute left-0 safe-x pointer-events-none flex flex-col gap-1 ${IS_TOUCH ? 'top-[calc(env(safe-area-inset-top)+118px)]' : ''}`} style={IS_TOUCH ? undefined : { bottom: 'calc(env(safe-area-inset-bottom) + 70px)' }}>
+          <div className="flex items-center justify-between rounded-md px-2 py-0.5 md:py-1 bg-lime-900/80 w-[176px] md:w-[270px]">
+            <span className="text-[13px] md:text-base font-black text-lime-200">🧟 SQUAD KILLS</span>
+            <span className="font-game text-lg md:text-2xl text-lime-300">{hud.squad.reduce((a, m) => a + m.kills, 0)}</span>
+          </div>
+          {IS_TOUCH ? hud.squad.map(m => (
+            <div key={m.id} className={`rounded-md px-1.5 py-0.5 w-[176px] ${m.isMe ? 'bg-emerald-900/80' : 'bg-slate-950/80'} ${!m.dead && !m.downed && m.hp < 30 ? 'ring-2 ring-rose-500' : ''}`}>
+              <div className="flex items-center gap-1">
+                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: m.color }} />
+                <span className="text-[13px] font-black truncate flex-1">{m.isMe ? 'YOU' : m.name}</span>
+                {m.dead ? <span className="text-[13px] font-black text-slate-400">💀</span>
+                  : m.downed ? <span className="text-[13px] font-black text-rose-400 animate-pulse">🆘{m.near ? ` ${m.near}m` : ''}</span>
+                  : <span className={`text-[13px] font-black ${m.hp > 50 ? 'text-emerald-300' : m.hp > 25 ? 'text-amber-300' : 'text-rose-400'}`}>{m.hp}{m.meds > 0 ? `➕${m.meds}` : ''}</span>}
+                <span className="text-[13px] font-black text-lime-300 shrink-0">🧟{m.kills}</span>
+              </div>
+              {!m.dead && !m.downed && (
+                <div className="h-1 mt-0.5 bg-slate-700 rounded overflow-hidden">
                   <div className={`h-full ${m.hp > 50 ? 'bg-emerald-400' : m.hp > 25 ? 'bg-amber-400' : 'bg-rose-500'}`} style={{ width: `${m.hp}%` }} />
+                </div>
+              )}
+            </div>
+          )) : hud.squad.map(m => (
+            <div key={m.id} className={`rounded-md px-2 py-1 w-[200px] md:w-[270px] ${m.isMe ? 'bg-emerald-900/80' : 'bg-slate-950/80'} ${!m.dead && !m.downed && m.hp < 30 ? 'ring-2 ring-rose-500' : ''}`}>
+              <div className="flex items-center gap-1.5">
+                <span className="w-3 h-3 rounded-full shrink-0" style={{ background: m.color }} />
+                <span className="text-[13px] md:text-base font-black truncate flex-1">{m.isMe ? 'YOU' : m.name}{m.bot ? ' 🤖' : ''}</span>
+                <span className="text-[13px] md:text-base font-black text-lime-300 shrink-0">🧟 {m.kills}</span>
+              </div>
+              {m.dead ? (
+                <div className="text-[12px] md:text-sm font-black text-slate-400">💀 DEAD · back next wave</div>
+              ) : m.downed ? (
+                <div className="text-[12px] md:text-sm font-black text-rose-400 animate-pulse">🆘 DOWN · needs a revive{m.near ? ` · ${m.near}m` : ''}</div>
+              ) : (
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <div className="flex-1 h-2.5 bg-slate-700 rounded overflow-hidden">
+                    <div className={`h-full ${m.hp > 50 ? 'bg-emerald-400' : m.hp > 25 ? 'bg-amber-400' : 'bg-rose-500'}`} style={{ width: `${m.hp}%` }} />
+                  </div>
+                  <span className={`text-[12px] md:text-sm font-black w-8 text-right ${m.hp > 50 ? 'text-emerald-300' : m.hp > 25 ? 'text-amber-300' : 'text-rose-400'}`}>{m.hp}</span>
+                  {m.meds > 0 && <span className="text-[11px] md:text-xs font-black text-rose-300">➕{m.meds}</span>}
                 </div>
               )}
             </div>
@@ -8904,14 +9093,14 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       {hud.zmarks && !hud.dancing && hud.zmarks.map((mk, i) => (
         <div key={`zm${i}`} className="absolute pointer-events-none -translate-x-1/2 -translate-y-1/2 text-center" style={{ left: `${mk.x}%`, top: `${mk.y}%` }}>
           <div className={`w-8 h-8 mx-auto rounded-full border-2 flex items-center justify-center text-sm bg-slate-950/75 ${mk.k === '⚠️' ? 'animate-pulse' : ''}`} style={{ borderColor: mk.c }}>{mk.k}</div>
-          <div className="text-[10px] font-black text-white whitespace-nowrap" style={{ textShadow: '0 1px 2px #000' }}>{mk.name ? `${mk.name} · ` : ''}{mk.d}m</div>
+          <div className="text-[13px] md:text-base font-black text-white whitespace-nowrap" style={{ textShadow: '0 1px 3px #000, 0 0 2px #000' }}>{mk.name ? `${mk.name} · ` : ''}{mk.d}m</div>
         </div>
       ))}
       {hud.downed && !results && (
         <div className="absolute left-1/2 top-[60%] -translate-x-1/2 pointer-events-none text-center">
-          <div className="bg-rose-700/90 text-white px-5 py-2 rounded-lg shadow-xl border-2 border-white/70 w-[270px]">
-            <div className="font-game text-base md:text-lg">🆘 YOU'RE DOWN</div>
-            <div className="text-[11px] font-bold opacity-90">{hud.downed.revive > 0.02 ? 'A teammate is reviving you… hold on' : `Keep shooting · a teammate (or a thrown ➕) can save you · ${hud.downed.bleed}s`}</div>
+          <div className="bg-rose-700/90 text-white px-5 py-2 rounded-lg shadow-xl border-2 border-white/70 w-[320px] md:w-[420px]">
+            <div className="font-game text-2xl md:text-3xl">🆘 YOU'RE DOWN</div>
+            <div className="text-sm md:text-base font-bold opacity-95">{hud.downed.revive > 0.02 ? 'A teammate is reviving you… hold on' : `Keep shooting · a teammate (or a thrown ➕) can save you · ${hud.downed.bleed}s`}</div>
             <div className="h-2 mt-1 bg-black/40 rounded overflow-hidden">
               <div className={`h-full ${hud.downed.revive > 0.02 ? 'bg-emerald-400' : 'bg-white'}`} style={{ width: `${hud.downed.revive > 0.02 ? hud.downed.revive * 100 : Math.min(100, (hud.downed.bleed / 28) * 100)}%` }} />
             </div>
@@ -8919,17 +9108,18 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         </div>
       )}
       {hud.reviveHint && !hud.reviving && !hud.downed && !results && (
-        <div className="absolute left-1/2 top-[63%] -translate-x-1/2 pointer-events-none text-center">
-          <div className="text-[12px] md:text-sm font-black px-3 py-1 rounded-full bg-emerald-500/90 text-slate-950 animate-pulse">💚 HOLD {IS_TOUCH ? 'FIRE' : 'LEFT CLICK'} TO REVIVE {hud.reviveHint}</div>
+        <div className="absolute left-1/2 top-[60%] -translate-x-1/2 pointer-events-none text-center">
+          <div className="text-lg md:text-3xl font-black px-5 py-2 rounded-2xl bg-emerald-500/95 text-slate-950 border-4 border-white shadow-2xl animate-pulse">💚 HOLD {IS_TOUCH ? 'THE REVIVE BUTTON' : 'LEFT CLICK'}<span className="block text-base md:text-xl">to revive {hud.reviveHint}</span></div>
         </div>
       )}
       {hud.ladderHint && !hud.reviveHint && !results && (
         <div className="absolute left-1/2 top-[66%] -translate-x-1/2 pointer-events-none text-[11px] md:text-xs font-black px-3 py-1 rounded-full bg-amber-300/90 text-slate-950">🪜 Walk into the ladder to climb to the roof</div>
       )}
       {hud.reviving && !hud.downed && !hud.dead && !results && (
-        <div className="absolute left-1/2 top-[63%] -translate-x-1/2 pointer-events-none text-center">
-          <div className="text-[12px] md:text-sm font-black text-emerald-300" style={{ textShadow: '0 1px 2px #000' }}>💚 REVIVING {hud.reviving.name} · keep holding</div>
-          <div className="w-44 h-2 mt-1 bg-black/50 rounded overflow-hidden mx-auto"><div className="h-full bg-emerald-400" style={{ width: `${hud.reviving.p * 100}%` }} /></div>
+        <div className="absolute left-1/2 top-[60%] -translate-x-1/2 pointer-events-none text-center">
+          <div className="text-lg md:text-3xl font-black text-emerald-300" style={{ textShadow: '0 2px 4px #000' }}>💚 REVIVING {hud.reviving.name}</div>
+          <div className="text-sm md:text-lg font-black text-white" style={{ textShadow: '0 1px 3px #000' }}>keep holding {IS_TOUCH ? '' : 'left click'}</div>
+          <div className="w-64 md:w-96 h-4 md:h-5 mt-1 bg-black/60 rounded-full overflow-hidden mx-auto border-2 border-white/70"><div className="h-full bg-emerald-400" style={{ width: `${hud.reviving.p * 100}%` }} /></div>
         </div>
       )}
 
@@ -9183,24 +9373,27 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             onPointerCancel={() => { c.lookPtr = null; }}
           />
           <div className="absolute right-0 bottom-0 safe-bottom safe-x pointer-events-none">
-            <div className="relative w-[210px] h-[200px]">
+            <div className="relative w-[340px] h-[260px]">
               <button
-                className="touch-btn pointer-events-auto absolute right-2 bottom-2 w-[92px] h-[92px] rounded-full bg-rose-500/90 border-4 border-white/80 font-game text-sm text-white shadow-xl"
+                className={`touch-btn pointer-events-auto absolute right-2 bottom-2 w-[104px] h-[104px] rounded-full border-4 border-white/80 font-game text-white shadow-xl ${hud.reviveHint || hud.reviving ? 'bg-emerald-500/95 text-base animate-pulse' : 'bg-rose-500/90 text-lg'}`}
                 onPointerDown={e => { e.stopPropagation(); c.firing = true; c.firePtr = e.pointerId; c.fx = e.clientX; c.fy = e.clientY; try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {} }}
                 onPointerMove={e => { if (c.firePtr !== e.pointerId) return; c.lookDX += e.clientX - c.fx; c.lookDY += e.clientY - c.fy; c.fx = e.clientX; c.fy = e.clientY; }}
                 onPointerUp={() => { c.firing = false; c.firePtr = null; }}
                 onPointerCancel={() => { c.firing = false; c.firePtr = null; }}
-              >FIRE</button>
+              >{hud.reviveHint || hud.reviving ? <span className="leading-tight block">HOLD<br />REVIVE</span> : 'FIRE'}</button>
               {[
-                ['ADS', 'right-[108px] bottom-[6px]', () => { c.ads = !c.ads; }],
-                ['JUMP', 'right-[100px] bottom-[78px]', () => { c.jump = true; }],
-                ['R', 'right-[28px] bottom-[112px]', () => { c.reload = true; }],
-                ['⇄', 'right-[150px] bottom-[130px]', () => { c.cycle = 1; }],
-                ['💃', 'right-[168px] bottom-[64px]', () => { c.dance = true; }],
-                ...(clipRef.current ? [['🎬', 'right-[176px] bottom-[196px]', () => { clipRef.current && clipRef.current.highlight('MY CLIP', 1200); setClipToast('🎬 Saving the last 30–60 s…'); }]] : []),
-                ...(hud.strike ? [['☄️', 'right-[36px] bottom-[180px]', () => { c.strike = true; }]] : [])
-              ].map(([label, pos, fn]) => (
-                <button key={label} className={`touch-btn pointer-events-auto absolute ${pos} w-[58px] h-[58px] rounded-full border-2 font-black text-xs text-white ${label === '☄️' ? 'bg-rose-600/90 border-amber-300 text-xl animate-pulse' : 'bg-slate-900/70 border-white/60'}`} onPointerDown={e => { e.stopPropagation(); fn(); }}>{label}</button>
+                // [label, position, action, size px, extra classes]
+                ['ADS', 'right-[120px] bottom-[8px]', () => { c.ads = !c.ads; }, 64, 'bg-slate-900/75 border-white/70 text-sm'],
+                ['JUMP', 'right-[120px] bottom-[80px]', () => { c.jump = true; }, 64, 'bg-slate-900/75 border-white/70 text-sm'],
+                ['R', 'right-[122px] bottom-[152px]', () => { c.reload = true; }, 60, 'bg-slate-900/75 border-white/70 text-lg'],
+                [`💣 ${hud.nades}`, 'right-[196px] bottom-[8px]', () => { c.nade = true; }, 76, `${hud.nades ? 'bg-lime-400/90 text-slate-900 border-lime-100' : 'bg-slate-900/75 text-slate-400 border-white/40'} text-xl`],
+                ...(hud.zombie ? [[`➕ ${hud.meds}`, 'right-[196px] bottom-[92px]', () => { c.med = true; }, 76, `${hud.meds ? 'bg-rose-400/90 text-slate-900 border-rose-100' : 'bg-slate-900/75 text-slate-400 border-white/40'} text-xl`]] : []),
+                ['⇄', 'right-[280px] bottom-[8px]', () => { c.cycle = 1; }, 54, 'bg-slate-900/75 border-white/70 text-lg'],
+                ['💃', 'right-[280px] bottom-[70px]', () => { c.dance = true; }, 54, 'bg-slate-900/75 border-white/70 text-lg'],
+                ...(clipRef.current ? [['🎬', 'right-[280px] bottom-[132px]', () => { clipRef.current && clipRef.current.highlight('MY CLIP', 1200); setClipToast('🎬 Saving the last 30–60 s…'); }, 54, 'bg-slate-900/75 border-white/70 text-lg']] : []),
+                ...(hud.strike ? [['☄️', 'right-[274px] bottom-[196px]', () => { c.strike = true; }, 66, 'bg-rose-600/90 border-amber-300 text-2xl animate-pulse']] : [])
+              ].map(([label, pos, fn, size, cls]) => (
+                <button key={pos} style={{ width: size, height: size }} className={`touch-btn pointer-events-auto absolute ${pos} rounded-full border-2 font-black text-white ${cls}`} onPointerDown={e => { e.stopPropagation(); fn(); }}>{label}</button>
               ))}
             </div>
           </div>
