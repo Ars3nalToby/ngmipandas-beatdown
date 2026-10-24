@@ -75,6 +75,13 @@ Rank: pistol 1 · revolver/smg 2 · shotgun/rifle/flamer 3 · ak/sniper 4 · gat
 - Reloads are fast; magazines are large (owner prefers this).
 - Reload must never lock the player out of moving.
 
+### 3.5 Melee, shove, accuracy (IMPLEMENTED 2026-10-25)
+- **Right click / ✋ button / E = SHOVE.** Free, no ammo, 0.7 s cooldown. Cone in front, up to 8 bodies: pushes zombies back and **staggers** them (cannot bite, move at 12% speed for ~1 s). Bosses are immune to knockback. ADS moved to **hold Z** (touch: ADS button unchanged).
+- **Hand weapons** (`melee: true` in `SHOOT_WEAPONS`): knife, machete, katana, bat, crowbar, shovel, axe, sledgehammer. Infinite, no reload, rank 0 (never auto-selected, never counted in the 5 gun slots). One hand weapon at a time, lives in the last slot; **key 6** or ⇄ selects it. A new pickup swaps it. Cone strike from the eye: `reach`, `arc`, `cleave` (bodies per swing), `knock`; crosshair target takes headshot x1.8; axe/sledge can gib.
+- **Graze:** `traceShot` returns `graze` when the bullet line passes outside ~82% of the true hit sphere radius (touch: only the aim-assist band). Graze = 45% damage, no headshot bonus, pink `~12` number, ricochet "ping". Touch aim-assist stays generous, so it only trims the edge.
+- **Accuracy:** `me.shots` / `me.hits` (rockets + flamer not counted) -> `ACC %` in the HUD. **Spread bloom** while holding the trigger (`me.bloom`), settles when you ease off.
+- **FX realism:** impacts take the colour of the surface hit (chips + dust), pooled bullet-hole decals replace paint splats, dark-red blood spray carries along the bullet direction, muzzle gas jet + sparks, rocket smoke trail, explosions have fireball column, ground shockwave dust, flying debris and a layered sound (crack, boom, rumble, falling debris). Explosion ring/glow are now **pooled** (no materials created mid-fight).
+
 ---
 
 ## 4. Grenades
@@ -186,3 +193,4 @@ Record every decided `OPEN` item here with a date, then update the section above
 | 2026-10-25 | HUD minimum sizes: nothing important under 13 px on phones; squad panel shows each mate's HP, kills, medkits; "YOU KILLED" + "SQUAD KILLS" counters |
 | 2026-10-25 | Touch action buttons are 54-104 px; 💣 and ➕ are big buttons in the cluster |
 | 2026-10-25 | Squad AI teamwork: one bot revives (two for a human), the rest cover; focus fire; medkit run = medic + escort fetch a kit (`planMedRun`) |
+| 2026-10-25 | Right click = shove (ADS -> hold Z); 8 hand weapons in slot 6; graze + accuracy + spread bloom; pooled realistic FX |

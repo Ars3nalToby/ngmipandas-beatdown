@@ -439,9 +439,14 @@ const sfx = (() => {
         tone('sawtooth', 120, 55, 0.3, 0.3 * vol, null, null, 900);
         break;
       case 'explode':
-        tone('sine', 90, 24, 0.9, 1.0 * vol);
-        hiss(1.0, 0.95 * vol, 'lowpass', 2600, 90);
-        tone('square', 62, 30, 0.4, 0.28 * vol, null, null, 600);
+        // sharp crack, then the chest-thumping boom, a long rumble tail and falling debris
+        hiss(0.07, 0.9 * vol, 'highpass', 4200, 1500);
+        tone('sine', 90, 22, 1.0, 1.0 * vol);
+        hiss(1.2, 0.95 * vol, 'lowpass', 2800, 80);
+        tone('square', 62, 28, 0.5, 0.3 * vol, null, null, 600);
+        tone('sine', 48, 26, 1.6, 0.5 * vol, null, now + 0.12);
+        hiss(0.9, 0.35 * vol, 'lowpass', 700, 120, null, now + 0.25);
+        [0.5, 0.72, 0.95, 1.2].forEach(dl => hiss(0.06, 0.16 * vol, 'bandpass', 1800 + Math.random() * 1500, 700, null, now + dl + Math.random() * 0.1));
         break;
       case 'heart':
         tone('sine', 62, 40, 0.12, 0.7 * vol);
@@ -530,6 +535,22 @@ const sfx = (() => {
         break;
       case 'hurt':
         tone('sawtooth', 320, 110, 0.15, 0.22 * vol, null, null, 1200);
+        break;
+      case 'swing': // air whoosh of a hand weapon
+        hiss(0.2, 0.34 * vol, 'bandpass', 500 * p, 2600 * p);
+        break;
+      case 'mhit': // meaty thud + wet crunch
+        tone('sine', 120 * p, 40, 0.16, 0.8 * vol);
+        hiss(0.1, 0.55 * vol, 'lowpass', 2200 * p, 300);
+        tone('square', 700 * p, 180, 0.04, 0.12 * vol);
+        break;
+      case 'shove': // body thump
+        tone('sine', 85, 32, 0.2, 0.85 * vol);
+        hiss(0.12, 0.4 * vol, 'lowpass', 900, 200);
+        break;
+      case 'graze': // thin ricochet whine
+        tone('triangle', 2100, 900, 0.1, 0.12 * vol);
+        hiss(0.05, 0.2 * vol, 'bandpass', 3200, 1500);
         break;
       case 'streak':
         [392, 494, 587, 784].forEach(f => tone('sawtooth', f, 0, 0.6, 0.09 * vol, null, now, 3000));
@@ -2932,12 +2953,24 @@ const SHOOT_WEAPONS = {
   golden: { name: 'GOLDEN AK', short: 'GOLD AK', icon: '👑', dmg: 55, rate: 0.09, mag: 75, reload: 0.7, spread: 0.01, moveSpread: 0.025, pellets: 1, auto: true, recoil: 0.016, snd: 'shot_ak', zoom: 1.5 },
   sniper: { name: 'MOON SNIPER', short: 'SNIPER', icon: '🎯', dmg: 95, rate: 1.0, mag: 8, reload: 1.1, spread: 0.002, moveSpread: 0.05, pellets: 1, auto: false, recoil: 0.09, snd: 'shot_sniper', zoom: 3.6, pierce: 4 },
   flamer: { name: 'DRAGON BREATH', short: 'FLAMER', icon: '🐉', dmg: 9, rate: 0.05, mag: 160, reload: 1.1, spread: 0.075, moveSpread: 0.02, pellets: 3, auto: true, recoil: 0.002, snd: 'shot_flame', zoom: 1.1, flame: true, range: 14 },
-  revolver: { name: 'DIAMOND REVOLVER', short: 'REVOLVER', icon: '💎', dmg: 62, rate: 0.32, mag: 8, reload: 0.8, spread: 0.006, moveSpread: 0.02, pellets: 1, auto: false, recoil: 0.065, snd: 'shot_revolver', zoom: 1.35 }
+  revolver: { name: 'DIAMOND REVOLVER', short: 'REVOLVER', icon: '💎', dmg: 62, rate: 0.32, mag: 8, reload: 0.8, spread: 0.006, moveSpread: 0.02, pellets: 1, auto: false, recoil: 0.065, snd: 'shot_revolver', zoom: 1.35 },
+  // ---- melee: never run out, never reload. reach in metres, arc = cone half-angle cosine, cleave = bodies per swing ----
+  knife: { name: 'COMBAT KNIFE', short: 'KNIFE', icon: '🔪', melee: true, dmg: 42, rate: 0.26, reach: 2.5, arc: 0.6, cleave: 1, knock: 3, mag: 999, reload: 0.01, spread: 0, moveSpread: 0, pellets: 1, auto: true, recoil: 0, snd: 'swing', zoom: 1.1, vmScale: 1.55, hip: [0.34, -0.44, -0.55] },
+  machete: { name: 'MACHETE', short: 'MACHETE', icon: '🗡️', melee: true, dmg: 58, rate: 0.4, reach: 3.0, arc: 0.45, cleave: 2, knock: 5, mag: 999, reload: 0.01, spread: 0, moveSpread: 0, pellets: 1, auto: true, recoil: 0, snd: 'swing', zoom: 1.1, vmScale: 1.3, hip: [0.34, -0.44, -0.55] },
+  katana: { name: 'MOON KATANA', short: 'KATANA', icon: '⚔️', melee: true, dmg: 78, rate: 0.34, reach: 3.4, arc: 0.4, cleave: 3, knock: 4, mag: 999, reload: 0.01, spread: 0, moveSpread: 0, pellets: 1, auto: true, recoil: 0, snd: 'swing', zoom: 1.1, vmScale: 1.1, hip: [0.34, -0.44, -0.55] },
+  bat: { name: 'NAIL BAT', short: 'BAT', icon: '⚾', melee: true, dmg: 52, rate: 0.52, reach: 3.0, arc: 0.4, cleave: 2, knock: 11, mag: 999, reload: 0.01, spread: 0, moveSpread: 0, pellets: 1, auto: true, recoil: 0, snd: 'swing', zoom: 1.1, vmScale: 1.15, hip: [0.34, -0.44, -0.55] },
+  crowbar: { name: 'CROWBAR', short: 'CROWBAR', icon: '🪝', melee: true, dmg: 64, rate: 0.5, reach: 2.9, arc: 0.5, cleave: 1, knock: 7, mag: 999, reload: 0.01, spread: 0, moveSpread: 0, pellets: 1, auto: true, recoil: 0, snd: 'swing', zoom: 1.1, vmScale: 1.2, hip: [0.34, -0.44, -0.55] },
+  shovel: { name: 'GRAVEDIGGER SHOVEL', short: 'SHOVEL', icon: '⛏️', melee: true, dmg: 72, rate: 0.66, reach: 3.2, arc: 0.35, cleave: 3, knock: 10, mag: 999, reload: 0.01, spread: 0, moveSpread: 0, pellets: 1, auto: true, recoil: 0, snd: 'swing', zoom: 1.1, vmScale: 1.1, hip: [0.34, -0.44, -0.55] },
+  axe: { name: 'FIRE AXE', short: 'AXE', icon: '🪓', melee: true, dmg: 100, rate: 0.78, reach: 3.0, arc: 0.45, cleave: 2, knock: 8, gib: true, mag: 999, reload: 0.01, spread: 0, moveSpread: 0, pellets: 1, auto: true, recoil: 0, snd: 'swing', zoom: 1.1, vmScale: 1.3, hip: [0.34, -0.44, -0.55] },
+  sledge: { name: 'SLEDGEHAMMER', short: 'SLEDGE', icon: '🔨', melee: true, dmg: 135, rate: 1.05, reach: 3.2, arc: 0.3, cleave: 4, knock: 16, gib: true, mag: 999, reload: 0.01, spread: 0, moveSpread: 0, pellets: 1, auto: true, recoil: 0, snd: 'swing', zoom: 1.1, vmScale: 1.2, hip: [0.34, -0.44, -0.55] }
 };
+// right click / SHOVE button: free, instant, no ammo — a wide shoulder-barge that throws the whole crowd back
+const SHOVE = { reach: 3.1, arc: 0.4, cleave: 8, dmg: 5, knock: 13, cd: 0.7 };
 // Pickup rules: a better gun is never swapped for a worse one. RPG outranks everything,
 // is never auto-dropped, and a second RPG turns it into a DUAL RPG (2 rockets per shot).
-const WEAPON_RANK = { pistol: 1, revolver: 2, smg: 2, shotgun: 3, rifle: 3, flamer: 3, ak: 4, sniper: 4, gatling: 5, golden: 6, rpg: 9 };
-const weaponRank = k => WEAPON_RANK[k] || 1;
+const WEAPON_RANK = { knife: 0, machete: 0, katana: 0, bat: 0, crowbar: 0, shovel: 0, axe: 0, sledge: 0, pistol: 1, revolver: 2, smg: 2, shotgun: 3, rifle: 3, flamer: 3, ak: 4, sniper: 4, gatling: 5, golden: 6, rpg: 9 };
+const weaponRank = k => (WEAPON_RANK[k] === undefined ? 1 : WEAPON_RANK[k]);
+const isMelee = k => !!(SHOOT_WEAPONS[k] && SHOOT_WEAPONS[k].melee);
 const weaponMag = w => SHOOT_WEAPONS[w.key].mag * (w.dual ? 2 : 1);
 const SHOOT_PICKUPS = {
   ak: { icon: '🔥', label: 'AK-47', color: '#f97316' },
@@ -2945,12 +2978,20 @@ const SHOOT_PICKUPS = {
   rpg: { icon: '🚀', label: 'RPG-7 · 3 rockets per load', color: '#84cc16' },
   shotgun: { icon: '💥', label: 'FLOOR SWEEPER (shotgun)', color: '#fb7185' },
   smg: { icon: '⚡', label: 'DEGEN SMG', color: '#a3e635' },
-  sniper: { icon: '🎯', label: 'MOON SNIPER · right click to scope · pierces', color: '#38bdf8' },
+  sniper: { icon: '🎯', label: 'MOON SNIPER · hold Z / tap ADS to scope · pierces', color: '#38bdf8' },
   flamer: { icon: '🐉', label: 'DRAGON BREATH · short-range flamethrower', color: '#fb923c' },
   revolver: { icon: '💎', label: 'DIAMOND REVOLVER · 62 dmg a shot', color: '#67e8f9' },
   medkit: { icon: '➕', label: 'MEDKIT · H / tap ➕ to throw it to a teammate', color: '#ef4444' },
   nade: { icon: '💣', label: '+2 GRENADES · F / tap 💣 to throw', color: '#84cc16' },
-  burger: { icon: '🍔', label: '+50 HP', color: '#facc15' }
+  burger: { icon: '🍔', label: '+50 HP', color: '#facc15' },
+  knife: { icon: '🔪', label: 'COMBAT KNIFE · fast · press 6 / ⇄ to wield', color: '#cbd5e1' },
+  machete: { icon: '🗡️', label: 'MACHETE · wide chop · press 6 / ⇄ to wield', color: '#a3e635' },
+  katana: { icon: '⚔️', label: 'MOON KATANA · cuts 3 at once · press 6 / ⇄', color: '#67e8f9' },
+  bat: { icon: '⚾', label: 'NAIL BAT · huge knockback · press 6 / ⇄', color: '#d6a76a' },
+  crowbar: { icon: '🪝', label: 'CROWBAR · press 6 / ⇄ to wield', color: '#f87171' },
+  shovel: { icon: '⛏️', label: 'GRAVEDIGGER SHOVEL · sweeps 3 · press 6 / ⇄', color: '#fbbf24' },
+  axe: { icon: '🪓', label: 'FIRE AXE · 100 dmg · chops them apart · press 6 / ⇄', color: '#fb923c' },
+  sledge: { icon: '🔨', label: 'SLEDGEHAMMER · smashes 4 · press 6 / ⇄', color: '#e879f9' }
 };
 
 // ============================================================================
@@ -3215,6 +3256,83 @@ function makeGunModel(key, view) {
     pilot.position.set(0, -0.03, -0.72);
     if (view) pilot.renderOrder = order++;
     g.add(pilot);
+  } else if (SHOOT_WEAPONS[key] && SHOOT_WEAPONS[key].melee) {
+    // hand weapons: handle near +Z, business end toward -Z; the whole thing is tilted up like a held weapon
+    const steel = mat(0xe3e9f1, { metalness: 0.55, roughness: 0.32, emissive: 0x1a202a, emissiveIntensity: 0.7 }), darkS = mat(0x3b3f47, { metalness: 0.85, roughness: 0.4 });
+    const woodA = mat(0x8a5a2b, { metalness: 0, roughness: 0.75 }), woodB = mat(0x5e3b1b, { metalness: 0, roughness: 0.8 });
+    const rubber = mat(0x17171b, { metalness: 0, roughness: 0.9 }), rust = mat(0x7a4a2a, { metalness: 0.5, roughness: 0.85 });
+    const blood = mat(0x4a0d0d, { metalness: 0.1, roughness: 0.6 }), wrap = mat(0x6b1d1d, { metalness: 0, roughness: 0.9 });
+    const rod = (r1, r2, len, z, m, y = 0, x = 0) => {
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, 10), m);
+      c.rotation.x = Math.PI / 2;
+      c.position.set(x, y, z);
+      if (view) c.renderOrder = order++;
+      g.add(c);
+      return c;
+    };
+    if (key === 'knife') {
+      part(0.04, 0.05, 0.2, 0, 0, 0.14, rubber);
+      part(0.085, 0.03, 0.03, 0, 0, 0.03, darkS);
+      part(0.026, 0.07, 0.3, 0, 0.01, -0.14, steel);
+      const tip = part(0.02, 0.05, 0.12, 0, 0.0, -0.34, steel);
+      tip.rotation.x = 0.22;
+      part(0.028, 0.012, 0.16, 0, 0.0, -0.1, blood);
+    } else if (key === 'machete') {
+      part(0.04, 0.05, 0.24, 0, 0, 0.16, rubber);
+      part(0.06, 0.035, 0.025, 0, 0, 0.03, darkS);
+      part(0.022, 0.11, 0.56, 0, 0.03, -0.27, steel);
+      part(0.024, 0.14, 0.12, 0, 0.05, -0.62, steel).rotation.x = -0.25;
+      part(0.026, 0.012, 0.3, 0, 0.0, -0.2, blood);
+      part(0.026, 0.01, 0.5, 0, 0.088, -0.27, rust);
+    } else if (key === 'katana') {
+      part(0.034, 0.042, 0.34, 0, 0, 0.18, wrap);
+      rod(0.055, 0.055, 0.02, 0.0, darkS);
+      part(0.014, 0.05, 0.86, 0, 0.012, -0.44, steel);
+      part(0.012, 0.035, 0.12, 0, 0.02, -0.92, steel).rotation.x = -0.18;
+      part(0.016, 0.006, 0.8, 0, 0.032, -0.42, mat(0xf1f5f9, { metalness: 1, roughness: 0.1 }));
+    } else if (key === 'bat') {
+      rod(0.022, 0.02, 0.3, 0.2, rubber);
+      rod(0.052, 0.024, 0.9, -0.38, woodA);
+      rod(0.056, 0.056, 0.04, -0.78, woodB);
+      [[-0.55, 0.05], [-0.62, -0.04], [-0.7, 0.03], [-0.48, -0.05], [-0.74, -0.03]].forEach(([z, a]) => {
+        const n = part(0.012, 0.012, 0.05, Math.sin(a * 20) * 0.05, Math.cos(a * 20) * 0.05, z, darkS);
+        n.rotation.z = a * 20;
+      });
+      rod(0.054, 0.054, 0.12, -0.67, blood, 0, 0).scale.set(1.02, 1, 1.02);
+    } else if (key === 'crowbar') {
+      rod(0.02, 0.02, 0.95, -0.2, mat(0xa11c1c, { metalness: 0.7, roughness: 0.4 }));
+      rod(0.02, 0.02, 0.02, 0.28, darkS);
+      part(0.03, 0.06, 0.18, 0, 0.04, -0.7, mat(0xa11c1c, { metalness: 0.7, roughness: 0.4 })).rotation.x = 0.55;
+      part(0.034, 0.03, 0.06, 0, -0.005, -0.69, darkS);
+      part(0.03, 0.05, 0.12, 0, 0.03, 0.3, mat(0xa11c1c, { metalness: 0.7, roughness: 0.4 })).rotation.x = -0.4;
+    } else if (key === 'shovel') {
+      rod(0.024, 0.024, 1.15, -0.1, woodA);
+      part(0.14, 0.03, 0.03, 0, 0, 0.5, rubber);
+      part(0.025, 0.05, 0.05, 0.06, -0.025, 0.5, rubber);
+      part(0.025, 0.05, 0.05, -0.06, -0.025, 0.5, rubber);
+      const blade = part(0.22, 0.018, 0.3, 0, 0, -0.78, mat(0x7d838d, { metalness: 0.85, roughness: 0.5 }));
+      part(0.1, 0.018, 0.12, 0, 0, -0.97, mat(0x7d838d, { metalness: 0.85, roughness: 0.5 })).scale.set(1, 1, 1);
+      part(0.06, 0.04, 0.1, 0, 0, -0.62, rust);
+      part(0.22, 0.02, 0.06, 0, 0.002, -0.88, blood);
+      blade.rotation.x = 0.04;
+    } else if (key === 'axe') {
+      rod(0.026, 0.024, 1.0, -0.05, woodA);
+      rod(0.03, 0.03, 0.06, 0.45, darkS);
+      part(0.05, 0.1, 0.12, 0, 0.02, -0.5, darkS);
+      part(0.034, 0.26, 0.2, 0, 0.0, -0.58, mat(0xb8bfc9, { metalness: 0.95, roughness: 0.3 }));
+      part(0.014, 0.3, 0.05, 0, 0.0, -0.7, mat(0xf1f5f9, { metalness: 1, roughness: 0.12 }));
+      part(0.036, 0.1, 0.09, 0, 0.07, -0.58, mat(0xb91c1c, { metalness: 0.4, roughness: 0.5 }));
+      part(0.016, 0.05, 0.12, 0, -0.08, -0.66, blood);
+    } else {
+      // sledgehammer
+      rod(0.026, 0.024, 1.0, -0.05, woodA);
+      rod(0.03, 0.03, 0.06, 0.45, rubber);
+      part(0.15, 0.15, 0.3, 0, 0.0, -0.58, mat(0x4a4f58, { metalness: 0.9, roughness: 0.4 }));
+      part(0.16, 0.16, 0.04, 0, 0.0, -0.74, darkS);
+      part(0.16, 0.16, 0.04, 0, 0.0, -0.42, darkS);
+      part(0.152, 0.04, 0.12, 0, -0.04, -0.58, blood);
+    }
+    g.userData.melee = true;
   } else if (key === 'pistol') {
     part(0.07, 0.18, 0.09, 0, -0.1, 0.05, dark);
     part(0.08, 0.11, 0.34, 0, 0, -0.08, body);
@@ -3332,6 +3450,7 @@ function makeGunModel(key, view) {
   muzzle.position.set(0, 0.03, key === 'revolver' ? -0.52 : key === 'flamer' ? -0.74 : key === 'pistol' ? -0.36 : key === 'shotgun' ? -0.88 : key === 'sniper' ? -1.15 : key === 'smg' ? -0.55 : key === 'ak' || key === 'golden' ? -0.84 : key === 'gatling' ? -0.86 : key === 'rpg' ? -1.15 : -0.75);
   g.add(muzzle);
   g.userData.muzzle = muzzle;
+  if (g.userData.melee) g.rotation.set(0.8, 0.22, key === 'knife' || key === 'machete' || key === 'katana' ? 1.2 : key === 'axe' ? -1.25 : 0);
   g.userData.sightY = key === 'revolver' ? 0.07 : key === 'flamer' ? 0.1 : key === 'pistol' ? 0.03 : key === 'shotgun' ? 0.04 : key === 'sniper' ? 0.12 : key === 'ak' || key === 'golden' || key === 'rpg' ? 0.1 : key === 'gatling' ? 0.3 : 0.165;
   return g;
 }
@@ -3888,6 +4007,7 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
   const pickupSpots = [[-24, -8, 'ak'], [24, 8, 'ak'], [14, -14, 'gatling'], [-44, 12, 'rpg'], [0, -40, 'gatling'], [44, -12, 'rpg'], [-14, -42, 'smg'], [30, 44, 'shotgun'], [-16, 30, 'shotgun'], [12, -36, 'smg'], [-38, -24, 'burger'], [38, 24, 'burger'], [-40, -38, 'ak', 9], [42, 38, 'rpg', 10], [-42, 40, 'burger', 7], [0, 22, 'sniper'], [-30, -44, 'flamer'], [34, -26, 'revolver'], [8, 30, 'flamer'], [-6, -22, 'revolver']];
   if (zmap) {
     pickupSpots.forEach(sp => { if (sp[0] === -30 && sp[1] === -44) { sp[0] = -22; sp[1] = -48; } });
+    pickupSpots.push([-27, -4, 'knife'], [27, 11, 'machete'], [17, -9, 'bat'], [-41, 8, 'shovel'], [3, -33, 'crowbar'], [41, -8, 'axe'], [-10, -38, 'katana'], [33, 40, 'sledge'], [-60, 30, 'bat'], [60, -30, 'shovel']);
     pickupSpots.push([-76, -5, 'medkit'], [-76, 5, 'medkit'], [-73, -8.5, 'nade'], [0, 71, 'rpg'], [10, 71, 'nade'], [-5, -76, 'medkit'], [5, -72, 'sniper'], [74, -8, 'burger'], [74, 8, 'flamer'], [-70, -70, 'gatling'], [70, 70, 'revolver'], [66, 66, 'medkit'], [-44, -40, 'nade'], [42, 40, 'medkit']);
   }
   const zspawns = zmap ? [[-82, -40], [-82, 40], [82, -40], [82, 40], [-40, -82], [40, -82], [-40, 82], [40, 82], [-82, -82], [82, 82], [82, -82], [-82, 82], [-60, -60], [60, -60], [-60, 60], [60, 60], [-82, 0], [0, 82]] : null;
@@ -4165,7 +4285,8 @@ function buildSiegeMap(scene, cinematic) {
     atkFwd: [[-32, 22], [-20, 26], [0, 24], [16, 22], [30, 26]],
     def: [[-22, -54], [-10, -57], [30, -54], [-30, -40], [32, -36]]
   };
-  const pickupSpots = [[0, 30, 'ak'], [-30, 26, 'gatling'], [32, 24, 'rpg'], [-18, -4, 'burger'], [20, 0, 'ak'], [0, -34, 'gatling'], [-28, -48, 'rpg'], [32, -44, 'burger'], [-10, 46, 'burger'], [24, -38, 'ak'], [10, 40, 'sniper'], [-22, 10, 'revolver'], [26, -20, 'flamer']];
+  const pickupSpots = [[0, 30, 'ak'], [-30, 26, 'gatling'], [32, 24, 'rpg'], [-18, -4, 'burger'], [20, 0, 'ak'], [0, -34, 'gatling'], [-28, -48, 'rpg'], [32, -44, 'burger'], [-10, 46, 'burger'], [24, -38, 'ak'], [10, 40, 'sniper'], [-22, 10, 'revolver'], [26, -20, 'flamer'],
+    [4, 26, 'knife'], [-26, 22, 'bat'], [28, 20, 'shovel'], [-15, 0, 'machete'], [23, 3, 'axe'], [3, -30, 'crowbar'], [-24, -44, 'katana'], [35, -41, 'sledge']];
   const objectives = [{ key: 'A', name: 'SERVER FARM', x: -18, z: 6, r: 8 }, { key: 'B', name: 'MOON VAULT', x: 12, z: -36, r: 7 }];
   const dropSpots = [[0, 14], [-12, 0], [16, 6], [0, -30], [-26, 20], [24, 26]];
   return { colliders, solids, spawns, pickupSpots, clouds: [], pads: [], objectives, dropSpots, sunset: true, anim: { searchlights, barrels, ledMat, wheel, flags } };
@@ -4511,13 +4632,15 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const wh = wallHit(o, d, range);
       let best = wh ? wh.distance : range;
       let hitF = null, hitZ = null, head = false;
+      // centre + true radius of whatever is hit, so we can tell a clean hit from a graze at the edge
+      let gcx = 0, gcy = 0, gcz = 0, gr = 1;
       for (const f of fighters) {
         if (f === shooter || f.dead || (teamPlay && shooter && f.team === shooter.team) || (skip && skip.has(f))) continue;
         const p = f.pos;
         const th = raySphere(o, d, p.x, p.y + 2.1, p.z, 0.72 * assist);
         const tb = raySphere(o, d, p.x, p.y + 1.0, p.z, 0.88 * assist);
-        if (th > 0 && th < best) { best = th; hitF = f; head = true; }
-        if (tb > 0 && tb < best - 0.01) { best = tb; hitF = f; head = false; }
+        if (th > 0 && th < best) { best = th; hitF = f; head = true; gcx = p.x; gcy = p.y + 2.1; gcz = p.z; gr = 0.72; }
+        if (tb > 0 && tb < best - 0.01) { best = tb; hitF = f; head = false; gcx = p.x; gcy = p.y + 1.0; gcz = p.z; gr = 0.88; }
       }
       if (zombie && (!shooter || !shooter.isZombie)) {
         for (const zz of zombies) {
@@ -4525,13 +4648,20 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           const zs = zz.s, p = zz.pos, hb = zz.def.hb || ZHB, sf = Math.sin(zz.face), cf = Math.cos(zz.face);
           const th = raySphere(o, d, p.x + sf * hb[4] * zs, p.y + zs * hb[0], p.z + cf * hb[4] * zs, zs * hb[1] * assist);
           const tb = raySphere(o, d, p.x + sf * hb[5] * zs, p.y + zs * hb[2], p.z + cf * hb[5] * zs, zs * hb[3] * zz.def.w * assist);
-          if (th > 0 && th < best) { best = th; hitF = null; hitZ = zz; head = true; }
-          if (tb > 0 && tb < best - 0.01) { best = tb; hitF = null; hitZ = zz; head = false; }
+          if (th > 0 && th < best) { best = th; hitF = null; hitZ = zz; head = true; gcx = p.x + sf * hb[4] * zs; gcy = p.y + zs * hb[0]; gcz = p.z + cf * hb[4] * zs; gr = zs * hb[1]; }
+          if (tb > 0 && tb < best - 0.01) { best = tb; hitF = null; hitZ = zz; head = false; gcx = p.x + sf * hb[5] * zs; gcy = p.y + zs * hb[2]; gcz = p.z + cf * hb[5] * zs; gr = zs * hb[3] * zz.def.w; }
         }
       }
       const point = o.clone().addScaledVector(d, best);
       const solid = !hitF && !hitZ;
-      return { point, fighter: hitF, zombie: hitZ, head, normal: solid && wh && wh.face ? wh.face.normal.clone().transformDirection(wh.object.matrixWorld) : null, wall: solid && !!wh, obj: solid && wh ? wh.object : null };
+      let graze = false;
+      if (!solid) {
+        // distance from the sphere centre to the bullet line, vs the true (un-assisted) radius
+        const vx = gcx - o.x, vy = gcy - o.y, vz = gcz - o.z;
+        const cx = vy * d.z - vz * d.y, cy = vz * d.x - vx * d.z, cz = vx * d.y - vy * d.x;
+        graze = Math.sqrt(cx * cx + cy * cy + cz * cz) > gr * (IS_TOUCH ? 1.0 : 0.82);
+      }
+      return { graze, point, fighter: hitF, zombie: hitZ, head, normal: solid && wh && wh.face ? wh.face.normal.clone().transformDirection(wh.object.matrixWorld) : null, wall: solid && !!wh, obj: solid && wh ? wh.object : null };
     };
 
     // ---------- FX pools ----------
@@ -4573,6 +4703,45 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const s = size * (0.7 + Math.random() * 0.6);
       m.scale.set(s, s, 1);
       inks.push(m);
+    };
+    // bullet holes: a small pooled decal, not a paint splat
+    const holeTex = (() => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 64;
+      const g = c.getContext('2d');
+      const gr = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+      gr.addColorStop(0, 'rgba(8,6,6,1)');
+      gr.addColorStop(0.28, 'rgba(14,12,12,0.95)');
+      gr.addColorStop(0.55, 'rgba(40,34,30,0.45)');
+      gr.addColorStop(1, 'rgba(40,34,30,0)');
+      g.fillStyle = gr;
+      g.fillRect(0, 0, 64, 64);
+      g.strokeStyle = 'rgba(25,20,18,0.55)';
+      g.lineWidth = 1.2;
+      for (let i = 0; i < 7; i++) {
+        const a = Math.random() * 6.28, r = 12 + Math.random() * 18;
+        g.beginPath();
+        g.moveTo(32, 32);
+        g.lineTo(32 + Math.cos(a) * r, 32 + Math.sin(a) * r);
+        g.stroke();
+      }
+      return srgbTex(new THREE.CanvasTexture(c));
+    })();
+    const holeMat = new THREE.MeshBasicMaterial({ map: holeTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5 });
+    const holes = [];
+    const bulletHole = (point, normal, size = 0.24) => {
+      let m;
+      if (holes.length >= (IS_TOUCH ? 60 : 110)) m = holes.shift();
+      else {
+        m = new THREE.Mesh(inkGeo, holeMat);
+        scene.add(m);
+      }
+      m.position.copy(point).addScaledVector(normal, 0.015);
+      m.lookAt(point.clone().add(normal));
+      m.rotation.z = Math.random() * Math.PI * 2;
+      const s = size * (0.8 + Math.random() * 0.5);
+      m.scale.set(s, s, 1);
+      holes.push(m);
     };
     const partGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14);
     const parts = [];
@@ -4635,18 +4804,36 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       fxs.push({ it, sp: it.sp, mat, vx: o.vx || 0, vy: o.vy || 0, vz: o.vz || 0, life: o.life, max: o.life, size: o.size, grow: o.grow || 0, g: o.g || 0, drag: o.drag || 0, op: o.opacity == null ? 1 : o.opacity, spin: o.spin || (Math.random() - 0.5) * 1.5 });
     };
     const rnd = () => Math.random() - 0.5;
-    const impactFx = (p, n) => {
-      spawnFx({ pos: p.clone().addScaledVector(n, 0.06), size: 0.55, grow: 0.5, life: 0.07, color: 0xfff3c4, add: true });
-      for (let i = 0; i < 6; i++) {
-        spawnFx({ pos: p.clone().addScaledVector(n, 0.05), size: 0.07, life: 0.25 + Math.random() * 0.3, color: 0xffc46b, add: true, vx: n.x * 6 + rnd() * 7, vy: n.y * 6 + Math.random() * 5, vz: n.z * 6 + rnd() * 7, g: 24 });
+    // bullet impacts take the colour of what they hit: brick chips fly off brick, dust off concrete
+    const impactCol = new THREE.Color();
+    const impactFx = (p, n, obj) => {
+      const m = obj && obj.material;
+      if (m && m.color) impactCol.copy(m.color).multiplyScalar(0.8); else impactCol.set(0x8a7f73);
+      spawnFx({ pos: p.clone().addScaledVector(n, 0.06), size: 0.5, grow: 0.5, life: 0.06, color: 0xfff3c4, add: true });
+      for (let i = 0; i < (IS_TOUCH ? 3 : 5); i++) {
+        spawnFx({ pos: p.clone().addScaledVector(n, 0.05), size: 0.06, life: 0.2 + Math.random() * 0.25, color: 0xffc46b, add: true, vx: n.x * 6 + rnd() * 7, vy: n.y * 6 + Math.random() * 5, vz: n.z * 6 + rnd() * 7, g: 24 });
       }
-      spawnFx({ pos: p.clone().addScaledVector(n, 0.25), size: 0.35, grow: 1.5, life: 0.8, color: 0xd6c8b4, smoke: true, opacity: 0.6, vx: n.x * 1.4, vy: 0.7 + n.y, vz: n.z * 1.4, drag: 2.5 });
+      for (let i = 0; i < (IS_TOUCH ? 2 : 4); i++) {
+        const it = takePart(impactCol);
+        if (!it) break;
+        it.m.position.copy(p);
+        it.m.scale.setScalar(0.25 + Math.random() * 0.35);
+        parts.push({ m: it.m, mat: it.mat, it, vx: n.x * 3 + rnd() * 5, vy: n.y * 3 + 1 + Math.random() * 3, vz: n.z * 3 + rnd() * 5, life: 0.45 + Math.random() * 0.35 });
+      }
+      spawnFx({ pos: p.clone().addScaledVector(n, 0.2), size: 0.3, grow: 1.7, life: 0.9, color: impactCol, smoke: true, opacity: 0.5, vx: n.x * 1.2, vy: 0.6 + n.y, vz: n.z * 1.2, drag: 2.2 });
     };
-    const hitFx = (target, p, head) => {
-      spawnFx({ pos: p, size: head ? 1.0 : 0.6, grow: 0.6, life: 0.09, color: head ? 0xfff1a8 : 0xffffff, add: true });
-      const col = new THREE.Color(target.color);
-      for (let i = 0; i < (head ? 12 : 7); i++) spawnFx({ pos: p, size: 0.14 + Math.random() * 0.12, life: 0.45 + Math.random() * 0.3, color: col, vx: rnd() * 7, vy: Math.random() * 6, vz: rnd() * 7, g: 16 });
-      if (head) spawnFx({ pos: p, size: 0.3, grow: 2.4, life: 0.22, color: 0xfacc15, add: true, opacity: 0.8 });
+    // dark arterial reds, not paint: spray carries along the bullet, plus a thin mist
+    const BLOOD = [0x6e0f0f, 0x8a1313, 0x4d0a0a];
+    const hitFx = (target, p, head, dir, scale = 1) => {
+      spawnFx({ pos: p, size: head ? 0.8 : 0.45, grow: 0.5, life: 0.07, color: head ? 0xfff1a8 : 0xffe9c4, add: true, opacity: 0.8 });
+      const dx = dir ? dir.x : 0, dy = dir ? dir.y : 0, dz = dir ? dir.z : 0;
+      const nb = Math.max(2, Math.round((head ? 9 : 5) * scale));
+      for (let i = 0; i < nb; i++) {
+        const k = 0.5 + Math.random();
+        spawnFx({ pos: p, size: 0.08 + Math.random() * 0.1, life: 0.4 + Math.random() * 0.35, color: BLOOD[i % 3], vx: dx * 6 * k + rnd() * 5, vy: dy * 3 + Math.random() * 4, vz: dz * 6 * k + rnd() * 5, g: 18 });
+      }
+      spawnFx({ pos: p, size: 0.22, grow: 1.5, life: 0.5, color: 0x7a1010, smoke: true, opacity: 0.4, vx: dx * 2.5, vy: 0.4, vz: dz * 2.5, drag: 3 });
+      if (head) spawnFx({ pos: p, size: 0.3, grow: 2.2, life: 0.2, color: 0xfacc15, add: true, opacity: 0.7 });
     };
     // floating damage numbers (fixed screen size)
     const dmgPool = Array.from({ length: 20 }, () => {
@@ -4661,18 +4848,19 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       return { c, tex, sp, life: 0 };
     });
     let dmgIdx = 0;
-    const dmgNumber = (p, val, head, big) => {
+    const dmgNumber = (p, val, head, big, graze) => {
       const d = dmgPool[dmgIdx++ % dmgPool.length];
       const g = d.c.getContext('2d');
       g.clearRect(0, 0, 160, 64);
-      g.font = `900 ${head || big ? 46 : 36}px "Arial Black", sans-serif`;
+      g.font = `900 ${head || big ? 46 : graze ? 28 : 36}px "Arial Black", sans-serif`;
       g.textAlign = 'center';
       g.textBaseline = 'middle';
       g.lineWidth = 8;
       g.strokeStyle = '#000';
-      g.strokeText(String(val), 80, 34);
-      g.fillStyle = big ? '#fb923c' : head ? '#facc15' : '#ffffff';
-      g.fillText(String(val), 80, 34);
+      const label = graze ? `~${val}` : String(val); // ~ marks a graze
+      g.strokeText(label, 80, 34);
+      g.fillStyle = big ? '#fb923c' : head ? '#facc15' : graze ? '#fda4af' : '#ffffff';
+      g.fillText(label, 80, 34);
       d.tex.needsUpdate = true;
       d.sp.position.copy(p).add(new THREE.Vector3(rnd() * 0.6, 0.4, rnd() * 0.6));
       d.sp.scale.set(head || big ? 0.085 : 0.065, head || big ? 0.034 : 0.026, 1);
@@ -5050,10 +5238,106 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
 
     const fwd = new THREE.Vector3();
     const hitTally = new Map();
+
+    // ---------- melee + shove ----------
+    const mEye = new THREE.Vector3(), mFwd = new THREE.Vector3(), mV = new THREE.Vector3(), mP = new THREE.Vector3(), mPt = new THREE.Vector3();
+    // one cone-shaped strike from the eye. Used by every hand weapon and by the right-click shove.
+    const meleeStrike = (reach, arc, dmg, cleave, knock, opt) => {
+      camera.getWorldPosition(mEye);
+      camera.getWorldDirection(mFwd);
+      const cands = [];
+      const consider = (obj, cx, cy, cz, rad) => {
+        mV.set(cx - mEye.x, cy - mEye.y, cz - mEye.z);
+        const dist = mV.length();
+        if (dist - rad > reach) return;
+        mV.divideScalar(dist || 1);
+        // fat bodies are easier to catch on the edge of the arc
+        if (mV.dot(mFwd) < arc - (rad / Math.max(dist, 1)) * 0.6) return;
+        mP.set(cx, cy, cz);
+        if (!hasLOS(mEye, mP)) return;
+        cands.push({ obj, dist, cx, cy, cz, rad });
+      };
+      if (zombie) {
+        zombies.forEach(zz => {
+          if (zz.dead || zz.hp <= 0) return;
+          const hb = zz.def.hb || ZHB;
+          consider(zz, zz.pos.x, zz.pos.y + zz.s * hb[2], zz.pos.z, zz.s * hb[3] * zz.def.w);
+        });
+      } else {
+        fighters.forEach(f => {
+          if (f === me || f.dead || (teamPlay && f.team === me.team)) return;
+          consider(f, f.pos.x, f.pos.y + 1.1, f.pos.z, 0.85);
+        });
+      }
+      if (!cands.length) return { n: 0, kill: false, head: false };
+      cands.sort((a, b) => a.dist - b.dist);
+      // whoever is under the crosshair can be hit in the head
+      const prim = opt.shove ? null : traceShot(mEye, mFwd, me, 1.7, reach + 0.8);
+      let n = 0, kill = false, headAny = false;
+      for (const c of cands) {
+        if (n >= cleave) break;
+        n += 1;
+        const dx = c.cx - me.pos.x, dz = c.cz - me.pos.z, dl = Math.hypot(dx, dz) || 1;
+        mPt.set(c.cx - mFwd.x * c.rad * 0.7, c.cy - mFwd.y * c.rad * 0.7, c.cz - mFwd.z * c.rad * 0.7);
+        if (zombie) {
+          const zz = c.obj;
+          const head = !!(prim && prim.zombie === zz && prim.head);
+          const d = Math.round(dmg * (head ? 1.8 : 1));
+          const was = zz.hp > 0;
+          hurtZombie(zz, d, head, me, false, [dx / dl * knock, dz / dl * knock, opt.shove ? 1.1 : knock > 9 ? 0.8 : 0.35], !!opt.gib && d >= 90);
+          if (was && zz.hp <= 0) kill = true;
+          headAny = headAny || head;
+          if (!opt.shove) {
+            hitFx(zz, mPt, head, mFwd, 1.6);
+            if (Math.random() < 0.6) splat(zz.pos, 1.0);
+            dmgNumber(mPt, d, head);
+          } else puff(mPt, '#a8a29e', 3, 2);
+        } else {
+          const f = c.obj;
+          damage(f, me, opt.shove ? dmg : Math.round(dmg * 0.8), false);
+          if (f.isBot && net.isHost) { f.vel.x += dx / dl * knock; f.vel.z += dz / dl * knock; }
+          if (!opt.shove) hitFx(f, mPt, false, mFwd, 1.4);
+        }
+      }
+      return { n, kill, head: headAny };
+    };
+    // a swing of the equipped hand weapon: cooldown + animation + one strike
+    const swingMelee = def => {
+      me.shotCd = def.rate;
+      me.swingT = 1;
+      me.swingDur = Math.max(0.2, def.rate * 0.85);
+      me.swingDir = -(me.swingDir || 1);
+      sfx.play('swing', 0.8, 1.15 - Math.min(0.4, def.rate * 0.5));
+      const r = meleeStrike(def.reach, def.arc, def.dmg, def.cleave, def.knock, { gib: def.gib });
+      if (r.n > 0) {
+        me.shake = Math.max(me.shake, 0.1 + Math.min(0.3, r.n * 0.06 + def.knock * 0.012));
+        me.kick = 0.6;
+        sfx.play('mhit', 0.85, 0.8 + Math.random() * 0.35);
+        showHit(r.head, r.kill);
+        me.meleeKills = (me.meleeKills || 0) + (r.kill ? 1 : 0);
+      }
+    };
+    const doShove = () => {
+      if (me.shoveCd > 0 || me.dead || me.downed || me.dancing) return;
+      me.shoveCd = SHOVE.cd;
+      me.shoveT = 1;
+      sfx.play('swing', 0.6, 0.7);
+      const r = meleeStrike(SHOVE.reach, SHOVE.arc, SHOVE.dmg, SHOVE.cleave, SHOVE.knock, { shove: true });
+      if (r.n > 0) {
+        me.shake = Math.max(me.shake, 0.18 + Math.min(0.25, r.n * 0.04));
+        sfx.play('shove', 0.9);
+        if (me.shoveHint !== 1 && zombie) me.shoveHint = 1;
+      }
+      camera.getWorldDirection(mFwd);
+      mPt.copy(mEye.set(me.pos.x, me.pos.y + 1.2, me.pos.z)).addScaledVector(mFwd, 1.6);
+      for (let i = 0; i < 4; i++) spawnFx({ pos: mPt, size: 0.4, grow: 1.4, life: 0.5, color: 0xcfc8bd, smoke: true, opacity: 0.35, vx: mFwd.x * 4 + rnd() * 2, vy: 0.3, vz: mFwd.z * 4 + rnd() * 2, drag: 3 });
+    };
+
     const fireMe = () => {
       const w = me.weapons[me.slot];
       const def = SHOOT_WEAPONS[w.key];
       if (me.reloadT > 0 || me.shotCd > 0) return;
+      if (def.melee) { swingMelee(def); return; }
       if (w.mag <= 0) {
         sfx.play('empty');
         me.shotCd = 0.25;
@@ -5071,12 +5355,25 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       me.kick = 1;
       flash.visible = true;
       flash.material.rotation = Math.random() * 6.28;
+      const fs = (def.rocket ? 0.6 : def.pellets > 1 ? 0.55 : w.key === 'sniper' ? 0.5 : 0.3) * (0.75 + Math.random() * 0.5);
+      flash.scale.set(fs, fs * (0.8 + Math.random() * 0.4), 1);
       me.flashT = 0.045;
       const moving = Math.hypot(me.vel.x, me.vel.z) > 1 || !me.onGround;
-      const spread = def.spread * (1 - me.adsT * 0.6) + (moving ? def.moveSpread : 0);
+      // spread blooms while you hold the trigger and settles when you ease off (moving also costs accuracy)
+      const spread = (def.spread + (me.bloom || 0)) * (1 - me.adsT * 0.6) + (moving ? def.moveSpread : 0);
+      if (!def.flame && !def.rocket) {
+        me.bloom = Math.min(0.045, (me.bloom || 0) + def.recoil * (def.auto ? 0.35 : 0.5));
+        me.shots = (me.shots || 0) + 1;
+      }
       const origin = camera.getWorldPosition(new THREE.Vector3());
       const muzzle = gunModel.userData.muzzle.getWorldPosition(new THREE.Vector3());
       camera.getWorldDirection(fwd);
+      if (!def.rocket && !def.flame) {
+        // gas jet + a few hot sparks off the muzzle, so each shot reads as a real blast
+        spawnFx({ pos: muzzle.clone().addScaledVector(fwd, 0.35), size: 0.2 * (def.pellets > 1 ? 1.8 : 1), grow: 2.2, life: 0.08, color: 0xffd08a, add: true, opacity: 0.8, vx: fwd.x * 14, vy: fwd.y * 14, vz: fwd.z * 14 });
+        if (!IS_TOUCH || Math.random() < 0.5) for (let k = 0; k < (def.pellets > 1 ? 3 : 1); k++) spawnFx({ pos: muzzle.clone(), size: 0.05, life: 0.18 + Math.random() * 0.15, color: 0xffb347, add: true, vx: fwd.x * 12 + rnd() * 5, vy: fwd.y * 12 + rnd() * 4, vz: fwd.z * 12 + rnd() * 5, g: 10 });
+        if (def.pellets > 1 || w.key === 'sniper' || w.key === 'revolver') spawnFx({ pos: muzzle.clone().addScaledVector(fwd, 0.9), size: 0.35, grow: 1.8, life: 0.7, color: 0xb9b2a8, smoke: true, opacity: 0.4, vx: fwd.x * 3, vy: 0.6, vz: fwd.z * 3, drag: 2 });
+      }
       if (def.rocket) {
         const from = origin.clone().addScaledVector(fwd, 1.2).add(new THREE.Vector3(0, -0.15, 0));
         if (w.dual) {
@@ -5103,7 +5400,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         }
         if (Math.random() < 0.3) spawnFx({ pos: muzzle.clone().addScaledVector(fwd, 4), size: 0.6, grow: 2.5, life: 1.1, color: 0x2b2522, smoke: true, opacity: 0.4, vx: fwd.x * 6, vy: 1.6, vz: fwd.z * 6, drag: 1.4 });
       }
-      let hitAny = false, headAny = false, killAny = false;
+      let hitAny = false, headAny = false, killAny = false, grazeAny = false, cleanAny = false;
       for (let i = 0; i < def.pellets; i++) {
         const d = fwd.clone();
         d.x += (Math.random() - 0.5) * 2 * spread;
@@ -5119,25 +5416,28 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           if (!tgt) {
             if (res.obj && res.obj.userData && res.obj.userData.barrel !== undefined) hitBarrel(res.obj.userData.barrel, def.flame ? def.dmg * 0.5 : def.dmg, me);
             if (res.wall && res.normal && !def.flame) {
-              inkSplat(res.point, res.normal, w.key === 'shotgun' ? 0.45 : 0.75);
-              impactFx(res.point, res.normal);
-              if (i === 0) puff(res.point, '#3a2f2a', 3, 2);
+              bulletHole(res.point, res.normal, w.key === 'shotgun' ? 0.14 : w.key === 'sniper' ? 0.3 : 0.22);
+              if (def.pellets === 1 || i < 3) impactFx(res.point, res.normal, res.obj);
             }
             break;
           }
-          const dmg = def.dmg * (res.head ? 2 : 1);
+          // an edge-of-the-body hit is only a graze: no headshot bonus, a fraction of the damage
+          const grazed = res.graze && !def.flame;
+          const dmg = def.dmg * (grazed ? 0.45 : res.head ? 2 : 1);
+          if (grazed) grazeAny = true;
           if (res.zombie) {
             const was = res.zombie.hp > 0;
             const kk = def.pellets > 1 ? 1.1 : def.pierce ? 3 : w.key === 'revolver' ? 1.5 : 0;
-            hurtZombie(res.zombie, dmg, res.head, me, def.flame, kk ? [d.x * kk, d.z * kk] : null);
+            hurtZombie(res.zombie, dmg, res.head && !grazed, me, def.flame, kk ? [d.x * kk, d.z * kk] : null);
             if (was && res.zombie.hp <= 0) killAny = true;
             if (Math.random() < 0.25) splat(res.zombie.pos, 0.9);
-          } else damage(res.fighter, me, dmg, res.head);
-          if (!def.flame || Math.random() < 0.25) hitFx(tgt, res.point, res.head);
+          } else damage(res.fighter, me, dmg, res.head && !grazed);
+          if (!def.flame || Math.random() < 0.25) hitFx(tgt, res.point, res.head && !grazed, d, grazed ? 0.5 : def.pellets > 1 ? 0.7 : 1);
           const prevHit = hitTally.get(tgt);
-          hitTally.set(tgt, { dmg: (prevHit ? prevHit.dmg : 0) + dmg, head: res.head || (prevHit && prevHit.head), p: res.point });
+          hitTally.set(tgt, { dmg: (prevHit ? prevHit.dmg : 0) + dmg, head: (res.head && !grazed) || (prevHit && prevHit.head), p: res.point, graze: grazed && !(prevHit && !prevHit.graze) });
           hitAny = true;
-          headAny = headAny || res.head;
+          if (!grazed) cleanAny = true;
+          headAny = headAny || (res.head && !grazed);
           if (!def.pierce) break;
           (skipSet = skipSet || new Set()).add(tgt);
           from = res.point.clone().addScaledVector(d, 0.05);
@@ -5147,11 +5447,12 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           queueTracer(muzzle, last.point);
         }
       }
-      if (!def.flame || Math.random() < 0.3) hitTally.forEach(v => dmgNumber(v.p, Math.round(v.dmg), v.head));
+      if (!def.flame || Math.random() < 0.3) hitTally.forEach(v => dmgNumber(v.p, Math.round(v.dmg), v.head, false, v.graze));
       hitTally.clear();
+      if (hitAny && !def.flame) me.hits = (me.hits || 0) + 1;
       if (hitAny) {
         showHit(headAny, killAny);
-        if (!def.flame || Math.random() < 0.25) sfx.play(headAny ? 'headshot' : 'hitmark');
+        if (!def.flame || Math.random() < 0.25) sfx.play(headAny ? 'headshot' : cleanAny ? 'hitmark' : 'graze');
       }
       if (w.mag === 0) startReload();
     };
@@ -5187,6 +5488,21 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       rockets.push({ g, dir: dir.clone(), owner, start: origin.clone(), life: 3, speed: 48 });
     };
     const BOOM_RING = new THREE.RingGeometry(0.6, 1.0, 40);
+    const BOOM_GLOW_TEX = makeGlowTexture('rgba(255,230,160,1)', 'rgba(255,110,30,0)');
+    const boomPool = [];
+    const takeBoom = () => {
+      let b = boomPool.pop();
+      if (!b) {
+        const ring = new THREE.Mesh(BOOM_RING, new THREE.MeshBasicMaterial({ color: 0xffa94d, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+        ring.rotation.x = -Math.PI / 2;
+        const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: BOOM_GLOW_TEX, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+        scene.add(ring, glow);
+        b = { ring, glow, t: 0, s: 1, pooled: true };
+      }
+      b.ring.visible = true;
+      b.glow.visible = true;
+      return b;
+    };
     const explodeAt = (point, owner, visualOnly, start, scale = 1) => {
       const R = 7 * scale, core = 1.6 * scale;
       boomLight.position.set(point.x, point.y + 1.5, point.z);
@@ -5206,14 +5522,30 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
       puff(point, '#2d2a28', Math.round(10 * scale), 11 * scale);
       puff(point, '#7a5a3a', Math.round(6 * scale), 8 * scale);
-      const ring = new THREE.Mesh(BOOM_RING, new THREE.MeshBasicMaterial({ color: 0xffa94d, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.set(point.x, Math.max(0.1, point.y - 0.8), point.z);
-      ring.userData.base = scale;
-      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(255,230,160,1)', 'rgba(255,110,30,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-      glow.position.copy(point);
-      scene.add(ring, glow);
-      booms.push({ ring, glow, t: 0, s: scale });
+      // rising fireball column, ground-hugging shockwave dust, and chunks of debris thrown out
+      for (let i = 0; i < Math.round(6 * scale); i++) {
+        spawnFx({ pos: point.clone().add(new THREE.Vector3(rnd() * 0.8 * scale, 0.3 + i * 0.35 * scale, rnd() * 0.8 * scale)), size: (1.6 - i * 0.12) * scale, grow: 2.4 * scale, life: 0.45 + Math.random() * 0.3, color: i < 3 ? 0xffd28a : 0xff8a2a, add: true, opacity: 0.85, vy: 5 + Math.random() * 5, vx: rnd() * 2, vz: rnd() * 2, drag: 1.6 });
+      }
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2 + Math.random() * 0.4;
+        spawnFx({ pos: new THREE.Vector3(point.x, Math.max(0.3, point.y - 0.6), point.z), size: 1.1 * scale, grow: 4.2 * scale, life: 0.9 + Math.random() * 0.5, color: 0x9a8f80, smoke: true, opacity: 0.45, vx: Math.cos(a) * 15 * scale, vy: 0.2, vz: Math.sin(a) * 15 * scale, drag: 3.2 });
+      }
+      for (let i = 0; i < Math.round((IS_TOUCH ? 6 : 10) * Math.min(1.6, scale)); i++) {
+        const it = takePart(i % 3 ? '#3a342f' : '#6b5a48');
+        if (!it) break;
+        const dv = new THREE.Vector3(rnd(), 0.5 + Math.random() * 0.7, rnd()).normalize();
+        it.m.position.copy(point);
+        it.m.scale.setScalar(0.7 + Math.random() * 1.6);
+        parts.push({ m: it.m, mat: it.mat, it, vx: dv.x * (9 + Math.random() * 8) * scale, vy: dv.y * (12 + Math.random() * 10), vz: dv.z * (9 + Math.random() * 8) * scale, life: 1.0 + Math.random() * 0.7 });
+      }
+      // ring + glow come from a pool: no materials or textures are created while the fight is on
+      const bm = takeBoom();
+      bm.ring.position.set(point.x, Math.max(0.1, point.y - 0.8), point.z);
+      bm.ring.userData.base = scale;
+      bm.glow.position.copy(point);
+      bm.t = 0;
+      bm.s = scale;
+      booms.push(bm);
       const dme = me.pos.distanceTo(point);
       me.shake = Math.max(me.shake, Math.max(0, (1.3 - dme / (22 * scale)) * Math.min(1.5, scale)));
       const spx = spatial(point, 90);
@@ -5290,6 +5622,16 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     // otherwise a label to announce ('' = the pickup's normal label)
     const addWeapon = key => {
       const cur = me.weapons[me.slot];
+      if (isMelee(key)) {
+        // one hand weapon at a time (slot 6). A new one swaps in, you are never forced to wield it.
+        const j = me.weapons.findIndex(w => isMelee(w.key));
+        if (j >= 0 && me.weapons[j].key === key) return `${SHOOT_WEAPONS[key].icon} ALREADY CARRYING ${SHOOT_WEAPONS[key].short}`;
+        if (j >= 0) {
+          me.weapons[j] = { key, mag: 999 };
+          if (me.slot === j) { me.slot = -1; selectSlot(j); }
+        } else me.weapons.push({ key, mag: 999 });
+        return '';
+      }
       const i = me.weapons.findIndex(w => w.key === key);
       if (i >= 0) {
         const w = me.weapons[i];
@@ -5307,14 +5649,23 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
       const nw = { key, mag: SHOOT_WEAPONS[key].mag };
       let idx;
-      if (me.weapons.length < 5) {
-        me.weapons.push(nw);
-        idx = me.weapons.length - 1;
+      if (me.weapons.filter(w => !isMelee(w.key)).length < 5) {
+        // guns sit before the hand weapon so slots 1-5 stay guns and 6 stays melee
+        const mi = me.weapons.findIndex(w => isMelee(w.key));
+        if (mi >= 0) {
+          const heldKey = cur && cur.key;
+          me.weapons.splice(mi, 0, nw);
+          idx = mi;
+          me.slot = Math.max(0, me.weapons.findIndex(w => w.key === heldKey));
+        } else {
+          me.weapons.push(nw);
+          idx = me.weapons.length - 1;
+        }
       } else {
         // full: drop the weakest gun (never the RPG), and only if the new one is better than it
         let lo = -1;
         me.weapons.forEach((w, j) => {
-          if (w.key === 'rpg') return;
+          if (w.key === 'rpg' || isMelee(w.key)) return;
           if (lo < 0 || weaponRank(w.key) < weaponRank(me.weapons[lo].key)) lo = j;
         });
         if (lo < 0 || (key !== 'rpg' && weaponRank(me.weapons[lo].key) >= weaponRank(key))) return null;
@@ -5351,8 +5702,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         damage(res.fighter, b, (b.golden ? 20 : b.wkey === 'gatling' ? 6 : 11) * (res.head ? 1.6 : 1) * BOT.dmg, res.head);
         if (!res.fighter.isMe) hitFx(res.fighter, res.point, res.head);
       } else if (res.wall && res.normal) {
-        inkSplat(res.point, res.normal, 0.6);
-        if (vol > 0.25) impactFx(res.point, res.normal);
+        bulletHole(res.point, res.normal, 0.2);
+        if (vol > 0.25) impactFx(res.point, res.normal, res.obj);
       }
     };
 
@@ -6032,6 +6383,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (knock && !zz.def.boss) {
         zz.vel.x += knock[0];
         zz.vel.z += knock[1];
+        // a shove / heavy melee blow leaves them staggering: slowed and unable to bite for a moment
+        if (knock[2] > 0) {
+          zz.stunT = Math.max(zz.stunT || 0, knock[2]);
+          zz.flinch = 0.4;
+        }
       }
       if (kid) zz.lastBy = { id: kid, name: kname };
       if (zz.def.boss && !zz.enraged && zz.hp < zz.maxHp * (zz.final ? 0.6 : 0.5)) zz.enraged = true;
@@ -6048,7 +6404,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         zz.hp -= dmg;
         zz.predT = performance.now();
         zz.flinch = Math.min(0.4, zz.flinch + 0.12);
-        send({ t: 'zh', id: myId, z: zz.id, d: Math.round(dmg), hs: head ? 1 : 0, b: burn ? 1 : 0, g: gib ? 1 : 0, kx: knock ? r1(knock[0]) : 0, kz: knock ? r1(knock[1]) : 0 });
+        send({ t: 'zh', id: myId, z: zz.id, d: Math.round(dmg), hs: head ? 1 : 0, b: burn ? 1 : 0, g: gib ? 1 : 0, kx: knock ? r1(knock[0]) : 0, kz: knock ? r1(knock[1]) : 0, ks: knock && knock[2] ? r1(knock[2]) : 0 });
         return;
       }
       applyZDamage(zz, dmg, head, src ? src.id : null, src ? src.name : '', gib, knock);
@@ -6177,6 +6533,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       zz.wp = t ? flowWp(zz, t) : null;
       const flinchK = 1 - Math.min(0.85, zz.flinch * 2.6);
       let dx = 0, dz = 0, spd = zz.spd * zd.spdMul * (zz.rush ? 1.2 : 1) * (zz.enraged ? 1.35 : 1) * (world.bullT > 0 ? 1.2 : 1) * flinchK;
+      if (zz.stunT > 0) {
+        zz.stunT -= dt;
+        spd *= 0.12;
+        zz.atkCd = Math.max(zz.atkCd, 0.25);
+      }
       if (zz.actT > 0) {
         zz.actT -= dt;
         spd *= zz.act >= 2 ? 0 : 0.35;
@@ -7653,7 +8014,14 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (e.code === 'KeyH') c.med = true;
       if (e.code === 'KeyT') c.onme = true;
       if (e.code === 'KeyQ') c.swap = true;
-      if (/^Digit[1-5]$/.test(e.code)) c.slot = Number(e.code.slice(5)) - 1;
+      if (/^Digit[1-6]$/.test(e.code)) {
+        const n = Number(e.code.slice(5)) - 1;
+        // 6 always means "my hand weapon", wherever it sits in the list
+        const mi = me.weapons.findIndex(w => isMelee(w.key));
+        c.slot = n === 5 ? (mi >= 0 ? mi : undefined) : n;
+      }
+      if (e.code === 'KeyZ') c.ads = true;
+      if (e.code === 'KeyE') c.shove = true;
       if (e.code === 'KeyM') {
         const m = !sfx.isMuted();
         sfx.setMuted(m);
@@ -7662,6 +8030,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     };
     const onKeyUp = e => {
       keys[e.code] = false;
+      if (e.code === 'KeyZ') ctl.current.ads = false;
       if (e.code === 'Tab') setShowBoard(false);
     };
     const locked = () => document.pointerLockElement === renderer.domElement;
@@ -7685,11 +8054,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const onMouseDown = e => {
       if (!locked()) return;
       if (e.button === 0) ctl.current.firing = true;
-      if (e.button === 2) ctl.current.ads = true;
+      if (e.button === 2) ctl.current.shove = true; // right click = shove (scope/ADS moved to hold Z)
     };
     const onMouseUp = e => {
       if (e.button === 0) { ctl.current.firing = false; me.semiHeld = false; }
-      if (e.button === 2) ctl.current.ads = false;
     };
     const noMenu = e => e.preventDefault();
     let lastWheel = 0;
@@ -7948,7 +8316,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               zz.burnT = 2.5;
               zz.burnBy = sh ? { id: sh.id, name: sh.name } : null;
             }
-            applyZDamage(zz, netNum(d.d, 0, 600), !!d.hs, d.id, sh ? sh.name : '', !!d.g, d.kx || d.kz ? [netNum(d.kx, -20, 20), netNum(d.kz, -20, 20)] : null);
+            applyZDamage(zz, netNum(d.d, 0, 600), !!d.hs, d.id, sh ? sh.name : '', !!d.g, d.kx || d.kz ? [netNum(d.kx, -20, 20), netNum(d.kz, -20, 20), netNum(d.ks, 0, 2.5)] : null);
           }
         }
       } else if (d.t === 'zk' && zombie) {
@@ -8307,6 +8675,14 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         const w = me.weapons[me.slot];
         const def = SHOOT_WEAPONS[w.key];
         if (me.shotCd > 0) me.shotCd -= dt;
+        if (me.shoveCd > 0) me.shoveCd -= dt;
+        if (me.bloom > 0) me.bloom = Math.max(0, me.bloom - dt * (0.05 + me.bloom * 4));
+        if (me.swingT > 0) me.swingT = Math.max(0, me.swingT - dt / (me.swingDur || 0.3));
+        if (me.shoveT > 0) me.shoveT = Math.max(0, me.shoveT - dt / 0.32);
+        if (c.shove) {
+          c.shove = false;
+          if (!frozen && !me.dead) doShove();
+        }
         if (def.spinUp && c.firing && !frozen && me.reloadT <= 0 && !me.dancing) me.spin = Math.min(1, me.spin + dt * 1.7);
         else me.spin = Math.max(0, me.spin - dt * 1.2);
         if (gunModel && gunModel.userData.barrels) gunModel.userData.barrels.rotation.z += dt * (1 + me.spin * 32);
@@ -8346,7 +8722,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           if (def.auto || IS_TOUCH) fireMe();
           else if (!me.semiHeld) { fireMe(); me.semiHeld = true; }
         }
-        me.adsT += ((c.ads && me.reloadT <= 0 ? 1 : 0) - me.adsT) * Math.min(1, dt * 10);
+        me.adsT += ((c.ads && me.reloadT <= 0 && !def.melee ? 1 : 0) - me.adsT) * Math.min(1, dt * 10);
 
         // pickups
         pickups.forEach((p, pi) => {
@@ -8489,6 +8865,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         }
         rk.g.position.copy(next);
         if (Math.random() < 0.7) puff(from, '#9ca3af', 1, 0.6);
+        // a fat white smoke trail behind the motor, with a hot orange core
+        if (Math.random() < (IS_TOUCH ? 0.45 : 0.7)) spawnFx({ pos: from, size: 0.35, grow: 1.5, life: 0.9, color: 0xcfc9c0, smoke: true, opacity: 0.45, vy: 0.35, drag: 1.2 });
+        spawnFx({ pos: from, size: 0.4, grow: 0.8, life: 0.14, color: 0xffa24a, add: true, opacity: 0.8 });
       }
       for (let i = booms.length - 1; i >= 0; i--) {
         const bm = booms[i];
@@ -8499,10 +8878,16 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         bm.glow.scale.setScalar((4 + k * 10) * (bm.s || 1));
         bm.glow.material.opacity = Math.max(0, 1 - k * 1.3);
         if (k >= 1) {
-          scene.remove(bm.ring, bm.glow);
-          if (bm.ring.geometry !== BOOM_RING) bm.ring.geometry.dispose();
-          bm.ring.material.dispose();
-          bm.glow.material.dispose();
+          if (bm.pooled) {
+            bm.ring.visible = false;
+            bm.glow.visible = false;
+            boomPool.push(bm);
+          } else {
+            scene.remove(bm.ring, bm.glow);
+            if (bm.ring.geometry !== BOOM_RING) bm.ring.geometry.dispose();
+            bm.ring.material.dispose();
+            bm.glow.material.dispose();
+          }
           booms.splice(i, 1);
         }
       }
@@ -8683,6 +9068,25 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         me.swayY = (me.swayY || 0) * Math.exp(-dt * 8);
         vm.rotation.set(me.kick * 0.12 + reloadDip * 1.2 - me.swayY, -me.swayX, me.swayX * 0.6);
         vm.position.y -= me.landDip || 0;
+        if (me.swingT > 0) {
+          // wind-up, then a slash across the screen
+          const sp = 1 - me.swingT, ss = Math.sin(sp * Math.PI), sd = me.swingDir || 1;
+          const ease = sp * sp * (3 - 2 * sp);
+          vm.position.x += sd * (0.28 - 0.62 * ease);
+          vm.position.y += 0.08 * ss - 0.1 * ease;
+          vm.position.z -= 0.34 * ss;
+          vm.rotation.x -= 0.9 * ss;
+          vm.rotation.z += sd * (-1.1 + 2.2 * ease);
+          vm.rotation.y += sd * (0.5 - 1.0 * ease);
+        }
+        if (me.shoveT > 0) {
+          // butt-stroke / palm shove straight out
+          const hp = 1 - me.shoveT, hs = Math.sin(hp * Math.PI);
+          vm.position.z -= 0.5 * hs;
+          vm.position.y += 0.06 * hs;
+          vm.position.x -= 0.14 * hs;
+          vm.rotation.x += 0.55 * hs;
+        }
       }
 
       myMesh.visible = me.dancing && !me.dead;
@@ -8786,6 +9190,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         setHud({
           hp: Math.max(0, Math.round(me.hp)),
           mag: w.mag,
+          acc: (me.shots || 0) >= 5 ? Math.round(100 * (me.hits || 0) / me.shots) : null,
+          wmelee: !!def.melee,
           reserve: Infinity,
           wname: w.dual ? 'DUAL RPG-7 · ×2' : def.name,
           wkey: w.key,
@@ -8975,6 +9381,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           ) : (
             <div className="leading-none"><span className="text-[11px] md:text-sm text-slate-300 font-black block">K / D</span><span className="font-game text-2xl md:text-3xl text-emerald-300">{hud.kills}<span className="text-slate-500">/</span><span className="text-rose-300">{hud.deaths}</span></span></div>
           )}
+          {hud.acc != null && (
+            <div className="leading-none"><span className="text-[11px] md:text-sm text-slate-300 font-black block">ACC</span><span className={`font-game text-xl md:text-2xl ${hud.acc >= 60 ? 'text-emerald-300' : hud.acc >= 35 ? 'text-amber-300' : 'text-rose-300'}`}>{hud.acc}%</span></div>
+          )}
           <span className="hidden md:inline text-[10px] font-bold text-cyan-300">● {hud.net} ({hud.peers})</span>
           <button onClick={() => { const m = !muted; sfx.setMuted(m); setMutedS(m); }} className="touch-btn w-8 h-8 rounded-lg bg-slate-800 text-sm cursor-pointer">{muted ? '🔇' : '🔊'}</button>
           {IS_TOUCH && clips.length > 0 && (
@@ -9037,7 +9446,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           )}
         </div>
         <div className={`inline-block ${hud.wkey === 'golden' ? 'bg-yellow-300/95' : 'bg-sky-300/95'} text-slate-900 rounded-lg px-3 py-1 shadow`}>
-          <div className="font-game text-[28px] md:text-5xl leading-none">{hud.frenzy > 0 ? '∞' : hud.mag}<span className="text-base md:text-xl text-slate-700"> / {hud.reserve === Infinity ? '∞' : hud.reserve}</span></div>
+          <div className="font-game text-[28px] md:text-5xl leading-none">{hud.wmelee ? '⚔' : hud.frenzy > 0 ? '∞' : hud.mag}<span className="text-base md:text-xl text-slate-700"> / {hud.reserve === Infinity ? '∞' : hud.reserve}</span></div>
           <div className="text-xs md:text-base font-black">{hud.wname}</div>
           {hud.reloading > 0 && <div className="h-1 mt-0.5 bg-slate-700/30 rounded overflow-hidden"><div className="h-full bg-slate-900" style={{ width: `${hud.reloading * 100}%` }} /></div>}
         </div>
@@ -9200,7 +9609,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             </div>
             <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-left text-[12px] mt-4 text-slate-200">
               <span className="flex gap-1"><span className="keycap">W</span><span className="keycap">A</span><span className="keycap">S</span><span className="keycap">D</span></span><span>Move · <span className="keycap">SHIFT</span> sprint</span>
-              <span className="keycap">MOUSE</span><span>Aim · left click shoot · right click ADS</span>
+              <span className="keycap">MOUSE</span><span>Aim · left click shoot · <b>right click SHOVE</b> · hold Z to aim down sights · 6 = hand weapon</span>
               <span className="keycap">WHEEL</span><span>Switch weapon (or <span className="keycap">1</span>–<span className="keycap">5</span>, <span className="keycap">Q</span> last gun)</span>
               <span className="keycap">SPACE</span><span>Jump · cyan pads launch you onto rooftops</span>
               <span className="keycap">R</span><span>Reload · ammo is endless</span>
@@ -9389,7 +9798,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 [`💣 ${hud.nades}`, 'right-[196px] bottom-[8px]', () => { c.nade = true; }, 76, `${hud.nades ? 'bg-lime-400/90 text-slate-900 border-lime-100' : 'bg-slate-900/75 text-slate-400 border-white/40'} text-xl`],
                 ...(hud.zombie ? [[`➕ ${hud.meds}`, 'right-[196px] bottom-[92px]', () => { c.med = true; }, 76, `${hud.meds ? 'bg-rose-400/90 text-slate-900 border-rose-100' : 'bg-slate-900/75 text-slate-400 border-white/40'} text-xl`]] : []),
                 ['⇄', 'right-[280px] bottom-[8px]', () => { c.cycle = 1; }, 54, 'bg-slate-900/75 border-white/70 text-lg'],
-                ['💃', 'right-[280px] bottom-[70px]', () => { c.dance = true; }, 54, 'bg-slate-900/75 border-white/70 text-lg'],
+                ['✋', 'right-[276px] bottom-[66px]', () => { c.shove = true; }, 64, 'bg-amber-400/90 border-amber-100 text-slate-900 text-3xl'],
+                ['💃', 'right-[352px] bottom-[8px]', () => { c.dance = true; }, 50, 'bg-slate-900/75 border-white/70 text-base'],
                 ...(clipRef.current ? [['🎬', 'right-[280px] bottom-[132px]', () => { clipRef.current && clipRef.current.highlight('MY CLIP', 1200); setClipToast('🎬 Saving the last 30–60 s…'); }, 54, 'bg-slate-900/75 border-white/70 text-lg']] : []),
                 ...(hud.strike ? [['☄️', 'right-[274px] bottom-[196px]', () => { c.strike = true; }, 66, 'bg-rose-600/90 border-amber-300 text-2xl animate-pulse']] : [])
               ].map(([label, pos, fn, size, cls]) => (
@@ -12611,7 +13021,7 @@ function App() {
                       <div className="text-[10px] font-black tracking-widest text-slate-400 mb-2">SHOOTOUT CONTROLS</div>
                       <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 items-center text-[12px] text-slate-200">
                         <span className="flex gap-1"><span className="keycap">W</span><span className="keycap">A</span><span className="keycap">S</span><span className="keycap">D</span></span><span>Move · Shift sprint</span>
-                        <span><span className="keycap">MOUSE</span></span><span>Aim · click shoot · right-click ADS</span>
+                        <span><span className="keycap">MOUSE</span></span><span>Aim · click shoot · right-click SHOVE · hold Z ADS · 6 hand weapon</span>
                         <span><span className="keycap">SPACE</span></span><span>Jump</span>
                         <span><span className="keycap">R</span></span><span>Reload</span>
                         <span><span className="keycap">WHEEL</span></span><span>Switch weapon · ammo is endless</span>

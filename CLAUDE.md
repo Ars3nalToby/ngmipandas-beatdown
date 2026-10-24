@@ -61,3 +61,4 @@ Single-file game: `index.html` (React 18 UMD + Babel standalone + Three.js r149 
 - iPhone has no vibration API, so `buzz()` only works on Android.
 - Story chapters 2–4 are Beatdown-only by design. Shootout is deferred until mobile shooting feels fun.
 - Zombie mode balance (wave sizes, boss HP, horde size) is only bot-tested. Needs real squad feedback, especially on phones (zombie cap `ZMAX` is 16 on touch, 26 on desktop).
+- Shootout melee/shove/graze: `SHOOT_WEAPONS[*].melee`, `SHOVE`, `meleeStrike`/`swingMelee`/`doShove` (before `fireMe`), `traceShot().graze`, `me.shots/hits/bloom`, zombie `stunT` (knock array 3rd element, net field `ks`). Right click = shove, ADS = hold Z. Explosion ring/glow come from `boomPool`; bullet holes from `bulletHole` pool. Any new pooled FX must follow SHOOTOUT_DESIGN.md.
