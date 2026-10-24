@@ -194,3 +194,4 @@ Record every decided `OPEN` item here with a date, then update the section above
 | 2026-10-25 | Touch action buttons are 54-104 px; 💣 and ➕ are big buttons in the cluster |
 | 2026-10-25 | Squad AI teamwork: one bot revives (two for a human), the rest cover; focus fire; medkit run = medic + escort fetch a kit (`planMedRun`) |
 | 2026-10-25 | Right click = shove (ADS -> hold Z); 8 hand weapons in slot 6; graze + accuracy + spread bloom; pooled realistic FX |
+| 2026-10-25 | Music engine upgraded (kick-ducked bass/pads, shared room reverb, tempo-synced echo, detuned voices, risers/crashes); Shootout FFA/siege gets its own 3-song set + SUDDEN DEATH rush |

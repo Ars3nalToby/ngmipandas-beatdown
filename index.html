@@ -276,6 +276,7 @@ function drawSuitTexture(suit) {
 const sfx = (() => {
   let ctx = null, master = null, sfxBus = null, musicBus = null, noiseBuf = null, recDest = null;
   let muted = false, lastHit = 0, musicTimer = null, nextStepTime = 0, step = 0, intensity = 0;
+  let harmBus = null, leadBus = null, musicMix = null, delayNode = null; // music mixing buses (see ensure)
   let curBus = null; // when set, sounds route through a panner + muffle filter (positional audio)
 
   const ensure = () => {
@@ -295,9 +296,58 @@ const sfx = (() => {
       sfxBus = ctx.createGain();
       sfxBus.gain.value = 0.85;
       sfxBus.connect(master);
+      // music mix: drums -> musicBus, bass/pads (ducked by the kick) -> harmBus, arps/leads/bells -> leadBus.
+      // All three meet in musicMix, which feeds a shared room reverb; leads also feed a tempo-synced echo.
+      const musicOut = ctx.createGain();
+      musicOut.gain.value = 0.4;
+      musicOut.connect(master);
+      musicMix = ctx.createGain();
+      musicMix.connect(musicOut);
       musicBus = ctx.createGain();
-      musicBus.gain.value = 0.42;
-      musicBus.connect(master);
+      musicBus.connect(musicMix);
+      harmBus = ctx.createGain();
+      harmBus.connect(musicMix);
+      leadBus = ctx.createGain();
+      leadBus.connect(musicMix);
+      try {
+        // one generated room impulse (1.6 s desktop, 1.0 s phone) (dark, stereo-decorrelated), shared by everything
+        const sr = ctx.sampleRate, len = Math.floor(sr * (/Android|iPhone|iPad|Mobi/i.test(navigator.userAgent) ? 1.0 : 1.6)); // shorter tail on phones = cheaper convolver
+        const ir = ctx.createBuffer(2, len, sr);
+        for (let c = 0; c < 2; c++) {
+          const ch = ir.getChannelData(c);
+          let lp = 0;
+          for (let i = 0; i < len; i++) {
+            const k = i / len;
+            lp += (Math.random() * 2 - 1 - lp) * (0.55 - 0.45 * k); // highs die faster than lows
+            ch[i] = lp * Math.pow(1 - k, 2.6) * (i < sr * 0.012 ? i / (sr * 0.012) : 1);
+          }
+        }
+        const conv = ctx.createConvolver();
+        conv.buffer = ir;
+        const revIn = ctx.createGain();
+        revIn.gain.value = 0.36;
+        const revOut = ctx.createGain();
+        revOut.gain.value = 0.9;
+        musicMix.connect(revIn);
+        revIn.connect(conv);
+        conv.connect(revOut);
+        revOut.connect(musicOut);
+        delayNode = ctx.createDelay(1.0);
+        delayNode.delayTime.value = 0.36;
+        const fb = ctx.createGain();
+        fb.gain.value = 0.34;
+        const dlp = ctx.createBiquadFilter();
+        dlp.type = 'lowpass';
+        dlp.frequency.value = 2400;
+        const dsend = ctx.createGain();
+        dsend.gain.value = 0.3;
+        leadBus.connect(dsend);
+        dsend.connect(delayNode);
+        delayNode.connect(dlp);
+        dlp.connect(fb);
+        fb.connect(delayNode);
+        dlp.connect(musicMix);
+      } catch (e) {}
       noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
       const d = noiseBuf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -613,6 +663,13 @@ const sfx = (() => {
     { name: 'BULL RUN DISCO', bpm: 118, roots: [41.2, 46.25, 55, 49], chords: [[0, 4, 7, 10], [0, 3, 7, 10], [0, 3, 7], [0, 4, 7]], kick: [0, 4, 8, 12], snare: [4, 12], openHat: true, bass: [0, 2, 4, 6, 8, 10, 12, 14], octaveJump: true, bassWave: 'sawtooth', arpWave: 'square', arpEvery: 2, scale: [0, 2, 4, 7, 9] }
   ];
   const RUSH = { name: 'FINAL RUSH', bpm: 160, roots: [55, 55, 43.65, 49], chords: [[0, 3, 7], [0, 3, 7], [0, 4, 7], [0, 4, 7]], kick: [0, 4, 8, 12], snare: [4, 12], openHat: true, bass: [0, 2, 4, 6, 8, 10, 12, 14], bassWave: 'sawtooth', arpWave: 'sawtooth', arpEvery: 1, scale: [0, 2, 3, 5, 7, 8, 10] };
+  // Shootout (non-zombie) has its own harder set: minor keys, gallop bass, big snares, tom fills
+  const STRACKS = [
+    { name: 'FIREFIGHT', bpm: 132, roots: [55, 43.65, 65.41, 49], chords: [[0, 3, 7], [0, 4, 7], [0, 4, 7], [0, 4, 7]], kick: [0, 4, 8, 10, 12], snare: [4, 12], bass: [0, 2, 3, 6, 8, 10, 11, 14], bassWave: 'sawtooth', arpWave: 'sawtooth', arpEvery: 1, scale: [0, 3, 5, 7, 10], openHat: true },
+    { name: 'KILL ZONE', bpm: 142, roots: [49, 49, 58.27, 55], chords: [[0, 3, 7], [0, 3, 7], [0, 4, 7], [0, 3, 7]], kick: [0, 3, 6, 10, 12, 14], snare: [4, 12], bass: [0, 1, 3, 4, 6, 8, 9, 11, 12, 14], bassWave: 'square', arpWave: 'sawtooth', arpEvery: 2, scale: [0, 2, 3, 5, 7, 8, 10], deep: true },
+    { name: 'LAST STAND', bpm: 120, roots: [41.2, 49, 55, 46.25], chords: [[0, 3, 7, 10], [0, 4, 7], [0, 3, 7, 10], [0, 4, 7, 11]], kick: [0, 6, 8, 14], snare: [4, 12], bass: [0, 3, 6, 8, 11, 14], bassWave: 'sawtooth', arpWave: 'square', arpEvery: 2, scale: [0, 3, 5, 7, 10, 12], deep: true, openHat: true }
+  ];
+  const SRUSH = { name: 'SUDDEN DEATH', bpm: 158, roots: [55, 55, 49, 43.65], chords: [[0, 3, 7], [0, 3, 7], [0, 4, 7], [0, 4, 7]], kick: [0, 4, 8, 12], snare: [4, 12], bass: [0, 2, 3, 4, 6, 7, 8, 10, 11, 12, 14], bassWave: 'sawtooth', arpWave: 'sawtooth', arpEvery: 1, scale: [0, 3, 5, 7, 10], openHat: true };
   // zombie mode has its own horror soundtrack (Beatdown / lobby keep the playlist above)
   const ZTRACKS = [
     { name: 'DEAD CITY', bpm: 72, roots: [55, 51.91, 55, 46.25], scale: [0, 1, 3, 5, 7, 8], beat: [0, 3], bell: true },
@@ -622,8 +679,8 @@ const sfx = (() => {
   const ZRUSH = { name: "THEY'RE HERE", bpm: 150, roots: [55, 55, 51.91, 49], scale: [0, 1, 3, 5, 6, 8], hard: true };
   const BARS_PER_SONG = 32;
   let trackIdx = 0, rush = false, songBar = 0, melody = [], onTrackChange = null, theme = 'main';
-  const list = () => (theme === 'zombie' ? ZTRACKS : TRACKS);
-  const cur = () => (theme === 'zombie' ? (rush ? ZRUSH : ZTRACKS[trackIdx % ZTRACKS.length]) : rush ? RUSH : TRACKS[trackIdx % TRACKS.length]);
+  const list = () => (theme === 'zombie' ? ZTRACKS : theme === 'shootout' ? STRACKS : TRACKS);
+  const cur = () => (theme === 'zombie' ? (rush ? ZRUSH : ZTRACKS[trackIdx % ZTRACKS.length]) : theme === 'shootout' ? (rush ? SRUSH : STRACKS[trackIdx % STRACKS.length]) : rush ? RUSH : TRACKS[trackIdx % TRACKS.length]);
   const pad = (type, f, dur, vol, at, filterHz, detune = 0) => {
     const o = ctx.createOscillator();
     o.type = type;
@@ -638,9 +695,80 @@ const sfx = (() => {
     fl.frequency.value = filterHz;
     o.connect(fl);
     fl.connect(g);
-    g.connect(musicBus);
+    g.connect(harmBus);
     o.start(at);
     o.stop(at + dur + 0.05);
+  };
+  const semis = (f, n) => f * Math.pow(2, n / 12);
+  // sidechain-style pump: bass and pads dip for an instant on every kick, which is what makes a mix "breathe"
+  const duck = (t, depth, rel) => {
+    const g = harmBus.gain;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(1, t);
+    g.linearRampToValueAtTime(depth, t + 0.012);
+    g.linearRampToValueAtTime(1, t + rel);
+  };
+  // drum kit (all synthesised): a kick with a beater click, a snare with a body tone, tight hats, toms
+  const kick = (t, vol, deep) => {
+    tone('sine', deep ? 130 : 170, 42, deep ? 0.34 : 0.24, 0.95 * vol, musicBus, t);
+    tone('triangle', 1000, 140, 0.02, 0.16 * vol, musicBus, t);
+    hiss(0.012, 0.22 * vol, 'highpass', 3200, null, musicBus, t);
+    duck(t, 0.5, 0.2);
+  };
+  const snare = (t, vol, big) => {
+    hiss(big ? 0.24 : 0.17, 0.42 * vol, 'bandpass', 2300, 1000, musicBus, t);
+    tone('triangle', 240, 140, 0.1, 0.24 * vol, musicBus, t);
+    if (big) hiss(0.05, 0.2 * vol, 'highpass', 4500, null, musicBus, t + 0.011); // a second slap = clap
+  };
+  const hat = (t, open, vol) => hiss(open ? 0.14 : 0.035, vol, 'highpass', open ? 6500 : 8500, null, musicBus, t);
+  const tom = (t, f, vol) => {
+    tone('sine', f, f * 0.5, 0.38, vol, musicBus, t);
+    hiss(0.05, vol * 0.3, 'bandpass', f * 6, f * 2, musicBus, t);
+  };
+  // a detuned pair of oscillators through a filter that opens and closes on every note: much fatter than one raw osc
+  const voice = (type, f, dur, vol, at, cutHz, o = {}) => {
+    const bus = o.bus || harmBus, det = o.det == null ? 7 : o.det, top = Math.max(200, cutHz);
+    const fl = ctx.createBiquadFilter();
+    fl.type = 'lowpass';
+    fl.Q.value = o.q || 1;
+    fl.frequency.setValueAtTime(top * 0.3, at);
+    fl.frequency.exponentialRampToValueAtTime(top, at + Math.min(0.1, dur * 0.4));
+    fl.frequency.exponentialRampToValueAtTime(Math.max(120, top * 0.35), at + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol * 0.6), at + (o.atk || 0.01));
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    fl.connect(g);
+    g.connect(bus);
+    [-det, det].forEach(d => {
+      const os = ctx.createOscillator();
+      os.type = type;
+      os.frequency.setValueAtTime(f, at);
+      os.detune.value = d;
+      os.connect(fl);
+      os.start(at);
+      os.stop(at + dur + 0.05);
+    });
+  };
+  // filtered noise that swells up into the next section
+  const riser = (t, dur, vol) => {
+    const n = ctx.createBufferSource();
+    n.buffer = noiseBuf;
+    n.loop = true;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 1.5;
+    f.frequency.setValueAtTime(300, t);
+    f.frequency.exponentialRampToValueAtTime(6000, t + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + dur * 0.95);
+    g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.04);
+    n.connect(f);
+    f.connect(g);
+    g.connect(leadBus);
+    n.start(t);
+    n.stop(t + dur + 0.1);
   };
   const scheduleHorror = (tr, st, t) => {
     const STEP = 60 / tr.bpm / 4;
@@ -648,15 +776,19 @@ const sfx = (() => {
     const section = songBar < 2 ? 0 : songBar < 8 ? 1 : 2;
     if (tr.hard) {
       // the horde is here: pounding toms, a grinding saw ostinato, shrieking string stabs
-      if ([0, 3, 6, 8, 10, 11, 14].includes(s16)) tone('sine', s16 % 8 === 0 ? 120 : 175, 48, 0.22, 0.85, musicBus, t);
-      if (s16 % 2 === 0) tone('sawtooth', root * (s16 % 8 === 6 ? 2 : 1), 0, STEP * 1.1, 0.22, musicBus, t, 800 + intensity * 700);
-      if (s16 % 2 === 1) hiss(0.03, 0.08 + intensity * 0.05, 'highpass', 8000, null, musicBus, t);
-      if (s16 === 4 || s16 === 12) hiss(0.18, 0.33, 'bandpass', 1500, 600, musicBus, t);
+      if ([0, 3, 6, 8, 10, 11, 14].includes(s16)) {
+        tom(t, s16 % 8 === 0 ? 120 : 175, 0.85);
+        duck(t, 0.6, 0.14);
+      }
+      if (s16 % 2 === 0) voice('sawtooth', root * (s16 % 8 === 6 ? 2 : 1), STEP * 1.1, 0.3, t, 800 + intensity * 800, { det: 9, q: 3 });
+      if (s16 % 2 === 1) hat(t, false, 0.08 + intensity * 0.05);
+      if (s16 === 4 || s16 === 12) snare(t, 0.8, true);
       if (s16 === 0 && bar % 2 === 0) {
         pad('sawtooth', semis(root * 8, 1), STEP * 7, 0.05, t, 3600);
         pad('sawtooth', semis(root * 8, 0), STEP * 7, 0.05, t, 3600, 12);
       }
-      if (s16 === 15 && bar === 3) tone('sawtooth', semis(root * 16, 6), semis(root * 8, 0), STEP * 3, 0.05, musicBus, t, 4000);
+      if (s16 === 0 && bar === 3) riser(t, STEP * 16, 0.1);
+      if (s16 === 15 && bar === 3) tone('sawtooth', semis(root * 16, 6), semis(root * 8, 0), STEP * 3, 0.05, leadBus, t, 4000);
       return;
     }
     // drone bed every bar: detuned saws under a low sine
@@ -665,43 +797,84 @@ const sfx = (() => {
       pad('sawtooth', root, L * 1.05, 0.07, t, 340 + intensity * 400);
       pad('sawtooth', root, L * 1.05, 0.06, t, 300, 9);
       pad('sine', root / 2, L * 1.05, 0.16, t, 200);
+      if (section > 0) pad('triangle', semis(root * 2, 6), L * 1.05, 0.02, t, 900, -6); // a cold tritone shimmer
       if (bar === 0 && songBar % 4 === 0) tone('sine', 46, 28, 2.2, 0.55, musicBus, t); // far-off boom
     }
-    // heartbeat; it quickens when zombies get close
+    // heartbeat (lub-dub); it quickens when zombies get close
     const beats = intensity > 0.6 ? [0, 3, 8, 11] : tr.beat;
-    if (beats.includes(s16)) tone('sine', 72, 38, 0.2, 0.7, musicBus, t);
-    if (tr.pulse && s16 % 2 === 0) tone('square', root * 2, 0, STEP * 0.7, 0.05 + intensity * 0.04, musicBus, t, 420 + intensity * 1400);
+    if (beats.includes(s16)) {
+      tone('sine', 72, 38, 0.2, 0.7, musicBus, t);
+      tone('sine', 64, 34, 0.16, 0.38, musicBus, t + STEP * 1.5);
+      duck(t, 0.7, 0.18);
+    }
+    if (tr.pulse && s16 % 2 === 0) voice('square', root * 2, STEP * 0.8, 0.07 + intensity * 0.05, t, 420 + intensity * 1400, { det: 5 });
     if (tr.ticker && s16 % 4 === 0) hiss(0.015, 0.09, 'highpass', 9000, null, musicBus, t);
     if (intensity > 0.4 && s16 % 2 === 1) hiss(0.02, 0.04 + intensity * 0.05, 'highpass', 9500, null, musicBus, t);
-    if (tr.keys && (s16 === 0 || s16 === 8) && section > 0) [0, 3, 7].forEach((n, i) => tone('triangle', semis(root * 4, n), 0, STEP * 7, 0.035, musicBus, t + i * 0.03, 1800));
+    if (intensity > 0.55 && (s16 === 0 || s16 === 8)) tom(t, root * 3, 0.45); // war drums, far away, getting closer
+    if (tr.keys && (s16 === 0 || s16 === 8) && section > 0) [0, 3, 7].forEach((n, i) => voice('triangle', semis(root * 4, n), STEP * 7, 0.05, t + i * 0.03, 1800, { bus: leadBus, det: 4, atk: 0.02 }));
     if (tr.wind && s16 === 0 && bar % 2 === 0) hiss(STEP * 24, 0.05, 'bandpass', 260, 900, musicBus, t);
-    // music box: a lonely bell line with an echo
+    // music box: a lonely bell line; the shared echo + room reverb do the rest
     if ((tr.bell || section === 2) && section > 0 && s16 % 4 === 0 && Math.random() < 0.55) {
       const m = melody[(s16 / 4 + bar * 4) % 8];
-      if (m !== null) {
-        const f = semis(root * 16, m);
-        tone('triangle', f, 0, STEP * 6, 0.035, musicBus, t, 5000);
-        tone('triangle', f, 0, STEP * 5, 0.014, musicBus, t + STEP * 3, 4000);
-      }
+      if (m !== null) voice('triangle', semis(root * 16, m), STEP * 6, 0.07, t, 5200, { bus: leadBus, det: 3, atk: 0.004 });
     }
-    // a dissonant string swell now and then
+    // a dissonant string swell now and then, with a riser into it
+    if (section === 2 && bar === 3 && s16 === 0) riser(t, STEP * 16, 0.06);
     if (section === 2 && bar === 3 && s16 === 8) {
       pad('sawtooth', semis(root * 4, 1), STEP * 10, 0.035, t, 2200);
       pad('sawtooth', semis(root * 4, 0), STEP * 10, 0.035, t, 2200, -8);
     }
     // something metal clanks somewhere in the dark
     if (Math.random() < 0.012) {
-      tone('square', 500 + Math.random() * 900, 180, 0.09, 0.025, musicBus, t, 2500);
-      hiss(0.12, 0.03, 'bandpass', 2000, 800, musicBus, t);
+      tone('square', 500 + Math.random() * 900, 180, 0.09, 0.025, leadBus, t, 2500);
+      hiss(0.12, 0.03, 'bandpass', 2000, 800, leadBus, t);
     }
   };
-  const semis = (f, n) => f * Math.pow(2, n / 12);
   const newMelody = tr => {
     // 8-step phrase from the song's scale; repeats so it becomes a hook
     melody = Array.from({ length: 8 }, () => (Math.random() < 0.22 ? null : tr.scale[Math.floor(Math.random() * tr.scale.length)] + (Math.random() < 0.3 ? 12 : 0)));
   };
   newMelody(TRACKS[0]);
 
+  // arcade / Shootout songs: kick + snare + hats, a bass line with a sub, chord pads, an arp and a lead hook
+  const scheduleBeat = (tr, st, t) => {
+    const STEP = 60 / tr.bpm / 4;
+    const s16 = st % 16, bar = Math.floor(st / 16) % 4, root = tr.roots[bar];
+    const heavy = theme === 'shootout';
+    const section = songBar < 4 ? 0 : songBar < 12 ? 1 : 2; // intro, build, full
+    const tt = t + (tr.swing && s16 % 2 === 1 ? tr.swing * STEP : 0);
+    const lastBar = songBar % 8 === 7;
+    const fill = lastBar && s16 >= 12;
+    // drums
+    if (tr.kick.includes(s16) || (rush && s16 % 2 === 0 && songBar % 4 === 3)) kick(tt, 1, tr.deep);
+    if (fill) {
+      snare(tt, 0.5 + (s16 - 12) * 0.15, false);
+      if (heavy) tom(tt, 190 - (s16 - 12) * 22, 0.55);
+    } else if (section > 0 && tr.snare.includes(s16)) snare(tt, 1, section === 2);
+    if (section > 0 && s16 % 2 === 0 && s16 % 4 !== 2) hat(tt, false, 0.06 + intensity * 0.05);
+    if (s16 % 4 === 2) hat(tt, !!tr.openHat, 0.12 + intensity * 0.1);
+    if ((intensity > 0.4 || rush) && s16 % 2 === 1) hat(tt, false, 0.05 + intensity * 0.04);
+    // bass: a filtered saw/square on top of a clean sub sine
+    if (tr.bass.includes(s16)) {
+      const oct = tr.octaveJump ? (s16 % 4 === 2 ? 2 : 1) : s16 === 6 || s16 === 14 ? 2 : 1;
+      voice(tr.bassWave, root * oct, STEP * 1.7, tr.bassWave === 'square' ? 0.28 : 0.4, tt, 650 + intensity * 900, { det: 4, q: 2.5 });
+      tone('sine', root * oct, 0, STEP * 1.6, 0.26, harmBus, tt);
+    }
+    // chord pad once a bar
+    if (section > 0 && s16 === 0) tr.chords[bar].forEach((n, i) => pad('sawtooth', semis(root * 4, n), STEP * 15.5, 0.02, t, 1300 + intensity * 900, (i - 1.5) * 5));
+    // arp and lead (these feed the echo)
+    if (section > 0 && s16 % tr.arpEvery === 0) {
+      const ch = tr.chords[bar];
+      voice(tr.arpWave, semis(root * 8, ch[(s16 / tr.arpEvery) % ch.length]), STEP * 1.4, 0.05 + intensity * 0.04, tt, 2200 + intensity * 1800, { bus: leadBus, det: 6, atk: 0.006 });
+    }
+    if (section === 2 && s16 % 2 === 0) {
+      const m = melody[(s16 / 2) % 8];
+      if (m !== null) voice(heavy ? 'sawtooth' : 'triangle', semis(root * 8, m), STEP * 2.4, heavy ? 0.075 : 0.12, tt, heavy ? 3000 : 4200, { bus: leadBus, det: 5 });
+    }
+    // section markers: a riser into the last bar of each 8, a crash on the downbeat after
+    if (s16 === 0 && section > 0 && lastBar) riser(t, STEP * 16, 0.09);
+    if (s16 === 0 && section > 0 && songBar % 8 === 0) hiss(1.0, 0.2, 'highpass', 5500, 3000, leadBus, t);
+  };
   const scheduleStep = (st, t) => {
     const tr = cur();
     const STEP = 60 / tr.bpm / 4;
@@ -716,34 +889,11 @@ const sfx = (() => {
       } else if (songBar % 8 === 0) {
         newMelody(tr);
       }
+      // keep the echo locked to the beat: a dotted eighth
+      if (delayNode) delayNode.delayTime.setTargetAtTime(STEP * 3, t, 0.05);
     }
-    if (theme === 'zombie') {
-      scheduleHorror(tr, st, t);
-      return;
-    }
-    const bar = Math.floor(st / 16) % 4;
-    const root = tr.roots[bar];
-    const section = songBar < 4 ? 0 : songBar < 12 ? 1 : 2; // intro, build, full
-    const tt = t + (tr.swing && s16 % 2 === 1 ? tr.swing * STEP : 0);
-    const fill = songBar % 8 === 7 && s16 >= 12;
-
-    if (tr.kick.includes(s16) || (rush && s16 % 2 === 0 && songBar % 4 === 3)) tone('sine', 150, 42, 0.26, 0.9, musicBus, tt);
-    if (section > 0 && (tr.snare.includes(s16) || fill)) hiss(fill ? 0.08 : 0.16, fill ? 0.25 : 0.35, 'bandpass', 1700, 900, musicBus, tt);
-    if (s16 % 4 === 2) hiss(tr.openHat ? 0.12 : 0.04, 0.12 + intensity * 0.12, 'highpass', tr.openHat ? 6500 : 8000, null, musicBus, tt);
-    if ((intensity > 0.4 || rush) && s16 % 2 === 1) hiss(0.025, 0.06 + intensity * 0.04, 'highpass', 9000, null, musicBus, tt);
-    if (tr.bass.includes(s16)) {
-      const oct = tr.octaveJump ? (s16 % 4 === 2 ? 2 : 1) : s16 === 6 || s16 === 14 ? 2 : 1;
-      tone(tr.bassWave, root * oct, 0, STEP * 1.6, 0.3, musicBus, tt, 700 + intensity * 900);
-    }
-    if (section > 0 && s16 % tr.arpEvery === 0) {
-      const ch = tr.chords[bar];
-      const note = semis(root * 8, ch[(s16 / tr.arpEvery) % ch.length]);
-      tone(tr.arpWave, note, 0, STEP * 1.2, 0.03 + intensity * 0.03, musicBus, tt, 2600);
-    }
-    if (section === 2 && s16 % 2 === 0) {
-      const m = melody[(s16 / 2) % 8];
-      if (m !== null) tone('triangle', semis(root * 8, m), 0, STEP * 2.2, 0.07, musicBus, tt, 4200);
-    }
+    if (theme === 'zombie') scheduleHorror(tr, st, t);
+    else scheduleBeat(tr, st, t);
   };
 
   const tick = () => {
@@ -800,7 +950,7 @@ const sfx = (() => {
         step = 0;
         musicTimer = setInterval(tick, 25);
       }
-      if (onTrackChange && th === 'zombie') onTrackChange(list()[trackIdx].name);
+      if (onTrackChange && th !== 'main') onTrackChange(list()[trackIdx].name);
     },
     stopMusic() {
       if (musicTimer) clearInterval(musicTimer);
@@ -8373,7 +8523,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     window.addEventListener('resize', onResize);
 
     sfx.onTrack(n => pushFeed(`🎵 ${n}`, '#c084fc'));
-    sfx.startMusic(zombie ? 'zombie' : 'main');
+    sfx.startMusic(zombie ? 'zombie' : 'shootout');
 
     // ---------- blob shadows: every panda and zombie gets a soft shadow, all in one draw call ----------
     const BLOB_MAX = 72;

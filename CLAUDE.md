@@ -7,7 +7,7 @@ Single-file game: `index.html` (React 18 UMD + Babel standalone + Three.js r149 
 - **Shootout design rules live in `SHOOTOUT_DESIGN.md`. Read it before changing Shootout; its section 2 rules are hard rules.**
 
 - `MATCH_SECONDS` (Beatdown clock) and `SHOOT_SECONDS` (Shootout clock): top of the script.
-- Audio: `sfx` object (cases like `'call'`, `'dash'`, `'cannon'`), music via `musicTimer`, `kickAudio` global listeners.
+- Audio: `sfx` object (cases like `'call'`, `'dash'`, `'cannon'`), music via `musicTimer`, `kickAudio` global listeners. Music buses: `musicBus` (drums) / `harmBus` (bass+pads, ducked by `duck()` on every kick) / `leadBus` (arps, leads, bells; feeds the echo) → `musicMix` → shared convolver reverb. Themes: `main` (lobby/Beatdown, `TRACKS`), `shootout` (`STRACKS`, `SRUSH`), `zombie` (`ZTRACKS`, `ZRUSH`). Helpers `kick/snare/hat/tom/voice/riser`; beat themes go through `scheduleBeat`, zombie through `scheduleHorror`. Keep node creation per step modest (phones).
 - Story: `CHAPTERS` (5 entries, each with `mode`, `check(s)`, `intro`, `outro`), `storyEval(idx, st)`, `StoryComic`, `StoryResult`, `STORY_PROLOGUE`, `STORY_EPILOGUE`.
 - Profile: `defaultProfile`, `loadProfile`, `saveProfile`, `awardXp`, key `PROFILE_KEY` (localStorage `ngmi_profile_v1`).
 - Lobby: `App` component (screens: lobby, playing, shootout). `LobbyBackdrop`, `Showcase`, `ClipGallery`.
