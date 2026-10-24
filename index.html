@@ -5938,7 +5938,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const muzzle = new THREE.Vector3(b.pos.x + fx0 * 0.9 + fz0 * 0.35, b.pos.y + 1.45, b.pos.z + fz0 * 0.9 - fx0 * 0.35);
       const d0 = Math.hypot(t.pos.x - b.pos.x, t.pos.z - b.pos.z);
       const movingT = Math.hypot(t.vel.x, t.vel.z) > 2;
-      const err = (0.35 + d0 * 0.028) * (movingT ? 1.35 : 1) * b.skill * BOT.err;
+      const err = (0.35 + d0 * 0.028) * (movingT ? 1.35 : 1) * b.skill * BOT.err * (t.isZombie ? 0.7 : 1); // zombies are big targets
       const aimY = t.isZombie ? t.def.s * 0.85 : 1.3;
       const aim = new THREE.Vector3(t.pos.x + (Math.random() - 0.5) * err * 2, t.pos.y + aimY + (Math.random() - 0.5) * err * 2, t.pos.z + (Math.random() - 0.5) * err * 2);
       const dir = aim.sub(muzzle).normalize();
@@ -5950,7 +5950,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       b.protT = 0;
       if (res.zombie) {
         // squad bots hit zombies harder so they pull their weight
-        hurtZombie(res.zombie, (b.golden ? 30 : b.wkey === 'gatling' ? 10 : 18) * (res.head ? 1.6 : 1) * (1 + (zd.wave - 1) * 0.08), res.head, b);
+        hurtZombie(res.zombie, (b.golden ? 36 : b.wkey === 'gatling' ? 13 : 23) * (res.head ? 1.6 : 1) * (1 + (zd.wave - 1) * 0.17), res.head, b); // keeps pace with zombie HP (+16%/wave)
         if (vol > 0.2) hitFx(res.zombie, res.point, res.head);
       } else if (res.fighter) {
         damage(res.fighter, b, (b.golden ? 20 : b.wkey === 'gatling' ? 6 : 11) * (res.head ? 1.6 : 1) * BOT.dmg, res.head);
@@ -6182,7 +6182,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const ZPHASES = ['boot', 'prep', 'wave', 'clear', 'over', 'won'];
     // phase: boot → prep → wave → clear → prep … ; ends in over (squad wiped) or won (raid finale)
     // horde: 0 not yet · 1 siren warning · 2 pouring in · 3 done
-    const zd = { wave: 0, phase: 'boot', t: 2, toSpawn: 0, spawned: 0, horde: 0, hordeT: 0, hordeLeft: 0, hordeAt: [0, 0], bossWave: false, bossDown: false, brutes: 0, spitters: 0, hpMul: 1, dmgMul: 1, spdMul: 1 };
+    const zd = { wave: 0, phase: 'boot', t: 2, toSpawn: 0, spawned: 0, horde: 0, hordeT: 0, hordeLeft: 0, hordeAt: [0, 0], bossWave: false, bossDown: false, brutes: 0, spitters: 0, hpMul: 1, dmgMul: 1, spdMul: 1, teamKills: 0, deltaAt: 45, deltaN: 0 };
     const corpses = [];
     const takeZMesh = kind => {
       const pl = zPool[kind] || (zPool[kind] = []);
@@ -6625,7 +6625,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const zfxPlay = e => {
       if (!Array.isArray(e)) return;
       const n = i => netNum(e[i], -400, 400, 0);
-      if (e[0] === 1) slamFx(n(1), n(2), n(3));
+      if (e[0] === 4) startDelta(n(1), n(2), n(3), n(4));
+      else if (e[0] === 1) slamFx(n(1), n(2), n(3));
       else if (e[0] === 2 || e[0] === 3) throwRock(new THREE.Vector3(n(1), n(2), n(3)), new THREE.Vector3(n(4), n(5), n(6)), false, e[0] === 3 ? 'spit' : 'rock');
     };
 
@@ -6711,6 +6712,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       zombieDeathFx(zz, head);
       send({ t: 'zk', id: myId, z: zz.id, k: kid || '', hs: head ? 1 : 0, g: gib ? 1 : 0, kd: ZKIND_IDS.indexOf(zz.kind) });
       creditZombieKill(kid, zz.def, head);
+      if (kid !== 'delta' && !zz.def.boss) zd.teamKills += 1;
       const pos = zz.pos.clone();
       toCorpse(zz, head, gib || zz.def.pop);
       if (zz.def.pop) bloaterPop(pos, true);
@@ -7360,7 +7362,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             if ((pack >= 3 || zz.kind === 'brute' || zz.def.boss) && safe && hasLOS(eye, chestOf(zz))) {
               doThrow(b, 'nade', new THREE.Vector3(zz.pos.x + zz.vel.x * 0.8, zz.pos.y, zz.pos.z + zz.vel.z * 0.8));
               b.nades -= 1;
-              b.nadeCd = 9;
+              b.nadeCd = 6;
               break;
             }
           }
@@ -7481,14 +7483,14 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               b.fireCd = gat ? 0.06 : 0.12;
             } else {
               b.burst = gat ? 12 + Math.floor(Math.random() * 10) : 3 + Math.floor(Math.random() * 3);
-              b.fireCd = 0.3 + Math.random() * 0.4;
+              b.fireCd = zombie ? 0.1 + Math.random() * 0.18 : 0.3 + Math.random() * 0.4; // squad bots keep the pressure on
             }
             botShoot(b, t);
           }
           b.mag = (b.mag == null ? 30 : b.mag) - 1;
           if (b.mag <= 0) {
-            b.reloadT = 1.2;
-            b.mag = b.wkey === 'gatling' ? 90 : b.wkey === 'rpg' ? 3 : 30;
+            b.reloadT = zombie ? 0.8 : 1.2;
+            b.mag = b.wkey === 'gatling' ? 90 : b.wkey === 'rpg' ? 3 : zombie ? 45 : 30;
             if (b.nearD < 22 && !(zombie && world.frenzyT > 0)) callout(b, 'reload');
           }
         }
@@ -7650,6 +7652,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       zd.horde = 0;
       zd.hordeLeft = Math.round((zd.bossWave ? 10 + w : 8 + w * 4) * c);
       zd.bossDown = false;
+      fighters.forEach(f => { if (f.isBot && !f.dead) { f.nades = Math.max(f.nades || 0, 2); if (w % 2 === 0) f.medkits = Math.max(f.medkits || 0, 1); } }); // resupply each wave
       zd.brutes = 0;
       zd.spitters = 0;
       setPhase('wave', 1.2);
@@ -7662,8 +7665,155 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (fin) [0, 1].forEach(() => spawnZ('brute', bx, bz));
       }
     };
+    // ---- DELTA FORCE: elite reinforcements (fictional operators). At team-kill milestones the host calls them; everyone
+    // animates the same run (start/end sent as zfx 4), only the host deals damage so nothing is counted twice. ----
+    const deltas = [];
+    const DELTA_NAMES = ['BREACH', 'HAMMER', 'GHOST', 'SARGE'];
+    const deltaTags = {};
+    const DELTA_SRC = { id: 'delta', name: 'DELTA' };
+    const startDelta = (x0, z0, x1, z1) => {
+      const dir = new THREE.Vector3(x1 - x0, 0, z1 - z0);
+      const len = dir.length() || 1;
+      dir.multiplyScalar(1 / len);
+      const ops = DELTA_NAMES.map((nm, i) => {
+        const mesh = buildNgmiPandaMesh(PANDA_CLASSES[i % PANDA_CLASSES.length], false, 0x4b5a35);
+        mesh.scale.setScalar(1.1);
+        mesh.rotation.order = 'YXZ';
+        const gun = makeGunModel(i === 0 ? 'shotgun' : i === 3 ? 'gatling' : 'ak', false);
+        gun.rotation.y = Math.PI;
+        gun.position.set(-0.05, 0.1, 0.55);
+        mesh.userData.rightArmGroup.add(gun);
+        mesh.userData.leftArmGroup.rotation.x = -0.35;
+        if (!deltaTags[nm]) deltaTags[nm] = makeTag(`Δ ${nm}`, '#a3e635');
+        const tg = new THREE.Sprite(deltaTags[nm].sprite.material);
+        tg.scale.set(2.2, 0.55, 1);
+        tg.position.y = 3.35;
+        mesh.add(tg);
+        scene.add(mesh);
+        return { mesh, i, x: x0, z: z0, face: Math.atan2(dir.x, dir.z), cd: Math.random() * 0.14, hitCd: 0, tgt: null, thinkT: 0, swing: 0, snd: 0 };
+      });
+      deltas.push({ x0, z0, x1, z1, dir, len, cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, ops, s: 0, phase: 'in', holdT: 10 });
+      announceNow('🎖️ DELTA FORCE · ON THE MOVE', '#a3e635');
+      sfx.play('radio', 0.7);
+      sfx.play('hordeRumble', 0.5);
+    };
+    const tickDelta = dt => {
+      for (let di = deltas.length - 1; di >= 0; di--) {
+        const D = deltas[di];
+        const half = D.len / 2;
+        if (D.phase === 'in') {
+          D.s += 14 * dt;
+          if (D.s >= half) { D.phase = 'hold'; D.s = half; }
+        } else if (D.phase === 'hold') {
+          D.holdT -= dt;
+          if (D.holdT <= 0) D.phase = 'out';
+        } else {
+          D.s += 15 * dt;
+          if (D.s >= D.len) {
+            D.ops.forEach(o => scene.remove(o.mesh));
+            deltas.splice(di, 1);
+            continue;
+          }
+        }
+        const t = performance.now();
+        D.ops.forEach(o => {
+          const lat = (o.i - 1.5) * 2.4, lon = -Math.abs(o.i - 1.5) * 1.5;
+          const bx = D.x0 + D.dir.x * (D.s + lon) - D.dir.z * lat, bz = D.z0 + D.dir.z * (D.s + lon) + D.dir.x * lat;
+          o.thinkT -= dt;
+          o.cd -= dt;
+          o.hitCd -= dt;
+          o.swing = Math.max(0, o.swing - dt);
+          if (o.thinkT <= 0) {
+            o.thinkT = 0.2;
+            let best = null, bd = D.phase === 'hold' ? 22 : 30;
+            for (const zz of zombies) {
+              if (zz.dead || zz.hp <= 0 || zz.rise > 0) continue;
+              const d = Math.hypot(zz.pos.x - o.x, zz.pos.z - o.z);
+              if (d < bd) { bd = d; best = zz; }
+            }
+            o.tgt = best;
+          }
+          let tx = bx, tz = bz, sp = 14;
+          const zt = o.tgt && !o.tgt.dead && o.tgt.hp > 0 ? o.tgt : null;
+          if (D.phase === 'hold') {
+            // hold the arena: run the nearest zombie down and take it apart by hand
+            if (zt && Math.hypot(zt.pos.x - D.cx, zt.pos.z - D.cz) < 24) { tx = zt.pos.x; tz = zt.pos.z; sp = 10; }
+            else { tx = D.cx + D.dir.x * lon * 2 - D.dir.z * lat * 1.6; tz = D.cz + D.dir.z * lon * 2 + D.dir.x * lat * 1.6; sp = 8; }
+          }
+          const mx = tx - o.x, mz = tz - o.z, md = Math.hypot(mx, mz);
+          if (D.phase !== 'hold') {
+            o.x = bx; o.z = bz; // the sweep itself is scripted so it is identical on every screen
+          } else if (md > 1.7) {
+            const st = Math.min(md - 1.5, sp * dt);
+            o.x += (mx / md) * st;
+            o.z += (mz / md) * st;
+          }
+          if (zt) {
+            const fd = Math.hypot(zt.pos.x - o.x, zt.pos.z - o.z);
+            o.face = Math.atan2(zt.pos.x - o.x, zt.pos.z - o.z);
+            if (fd < 2.7 && o.hitCd <= 0) {
+              // close-quarters takedown
+              o.hitCd = 0.5;
+              o.swing = 0.28;
+              if (net.isHost) {
+                const kx = (zt.pos.x - o.x) / (fd || 1), kz = (zt.pos.z - o.z) / (fd || 1);
+                hurtZombie(zt, zt.def.boss ? 120 : 1800, false, DELTA_SRC, false, [kx * 9, kz * 9, 0.6], !zt.def.boss);
+              }
+              play3d('mhit', zt.pos, 0.7, 0.8, 50);
+            } else if (fd >= 2.7 && o.cd <= 0) {
+              o.cd = o.i === 3 ? 0.06 : o.i === 0 ? 0.5 : 0.1;
+              const mz0 = new THREE.Vector3(o.x + Math.sin(o.face) * 1, 1.5, o.z + Math.cos(o.face) * 1);
+              const ch = new THREE.Vector3(zt.pos.x, zt.pos.y + zt.s * 0.9, zt.pos.z);
+              if (hasLOS(mz0, ch)) {
+                if (o.i === 3 ? (o.snd = (o.snd + 1) % 4) === 0 : true) {
+                  spawnTracer(mz0, ch, 0xd9f99d);
+                  if (o.i !== 3) play3d('shot_ak', mz0, 0.3, 1.15, 60);
+                }
+                if (net.isHost) {
+                  const head = Math.random() < 0.25;
+                  const dmg = (o.i === 0 ? 120 : o.i === 3 ? 22 : 46) * (1 + (zd.wave - 1) * 0.17) * (head ? 1.6 : 1);
+                  hurtZombie(zt, dmg, head, DELTA_SRC);
+                }
+              }
+            }
+          } else o.face = D.phase === 'out' ? Math.atan2(D.dir.x, D.dir.z) : o.face;
+          const run = D.phase !== 'hold' || md > 2;
+          o.mesh.position.set(o.x, Math.abs(Math.sin(t * 0.016 + o.i)) * (run ? 0.14 : 0.02), o.z);
+          o.mesh.rotation.y = o.face;
+          o.mesh.rotation.x = run ? 0.18 : 0;
+          o.mesh.userData.leftArmGroup.rotation.x = run ? Math.sin(t * 0.016 + o.i) * 0.9 : -0.35;
+          o.mesh.userData.rightArmGroup.rotation.x = o.swing > 0 ? -1.9 + (0.28 - o.swing) * 7 : -0.35;
+        });
+      }
+    };
+    // host: call Delta when the squad reaches the next team-kill milestone
+    const callDelta = () => {
+      const alive = fighters.filter(f => !f.dead);
+      if (!alive.length) return;
+      let cx = 0, cz = 0;
+      alive.forEach(f => { cx += f.pos.x; cz += f.pos.z; });
+      cx /= alive.length;
+      cz /= alive.length;
+      // fly the sweep along whichever line through the squad is the clearest of buildings
+      let best = null, bs = 1e9;
+      for (let k = 0; k < 8; k++) {
+        const ang = k * Math.PI / 4 + Math.random() * 0.3, dx = Math.sin(ang), dz = Math.cos(ang), R = 70;
+        const dv = new THREE.Vector3(dx, 0, dz);
+        let blocked = 0;
+        for (let q = -R; q < R; q += 7) if (wallHit(new THREE.Vector3(cx + dx * q, 1.2, cz + dz * q), dv, 7)) blocked++;
+        const cl = v => Math.max(-84, Math.min(84, v));
+        const cand = [cl(cx - dx * R), cl(cz - dz * R), cl(cx + dx * R), cl(cz + dz * R)];
+        if (blocked < bs) { bs = blocked; best = cand; }
+      }
+      zd.deltaN += 1;
+      zd.deltaAt += 70 + zd.deltaN * 10;
+      const ev = [4, r1(best[0]), r1(best[1]), r1(best[2]), r1(best[3])];
+      net.pendingZfx.push(ev);
+      zfxPlay(ev);
+    };
     const zTick = dt => {
       if (zd.phase === 'over' || zd.phase === 'won') return;
+      if (zd.phase === 'wave' && zd.teamKills >= zd.deltaAt && !deltas.length) callDelta();
       tickFlow(dt);
       if (zd.phase !== 'boot' && fighters.length && fighters.every(f => f.dead || f.downed)) {
         setPhase('over', 0);
@@ -9025,7 +9175,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       c.strike = false;
       if (c.office && zombie && !me.dead && !me.downed && !frozen) callOffice();
       c.office = false;
-      if (zombie) tickOffices(dt);
+      if (zombie) { tickOffices(dt); tickDelta(dt); }
       c.jump = false;
       c.reload = false;
       c.swap = false;
@@ -9819,7 +9969,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         <div className="absolute left-1/2 bottom-[13%] -translate-x-1/2 pointer-events-none text-[11px] md:text-sm font-black px-3 py-1 rounded-full bg-rose-600/90 text-white animate-pulse border border-white/60">☄️ MOON STRIKE READY · {IS_TOUCH ? 'tap ☄️' : 'press G'}</div>
       )}
       {hud.office === 0 && !hud.dead && (
-        <div className="absolute left-1/2 bottom-[18%] -translate-x-1/2 pointer-events-none text-[11px] md:text-sm font-black px-3 py-1 rounded-full bg-amber-500/90 text-slate-950 border border-white/60">📞 OFFICE · DYNAMITE READY · {IS_TOUCH ? 'tap 📞' : 'press B'}</div>
+        <div className="absolute left-1/2 bottom-[24%] -translate-x-1/2 pointer-events-none text-[11px] md:text-sm font-black px-3 py-1 rounded-full bg-amber-500/90 text-slate-950 border border-white/60">{IS_TOUCH ? '📞 DYNAMITE READY' : '📞 OFFICE · DYNAMITE READY · press B'}</div>
       )}
       {hud.prot && (
         <div className="absolute left-1/2 top-[38%] -translate-x-1/2 pointer-events-none text-[11px] md:text-xs font-black px-3 py-1 rounded-full bg-cyan-500/80 text-slate-950">🛡️ SPAWN SHIELD · shooting ends it</div>
