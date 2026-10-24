@@ -4659,7 +4659,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         // distance from the sphere centre to the bullet line, vs the true (un-assisted) radius
         const vx = gcx - o.x, vy = gcy - o.y, vz = gcz - o.z;
         const cx = vy * d.z - vz * d.y, cy = vz * d.x - vx * d.z, cz = vx * d.y - vy * d.x;
-        graze = Math.sqrt(cx * cx + cy * cy + cz * cz) > gr * (IS_TOUCH ? 1.0 : 0.82);
+        graze = Math.sqrt(cx * cx + cy * cy + cz * cz) > gr * (IS_TOUCH ? 1.0 : 0.9);
       }
       return { graze, point, fighter: hitF, zombie: hitZ, head, normal: solid && wh && wh.face ? wh.face.normal.clone().transformDirection(wh.object.matrixWorld) : null, wall: solid && !!wh, obj: solid && wh ? wh.object : null };
     };
@@ -4991,6 +4991,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (holder.gun) mesh.userData.rightArmGroup.remove(holder.gun);
       holder.gun = makeGunModel(key, false);
       holder.gun.rotation.y = Math.PI;
+      if (holder.gun.userData.melee) holder.gun.rotation.set(-0.8, Math.PI, 0); // blade up, not down
       holder.gun.position.set(-0.05, 0.1, 0.55);
       mesh.userData.rightArmGroup.add(holder.gun);
       holder.gunKey = key;
@@ -5526,8 +5527,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       for (let i = 0; i < Math.round(6 * scale); i++) {
         spawnFx({ pos: point.clone().add(new THREE.Vector3(rnd() * 0.8 * scale, 0.3 + i * 0.35 * scale, rnd() * 0.8 * scale)), size: (1.6 - i * 0.12) * scale, grow: 2.4 * scale, life: 0.45 + Math.random() * 0.3, color: i < 3 ? 0xffd28a : 0xff8a2a, add: true, opacity: 0.85, vy: 5 + Math.random() * 5, vx: rnd() * 2, vz: rnd() * 2, drag: 1.6 });
       }
-      for (let i = 0; i < 9; i++) {
-        const a = (i / 9) * Math.PI * 2 + Math.random() * 0.4;
+      const nDust = IS_TOUCH ? 5 : 9;
+      for (let i = 0; i < nDust; i++) {
+        const a = (i / nDust) * Math.PI * 2 + Math.random() * 0.4;
         spawnFx({ pos: new THREE.Vector3(point.x, Math.max(0.3, point.y - 0.6), point.z), size: 1.1 * scale, grow: 4.2 * scale, life: 0.9 + Math.random() * 0.5, color: 0x9a8f80, smoke: true, opacity: 0.45, vx: Math.cos(a) * 15 * scale, vy: 0.2, vz: Math.sin(a) * 15 * scale, drag: 3.2 });
       }
       for (let i = 0; i < Math.round((IS_TOUCH ? 6 : 10) * Math.min(1.6, scale)); i++) {
@@ -9155,6 +9157,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         camera.getWorldDirection(fwd);
         const aimRes = me.dead ? null : traceShot(camera.getWorldPosition(new THREE.Vector3()), fwd, me, IS_TOUCH ? 1.2 : 1);
         me.autoAim = !!(aimRes && ((aimRes.fighter && !aimRes.fighter.dead) || (aimRes.zombie && aimRes.zombie.hp > 0)));
+        // a hand weapon only auto-swings when the target is actually within reach
+        const curDef = SHOOT_WEAPONS[me.weapons[me.slot].key];
+        if (me.autoAim && curDef.melee && aimRes.point.distanceTo(camera.position) > curDef.reach + 1) me.autoAim = false;
         const proj = (x, y, z) => {
           const v = new THREE.Vector3(x, y, z).project(camera);
           let px = (v.x * 0.5 + 0.5) * 100, py = (-v.y * 0.5 + 0.5) * 100;
