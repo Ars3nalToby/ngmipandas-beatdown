@@ -277,6 +277,7 @@ const sfx = (() => {
   let ctx = null, master = null, sfxBus = null, musicBus = null, noiseBuf = null, recDest = null;
   let muted = false, lastHit = 0, musicTimer = null, nextStepTime = 0, step = 0, intensity = 0;
   let harmBus = null, leadBus = null, musicMix = null, delayNode = null; // music mixing buses (see ensure)
+  let musicOutG = null, revInG = null, dsendG = null, load = 0, sfxWinT = 0, sfxWinN = 0; // load: 1 = busy fight, music gets thinner and quieter
   let curBus = null; // when set, sounds route through a panner + muffle filter (positional audio)
 
   const ensure = () => {
@@ -300,6 +301,7 @@ const sfx = (() => {
       // All three meet in musicMix, which feeds a shared room reverb; leads also feed a tempo-synced echo.
       const musicOut = ctx.createGain();
       musicOut.gain.value = 0.4;
+      musicOutG = musicOut;
       musicOut.connect(master);
       musicMix = ctx.createGain();
       musicMix.connect(musicOut);
@@ -326,6 +328,7 @@ const sfx = (() => {
         conv.buffer = ir;
         const revIn = ctx.createGain();
         revIn.gain.value = 0.36;
+        revInG = revIn;
         const revOut = ctx.createGain();
         revOut.gain.value = 0.9;
         musicMix.connect(revIn);
@@ -341,6 +344,7 @@ const sfx = (() => {
         dlp.frequency.value = 2400;
         const dsend = ctx.createGain();
         dsend.gain.value = 0.3;
+        dsendG = dsend;
         leadBus.connect(dsend);
         dsend.connect(delayNode);
         delayNode.connect(dlp);
@@ -404,9 +408,14 @@ const sfx = (() => {
     n.stop(t + dur + 0.05);
   };
 
+  const SFX_KEEP = { explode: 1, cannon: 1, crit: 1, boom: 1, rpg: 1, rocket: 1, dynamite: 1, call: 1, hordeRumble: 1 };
   const play = (name, vol = 1, p = 1, pan = null, muffle = 0) => {
     if (!ctx || muted || vol <= 0.02) return;
     const now = ctx.currentTime;
+    // voice budget: a huge fight must not flood the audio thread (that is what makes everything crackle).
+    // The big, rare sounds always pass; the spammy small ones are dropped once the 60 ms window is full.
+    if (now - sfxWinT > 0.06) { sfxWinT = now; sfxWinN = 0; }
+    if (++sfxWinN > (load > 0.5 ? 5 : 9) && !SFX_KEEP[name]) return;
     if (pan !== null || muffle > 0) {
       // left/right by direction, duller with distance or through walls
       const lp = ctx.createBiquadFilter();
@@ -642,6 +651,15 @@ const sfx = (() => {
         tone('sine', 150 * p, 70, 0.1, 0.32 * vol);
         hiss(0.1, 0.12 * vol, 'lowpass', 900, 200);
         break;
+      case 'radio':
+        hiss(0.07, 0.35 * vol, 'bandpass', 2600, 1800);
+        tone('square', 1450, 1380, 0.06, 0.08 * vol);
+        hiss(0.12, 0.18 * vol, 'bandpass', 1900, 2300, null, now + 0.09);
+        break;
+      case 'dynamite':
+        tone('sine', 1900 * p, 380 * p, 0.8, 0.09 * vol);
+        hiss(0.5, 0.08 * vol, 'bandpass', 3200, 900);
+        break;
       case 'hordeRumble':
         for (let i = 0; i < 3; i++) tone('sawtooth', (80 + Math.random() * 50) * p, 55, 0.9, 0.05 * vol, null, now + i * 0.13, 380);
         hiss(1.1, 0.22 * vol, 'lowpass', 520, 180);
@@ -682,6 +700,7 @@ const sfx = (() => {
   const list = () => (theme === 'zombie' ? ZTRACKS : theme === 'shootout' ? STRACKS : TRACKS);
   const cur = () => (theme === 'zombie' ? (rush ? ZRUSH : ZTRACKS[trackIdx % ZTRACKS.length]) : theme === 'shootout' ? (rush ? SRUSH : STRACKS[trackIdx % STRACKS.length]) : rush ? RUSH : TRACKS[trackIdx % TRACKS.length]);
   const pad = (type, f, dur, vol, at, filterHz, detune = 0) => {
+    if (load > 0.5 && detune !== 0) return; // only the un-detuned layer in a busy fight
     const o = ctx.createOscillator();
     o.type = type;
     o.frequency.setValueAtTime(f, at);
@@ -727,6 +746,7 @@ const sfx = (() => {
   };
   // a detuned pair of oscillators through a filter that opens and closes on every note: much fatter than one raw osc
   const voice = (type, f, dur, vol, at, cutHz, o = {}) => {
+    if (load > 0.5 && o.bus === leadBus && !rush) return; // thin the mix in a busy fight: no arps/leads
     const bus = o.bus || harmBus, det = o.det == null ? 7 : o.det, top = Math.max(200, cutHz);
     const fl = ctx.createBiquadFilter();
     fl.type = 'lowpass';
@@ -740,7 +760,7 @@ const sfx = (() => {
     g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
     fl.connect(g);
     g.connect(bus);
-    [-det, det].forEach(d => {
+    (load > 0.5 ? [0] : [-det, det]).forEach(d => {
       const os = ctx.createOscillator();
       os.type = type;
       os.frequency.setValueAtTime(f, at);
@@ -927,6 +947,17 @@ const sfx = (() => {
     ctxState() { return ctx ? ctx.state : 'none'; },
     musicOn() { return !!musicTimer; },
     setIntensity(x) { intensity = Math.max(0, Math.min(1, x)); },
+    // busy-fight mode: quieter, drier music with half the oscillators so the sound effects and the CPU have room
+    setLoad(x) {
+      const l = x ? 1 : 0;
+      if (l === load) return;
+      load = l;
+      if (!ctx) return;
+      const t = ctx.currentTime;
+      if (musicOutG) musicOutG.gain.setTargetAtTime(l ? 0.26 : 0.4, t, 0.4);
+      if (revInG) revInG.gain.setTargetAtTime(l ? 0.1 : 0.36, t, 0.4);
+      if (dsendG) dsendG.gain.setTargetAtTime(l ? 0 : 0.3, t, 0.4);
+    },
     setRush(on) {
       if (rush === on) return;
       rush = on;
@@ -5761,6 +5792,77 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       announceNow('☄️ MOON STRIKE INBOUND', '#f87171');
       sfx.play('powerup');
     };
+    // ---- CALL THE OFFICE: radio for a dynamite carpet run (zombie mode, 60 s cooldown) ----
+    const OFFICE_CD = 60;
+    const offices = [];
+    const dynGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.5, 6);
+    const dynMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.6, emissive: 0x7f1d1d, emissiveIntensity: 0.6 });
+    const callOffice = () => {
+      if ((me.dynCd || 0) > 0) { announceNow(`📞 OFFICE BUSY · ${Math.ceil(me.dynCd)}s`, '#94a3b8'); return; }
+      me.dynCd = OFFICE_CD;
+      camera.getWorldDirection(fwd);
+      const res = traceShot(camera.getWorldPosition(new THREE.Vector3()), fwd, me);
+      const tgt = res.point.clone();
+      tgt.y = 0;
+      const mp = me.pos, dd = Math.hypot(tgt.x - mp.x, tgt.z - mp.z);
+      if (dd > 60) { tgt.x = mp.x + (tgt.x - mp.x) * 60 / dd; tgt.z = mp.z + (tgt.z - mp.z) * 60 / dd; }
+      // the run flies along your line of sight, centred on the spot you aim at
+      const len = Math.hypot(fwd.x, fwd.z) || 1, ax = fwd.x / len, az = fwd.z / len;
+      const ring = new THREE.Mesh(new THREE.RingGeometry(1.6, 2.0, 32), new THREE.MeshBasicMaterial({ color: 0xffa31a, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, fog: false }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(tgt.x, 0.14, tgt.z);
+      scene.add(ring);
+      offices.push({ tgt, ax, az, ring, t: 3.2, n: 0, next: 0, sticks: [] });
+      announceNow('📞 "OFFICE, SEND THE DYNAMITE!"', '#fbbf24');
+      callout(me, 'nade');
+      sfx.play('radio', 0.7);
+      sfx.play('powerup');
+    };
+    const tickOffices = dt => {
+      if (me.dynCd > 0) me.dynCd = Math.max(0, me.dynCd - dt);
+      for (let i = offices.length - 1; i >= 0; i--) {
+        const o = offices[i];
+        o.t -= dt;
+        o.ring.material.opacity = 0.5 + Math.sin(performance.now() * 0.02) * 0.4;
+        if (o.t <= 0 && o.n < 10) {
+          o.next -= dt;
+          if (o.next <= 0) {
+            o.next = 0.17;
+            // 10 sticks walking down a 30 m line, with a little scatter
+            const k = (o.n - 4.5) * 3.2, jx = (Math.random() - 0.5) * 3.5;
+            const x = o.tgt.x + o.ax * k - o.az * jx, z = o.tgt.z + o.az * k + o.ax * jx;
+            o.n++;
+            const m = new THREE.Mesh(dynGeo, dynMat);
+            m.position.set(x, 34, z);
+            scene.add(m);
+            o.sticks.push({ m, x, z, y: 34, vy: -18 });
+            if (o.n === 1) o.sound = sfx.play('dynamite', 0.8);
+            sfx.play('dynamite', 0.5, 0.9 + Math.random() * 0.3);
+          }
+        }
+        for (let j = o.sticks.length - 1; j >= 0; j--) {
+          const st = o.sticks[j];
+          st.vy -= 22 * dt;
+          st.y += st.vy * dt;
+          st.m.position.y = st.y;
+          st.m.rotation.x += dt * 9;
+          if (st.y <= 0.3) {
+            scene.remove(st.m);
+            o.sticks.splice(j, 1);
+            // never blow up on top of your own squad
+            const safe = !fighters.some(f => !f.dead && Math.hypot(f.pos.x - st.x, f.pos.z - st.z) < 6);
+            if (safe) explodeAt(new THREE.Vector3(st.x, 0.4, st.z), me, false, null, 0.85);
+            else spawnFx({ pos: new THREE.Vector3(st.x, 0.3, st.z), size: 0.8, grow: 2, life: 0.4, color: 0x94a3b8, smoke: true, opacity: 0.6 });
+          }
+        }
+        if (o.n >= 10 && !o.sticks.length) {
+          scene.remove(o.ring);
+          o.ring.geometry.dispose();
+          o.ring.material.dispose();
+          offices.splice(i, 1);
+        }
+      }
+    };
     const selectSlot = i => {
       if (i === me.slot || !me.weapons[i]) return;
       me.lastSlot = me.slot;
@@ -8162,6 +8264,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (e.code === 'KeyV') c.dance = true;
       if (e.code === 'KeyC' && clipRef.current) { clipRef.current.highlight('MY CLIP', 1200); setClipToast('🎬 Saving the last 30–60 s…'); }
       if (e.code === 'KeyG') c.strike = true;
+      if (e.code === 'KeyB') c.office = true;
       if (e.code === 'KeyF') c.nade = true;
       if (e.code === 'KeyH') c.med = true;
       if (e.code === 'KeyT') c.onme = true;
@@ -8561,6 +8664,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     let raf, prev = performance.now(), lastNet = 0, lastHud = 0, bob = 0;
     // adaptive resolution: if the device can't hold ~45 fps, render fewer pixels; raise them back when it can
     const perf = { acc: 0, n: 0, t: 0, warm: 3, max: renderer.getPixelRatio(), pr: renderer.getPixelRatio(), min: IS_TOUCH ? 0.6 : 0.8 };
+    let musicBusy = false;
     const setPR = v => {
       perf.pr = Math.round(v * 100) / 100;
       renderer.setPixelRatio(perf.pr);
@@ -8919,6 +9023,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
       if (c.strike && me.strikeReady && !me.dead && !me.downed && !frozen) callStrike();
       c.strike = false;
+      if (c.office && zombie && !me.dead && !me.downed && !frozen) callOffice();
+      c.office = false;
+      if (zombie) tickOffices(dt);
       c.jump = false;
       c.reload = false;
       c.swap = false;
@@ -9321,7 +9428,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           drawMini(now);
           let nz = 1e9;
           zombies.forEach(o => { const dd = Math.hypot(o.pos.x - me.pos.x, o.pos.z - me.pos.z); if (dd < nz) nz = dd; });
-          sfx.setIntensity(me.dead ? 0.2 : nz < 9 ? 1 : nz < 20 ? 0.65 : nz < 40 ? 0.3 : 0.05);
+          sfx.setIntensity(me.dead ? 0.2 : Math.max(nz < 9 ? 1 : nz < 20 ? 0.65 : nz < 40 ? 0.3 : 0.05, zombies.length > 14 ? 0.8 : 0));
+          // busy-fight mode with hysteresis: lots of zombies, or the game is already struggling
+          musicBusy = perf.slow || zombies.length > (musicBusy ? 9 : 14);
+          sfx.setLoad(musicBusy);
           const boss = zombies.find(o => o.def.boss);
           const left = Math.max(0, zd.toSpawn - zd.spawned) + (zd.horde < 3 ? zd.hordeLeft : 0) + zombies.length;
           zHud = { wave: zd.wave, phase: zd.phase, t: Math.max(0, Math.ceil(zd.t)), left, horde: zd.horde, bossWave: zd.bossWave, final: isFinalWave(zd.wave), mode: zmode, boss: boss ? { hp: Math.max(0, boss.hp), max: boss.maxHp, enraged: !!boss.enraged } : null };
@@ -9385,6 +9495,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           bull: Math.max(0, Math.ceil(world.bullT)),
           prot: me.protT > 0 && !me.dead,
           strike: !!me.strikeReady && !me.dead,
+          office: zombie ? Math.ceil(me.dynCd || 0) : -1,
           hurt: me.hurtAt && now - me.hurtAt < 1200 && me.hurtFrom !== undefined && !me.dead ? { ang: (-(me.hurtFrom - me.yaw - Math.PI) * 180) / Math.PI, age: now - me.hurtAt } : null,
           started: everLocked,
           dancing: me.dancing,
@@ -9402,6 +9513,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (clipRef.current) { clipRef.current.destroy(); clipRef.current = null; }
       sfx.stopMusic();
       sfx.onTrack(null);
+      sfx.setLoad(false);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('resize', onResize);
@@ -9706,6 +9818,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       {hud.strike && (
         <div className="absolute left-1/2 bottom-[13%] -translate-x-1/2 pointer-events-none text-[11px] md:text-sm font-black px-3 py-1 rounded-full bg-rose-600/90 text-white animate-pulse border border-white/60">☄️ MOON STRIKE READY · {IS_TOUCH ? 'tap ☄️' : 'press G'}</div>
       )}
+      {hud.office === 0 && !hud.dead && (
+        <div className="absolute left-1/2 bottom-[18%] -translate-x-1/2 pointer-events-none text-[11px] md:text-sm font-black px-3 py-1 rounded-full bg-amber-500/90 text-slate-950 border border-white/60">📞 OFFICE · DYNAMITE READY · {IS_TOUCH ? 'tap 📞' : 'press B'}</div>
+      )}
       {hud.prot && (
         <div className="absolute left-1/2 top-[38%] -translate-x-1/2 pointer-events-none text-[11px] md:text-xs font-black px-3 py-1 rounded-full bg-cyan-500/80 text-slate-950">🛡️ SPAWN SHIELD · shooting ends it</div>
       )}
@@ -9779,6 +9894,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               <span className="keycap">V</span><span>Dance 💃 · heals +15 HP/s up to 100</span>
               <span className="keycap">TAB</span><span>Scoreboard</span>
               <span className="keycap">G</span><span>Moon Strike (earned every 4-kill streak)</span>
+              {variant === 'zombie' && (<><span className="keycap">B</span><span>📞 Call the office · dynamite run on where you aim (60 s cooldown)</span></>)}
               <span className="keycap">C</span><span>🎬 Save a clip of the last 30–60 s (multi-kills save one automatically)</span>
             </div>
             <div className="mt-4 text-left">
@@ -9956,6 +10072,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 ['⇄', 'right-[280px] bottom-[8px]', () => { c.cycle = 1; }, 54, 'bg-slate-900/75 border-white/70 text-lg'],
                 ['✋', 'right-[276px] bottom-[66px]', () => { c.shove = true; }, 64, 'bg-amber-400/90 border-amber-100 text-slate-900 text-3xl'],
                 ['💃', 'right-[352px] bottom-[8px]', () => { c.dance = true; }, 50, 'bg-slate-900/75 border-white/70 text-base'],
+                ...(variant === 'zombie' ? [['📞', 'right-[352px] bottom-[132px]', () => { c.office = true; }, 56, hud.office === 0 ? 'bg-amber-500/90 border-amber-100 text-2xl' : 'bg-slate-900/70 border-white/50 text-xl opacity-70']] : []),
                 ...(clipRef.current ? [['🎬', 'right-[280px] bottom-[132px]', () => { clipRef.current && clipRef.current.highlight('MY CLIP', 1200); setClipToast('🎬 Saving the last 30–60 s…'); }, 54, 'bg-slate-900/75 border-white/70 text-lg']] : []),
                 ...(hud.strike ? [['☄️', 'right-[274px] bottom-[196px]', () => { c.strike = true; }, 66, 'bg-rose-600/90 border-amber-300 text-2xl animate-pulse']] : [])
               ].map(([label, pos, fn, size, cls]) => (
