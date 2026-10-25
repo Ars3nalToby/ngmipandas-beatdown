@@ -139,6 +139,12 @@
   <div id="root" class="w-screen" style="height:100dvh"></div>
 
   <script type="text/babel">
+// Fresh start every visit (owner's request, 2026-10-26): every page load wipes saved profile, tips, name, room, story progress and clips.
+// To keep progress again, delete this block. Kept on purpose: ngmi_fps (dev chip) and ngmi_a2hs_off (iOS install banner dismissal).
+try {
+  Object.keys(localStorage).forEach(k => { if (k.indexOf('ngmi_') === 0 && k !== 'ngmi_fps' && k !== 'ngmi_a2hs_off') localStorage.removeItem(k); });
+} catch (e) {}
+try { indexedDB.deleteDatabase('ngmi_clips'); } catch (e) {}
     const { useState, useEffect, useRef } = React;
 
 
@@ -2174,7 +2180,7 @@ const STORY_PROLOGUE = [
   { kicker: 'NOW', art: 'beatdown', color: '#facc15', text: 'But some NGMI Pandas refused to quit. They followed PaperHands’ trail… all the way to the Moon.' }
 ];
 const STORY_EPILOGUE = [
-  { kicker: 'SEASON 1 · COMPLETE', emoji: '🏆🐼', color: '#facc15', text: 'NGMI? Not anymore. Season 2 is being written. Keep your bags. Keep your hands diamond.' }
+  { kicker: 'SEASON 1 · COMPLETE', emoji: '🏆🐼', color: '#facc15', text: 'NGMI? Not anymore. PaperHands came back as the Rug Lord. Beat him in the Zombie Raid to end it. Keep your bags. Keep your hands diamond.' }
 ];
 const CHAPTERS = [
   {
@@ -2205,7 +2211,7 @@ const CHAPTERS = [
     n: 5, title: 'THE LAST RING', emoji: '🌕', color: '#facc15', mode: 'beatdown', where: 'Beatdown',
     goal: 'Finish #1 in a Beatdown match', check: s => s.game === 'beatdown' && s.won, progress: s => (s.rank ? `finished #${s.rank}` : 'not #1'),
     intro: [{ kicker: 'CHAPTER 5 · FINALE', emoji: '🌕🥊', color: '#facc15', text: 'One last ring. PaperHands and his bot army are waiting on the Moon. Finish on top and the liquidity comes home.', goal: 'Finish #1 in a Beatdown match' }],
-    outro: [{ kicker: 'CHAPTER 5 · CLEARED', emoji: '🏆', color: '#facc15', text: 'PaperHands is rung out. The liquidity flows back. Every panda that held on… made it. GMI.' }]
+    outro: [{ kicker: 'CHAPTER 5 · CLEARED', emoji: '🏆', color: '#facc15', text: 'PaperHands is rung out. The liquidity flows back… but the Moon has one more trick. Something is rising in the dark. Take your squad into the ZOMBIE RAID in Shootout.' }]
   }
 ];
 const k_label = (done, ci) => (ci < done ? `REPLAY CHAPTER ${ci + 1}` : `PLAY CHAPTER ${ci + 1}`);
@@ -3196,6 +3202,19 @@ const ZOMBIE_KINDS = {
 const ZKIND_IDS = ['walker', 'runner', 'brute', 'bloater', 'boss', 'crawler', 'spitter'];
 const ZOMBIE_RAID_WAVES = 10;
 let zombieKit = null;
+// Radio story beats for the zombie raid (one per wave, shown once). Canon: the rug pull didn't just drain the liquidity, the Moon turned the rugged pandas into the undead, and PaperHands became the Rug Lord.
+const ZSTORY = [
+  'MOON BASE: The rug pull took the liquidity. It also took everyone who got wrecked. They came back wrong.',
+  'MOON BASE: Bag holders. Pandas who never sold and never noticed they were done. Keep your distance.',
+  'MOON BASE: Runners. They panic-sold at the bottom and never stopped running. Short bursts, aim for the head.',
+  'MOON BASE: Faint signal from Fort HODL. The Diamond Hands might still be alive in there. Hold the line.',
+  'MOON BASE: That crown on the big one. It is PaperHands. The Rug Lord. He pulled it, and the Moon pulled him back.',
+  'MOON BASE: Green ones are loaded with unrealised gains. Pop them from range, not up close.',
+  'MOON BASE: The office is listening. When they stack up, call the dynamite.',
+  'MOON BASE: Delta says the Moon was never empty. Someone seeded this place before the rug.',
+  'MOON BASE: Last stretch. Finish PaperHands and the liquidity comes home.',
+  'MOON BASE: The Rug Lord is back for round two. This is the last ring. GMI.'
+];
 function buildZombieMesh(kind) {
   if (!zombieKit) {
     const std = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, ...extra });
@@ -3213,6 +3232,11 @@ function buildZombieMesh(kind) {
       rib: new THREE.CapsuleGeometry(0.016, 0.13, 3, 5),
       limb: new THREE.CapsuleGeometry(0.11, 0.42, 4, 8),
       leg: new THREE.CapsuleGeometry(0.13, 0.26, 4, 8),
+      torso: new THREE.CapsuleGeometry(0.28, 0.42, 8, 16),
+      pelvis: new THREE.SphereGeometry(0.27, 14, 10),
+      neck: new THREE.CylinderGeometry(0.09, 0.13, 0.3, 8),
+      foot: new THREE.BoxGeometry(0.2, 0.1, 0.34),
+      knuckle: new THREE.SphereGeometry(0.07, 8, 6),
       wart: new THREE.SphereGeometry(0.12, 8, 6),
       crown: new THREE.CylinderGeometry(0.3, 0.26, 0.2, 8, 1, true),
       spike: new THREE.ConeGeometry(0.06, 0.2, 6),
@@ -3248,9 +3272,16 @@ function buildZombieMesh(kind) {
     return m;
   };
   const fur = K.furs[Math.floor(Math.random() * K.furs.length)];
-  add(K.body, K.shirts[kind][Math.floor(Math.random() * 3)], 0, 0.68, 0, def.w * (def.pop ? 1 : 0.84), def.pop ? 1.12 : 1.2, def.w * (def.pop ? 0.9 : 0.74)); // gaunt, not round
+  const shirtM = K.shirts[kind][Math.floor(Math.random() * 3)];
+  if (def.pop) add(K.body, shirtM, 0, 0.68, 0, def.w, 1.12, def.w * 0.9);
+  else {
+    // hunched human frame: leaning torso, narrow pelvis, thin neck (not a round toy body)
+    add(K.torso, shirtM, 0, 0.9, 0.04, def.w * 1.3, 1, def.w * 0.95).rotation.x = 0.28;
+    add(K.pelvis, K.dark, 0, 0.55, -0.02, def.w * 1.05, 0.8, def.w * 0.8);
+    add(K.neck, K.dark, 0, 1.24, 0.1, 1, 1, 1).rotation.x = 0.5;
+  }
   const head = new THREE.Group();
-  head.position.set(0, 1.36, 0.05);
+  head.position.set(0, 1.36, def.pop ? 0.05 : 0.16);
   root.add(head);
   add(K.head, fur, 0, 0.02, 0, 0.86, 1.06, 0.95, head); // narrower, longer: a skull, not a toy
   if (Math.random() < 0.6) add(K.ear, K.blood, -0.27, 0.34, -0.02, 0.7, 0.8, 0.5, head); // chewed-off stumps
@@ -3278,19 +3309,19 @@ function buildZombieMesh(kind) {
   // wounds and blood stains
   for (let i = 0; i < 1 + Math.floor(Math.random() * 3); i++) {
     const a = Math.random() * Math.PI * 2;
-    add(K.wound, K.blood, Math.cos(a) * 0.45 * def.w, 0.45 + Math.random() * 0.5, Math.abs(Math.sin(a)) * 0.42 * def.w + 0.05, 1.2, 1, 0.35);
+    add(K.wound, K.blood, Math.cos(a) * 0.36 * def.w, 0.6 + Math.random() * 0.6, Math.abs(Math.sin(a)) * 0.3 * def.w + 0.08, 1.2, 1, 0.35);
   }
   if (Math.random() < 0.5) add(K.wound, K.blood, 0.12, 0.22, 0.32, 0.9, 0.6, 0.35, head);
   // torn open chest: raw flesh and a few ribs showing through
   if (!def.pop) {
     const side = Math.random() < 0.5 ? -1 : 1;
-    add(K.wound, K.flesh, side * 0.16 * def.w, 0.82, 0.42 * def.w, 1.5, 1.7, 0.4);
-    for (let r = 0; r < 3; r++) add(K.rib, K.bone, side * 0.16 * def.w, 0.9 - r * 0.1, 0.5 * def.w, 1, 1, 1).rotation.z = Math.PI / 2 + (r - 1) * 0.12;
+    add(K.wound, K.flesh, side * 0.14 * def.w, 0.98, 0.3 * def.w + 0.1, 1.5, 1.7, 0.4);
+    for (let r = 0; r < 3; r++) add(K.rib, K.bone, side * 0.14 * def.w, 1.06 - r * 0.1, 0.36 * def.w + 0.1, 1, 1, 1).rotation.z = Math.PI / 2 + (r - 1) * 0.12;
   }
   // tattered shirt hem
   for (let i = 0; i < 5; i++) {
     const a = (i / 5) * Math.PI * 2 + Math.random() * 0.5;
-    const st = add(K.strip, K.shirts[kind][1], Math.sin(a) * 0.43 * def.w, 0.2, Math.cos(a) * 0.4 * def.w, 0.8 + Math.random() * 0.7, 0.7 + Math.random() * 0.8, 1);
+    const st = add(K.strip, K.shirts[kind][1], Math.sin(a) * (def.pop ? 0.43 : 0.32) * def.w, def.pop ? 0.2 : 0.55, Math.cos(a) * (def.pop ? 0.4 : 0.26) * def.w, 0.8 + Math.random() * 0.7, 0.7 + Math.random() * 0.8, 1);
     st.rotation.y = a;
     st.rotation.x = (Math.random() - 0.5) * 0.4;
   }
@@ -3299,16 +3330,29 @@ function buildZombieMesh(kind) {
   head.rotation.x = 0.28; // chin dropped, face pushed toward you
   const arms = [-1, 1].map(sd => {
     const g = new THREE.Group();
-    g.position.set(sd * 0.48 * def.w, 0.98, 0.05);
-    add(K.limb, K.dark, 0, 0, 0.42, 0.85, 1.5, 0.85, g).rotation.x = Math.PI / 2; // long reaching arms
-    for (let c = -1; c <= 1; c++) add(K.claw, K.toothM, c * 0.05, -0.02 * Math.abs(c), 0.86, 1.2, 1.4, 1.2, g).rotation.x = Math.PI / 2 + 0.2;
+    g.position.set(sd * (def.pop ? 0.48 : 0.42) * def.w, def.pop ? 0.98 : 1.14, def.pop ? 0.05 : 0.12);
+    if (def.pop) {
+      add(K.limb, K.dark, 0, 0, 0.42, 0.85, 1.5, 0.85, g).rotation.x = Math.PI / 2; // stubby bloater arms
+      for (let c = -1; c <= 1; c++) add(K.claw, K.toothM, c * 0.05, -0.02 * Math.abs(c), 0.86, 1.2, 1.4, 1.2, g).rotation.x = Math.PI / 2 + 0.2;
+    } else {
+      add(K.limb, K.dark, 0, 0, 0.24, 0.75, 1.0, 0.75, g).rotation.x = Math.PI / 2; // upper arm
+      add(K.knuckle, K.flesh, 0, -0.02, 0.5, 1.1, 1.1, 1.1, g); // torn elbow
+      add(K.limb, K.dark, 0, -0.1, 0.74, 0.62, 1.05, 0.62, g).rotation.x = Math.PI / 2 + 0.38; // forearm, hanging lower
+      add(K.knuckle, K.dark, 0, -0.2, 0.98, 1.2, 1.1, 1.4, g); // hand
+      for (let c = -1; c <= 1; c++) add(K.claw, K.toothM, c * 0.05, -0.24 - 0.01 * Math.abs(c), 1.08, 1.2, 1.5, 1.2, g).rotation.x = Math.PI / 2 + 0.55;
+    }
     root.add(g);
     return g;
   });
   const legs = [-1, 1].map(sd => {
     const g = new THREE.Group();
-    g.position.set(sd * 0.2 * def.w, 0.36, 0);
-    add(K.leg, K.dark, 0, -0.16, 0, 1, 1, 1, g);
+    g.position.set(sd * 0.2 * def.w, def.pop ? 0.36 : 0.54, 0);
+    if (def.pop) add(K.leg, K.dark, 0, -0.16, 0, 1, 1, 1, g);
+    else {
+      add(K.leg, K.dark, 0, -0.1, 0, 0.95, 0.85, 0.95, g); // thigh
+      add(K.leg, K.dark, 0, -0.33, 0.02, 0.8, 0.8, 0.8, g); // shin
+      add(K.foot, K.dark, 0, -0.5, 0.08, 1, 1, 1, g); // foot
+    }
     g.visible = !def.crawl;
     root.add(g);
     return g;
@@ -3647,17 +3691,33 @@ function makeGunModel(key, view) {
     g.add(warhead);
     g.userData.warhead = warhead;
   } else if (key === 'ak' || key === 'golden') {
-    const wood = gold ? goldMat : mat(0x8a4f22, { metalness: 0.05, roughness: 0.7 });
-    part(0.09, 0.14, 0.32, 0, -0.04, 0.27, wood);
-    part(0.11, 0.14, 0.42, 0, 0, -0.02, dark);
-    part(0.1, 0.1, 0.3, 0, -0.01, -0.36, wood);
-    part(0.04, 0.04, 0.38, 0, 0.03, -0.64, dark);
-    part(0.02, 0.07, 0.02, 0, 0.08, -0.74, dark);
-    const magA = part(0.08, 0.16, 0.1, 0, -0.15, -0.07, gold ? goldMat : mat(0x1f2025));
-    magA.rotation.x = 0.25;
-    const magB = part(0.08, 0.14, 0.1, 0, -0.27, -0.13, gold ? goldMat : mat(0x1f2025));
-    magB.rotation.x = 0.55;
-    part(0.06, 0.16, 0.08, 0, -0.12, 0.1, dark).rotation.x = -0.3;
+    const wood = gold ? goldMat : mat(0x7a4420, { metalness: 0.05, roughness: 0.62 });
+    const woodD = gold ? goldMat : mat(0x5e3216, { metalness: 0.05, roughness: 0.7 });
+    const steel = gold ? goldMat : mat(0x1b1e23, { metalness: 0.75, roughness: 0.38 });
+    const steelL = gold ? goldMat : mat(0x4a4f57, { metalness: 0.9, roughness: 0.3 });
+    const cylA = (r1, r2, len, y, z, m) => {
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, 12), m);
+      c.rotation.x = Math.PI / 2;
+      c.position.set(0, y, z);
+      if (view) c.renderOrder = order++;
+      g.add(c);
+      return c;
+    };
+    part(0.085, 0.12, 0.44, 0, 0.0, -0.02, steel); // receiver
+    part(0.07, 0.025, 0.4, 0, 0.075, -0.02, steelL); // dust cover
+    part(0.06, 0.07, 0.3, 0, -0.045, -0.4, wood); // lower handguard
+    part(0.075, 0.035, 0.3, 0, 0.03, -0.4, woodD); // upper handguard
+    cylA(0.016, 0.016, 0.3, 0.06, -0.42, steelL); // gas tube
+    cylA(0.017, 0.017, 0.4, 0.0, -0.7, steel); // barrel
+    cylA(0.026, 0.026, 0.07, 0.0, -0.84, steelL); // muzzle brake
+    part(0.02, 0.07, 0.03, 0, 0.05, -0.8, steel); // front sight post
+    part(0.045, 0.02, 0.06, 0, 0.1, -0.2, steelL); // rear sight
+    part(0.07, 0.11, 0.3, 0, -0.04, 0.33, wood).rotation.x = 0.1; // stock
+    part(0.075, 0.15, 0.03, 0, -0.07, 0.49, steel); // buttplate
+    const magM = gold ? goldMat : mat(0x24262b, { metalness: 0.6, roughness: 0.5 });
+    [[-0.11, -0.04, 0.12], [-0.19, -0.075, 0.26], [-0.26, -0.12, 0.42]].forEach(([y, z, r]) => { part(0.062, 0.12, 0.1, 0, y, z - 0.07, magM).rotation.x = r; }); // curved banana mag
+    part(0.05, 0.14, 0.07, 0, -0.1, 0.12, woodD).rotation.x = -0.35; // pistol grip
+    part(0.02, 0.05, 0.05, 0, -0.065, -0.02, steel); // trigger guard
   } else {
     const long = key === 'smg' ? 0.42 : 0.62;
     part(0.09, 0.13, 0.26, 0, -0.02, 0.24, dark);
@@ -3946,6 +4006,26 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
     box(x, z, w - 2 * T, 0.04, d - 2 * T, 0, { mat: floorMat, noCollide: true, noEdge: true });
     [[minX - 0.1, minZ - 0.1], [maxX + 0.1, maxZ + 0.1]].forEach(([px, pz]) => box(px, pz, 0.16, h, 0.16, 0, { mat: pipeMat, noCollide: true }));
     void roofColor;
+    // roof clutter (cosmetic, no collision): AC units, vents, an antenna and a stack, placed deterministically per building
+    {
+      let hs = 0; for (let i = 0; i < label.length; i++) hs = (hs * 31 + label.charCodeAt(i)) >>> 0;
+      const rnd = () => { hs = (hs * 1664525 + 1013904223) >>> 0; return hs / 4294967296; };
+      const acMat = surf('metal', 0xb9bdc0, 0.6, 0.4), ventMat = surf('metal', 0x7d8286, 0.6, 0.5), darkM = new THREE.MeshStandardMaterial({ color: 0x1d2024, roughness: 0.7 });
+      const nAc = 1 + Math.floor(rnd() * 3);
+      for (let i = 0; i < nAc; i++) {
+        const px = x + (rnd() - 0.5) * (w - 4), pz = z + (rnd() - 0.5) * (d - 4);
+        box(px, pz, 1.5, 0.9, 1.1, 0, { mat: acMat, y: h, noCollide: true, noEdge: true });
+        box(px, pz, 1.2, 0.06, 0.8, 0, { mat: darkM, y: h + 0.9, noCollide: true, noEdge: true }); // fan grille
+        box(px + 0.9, pz, 0.12, 0.5, 0.12, 0, { mat: ventMat, y: h, noCollide: true, noEdge: true });
+      }
+      const vx = x + (rnd() - 0.5) * (w - 3), vz = z + (rnd() - 0.5) * (d - 3);
+      box(vx, vz, 0.5, 1.3, 0.5, 0, { mat: ventMat, y: h, noCollide: true, noEdge: true });
+      box(vx, vz, 0.8, 0.12, 0.8, 0, { mat: ventMat, y: h + 1.3, noCollide: true, noEdge: true });
+      const ax = x + (rnd() - 0.5) * (w - 3), az = z + (rnd() - 0.5) * (d - 3);
+      box(ax, az, 0.06, 3.2, 0.06, 0, { mat: darkM, y: h, noCollide: true, noEdge: true });
+      box(ax, az, 1.1, 0.05, 0.05, 0, { mat: darkM, y: h + 2.4, noCollide: true, noEdge: true });
+      box(ax, az, 0.05, 0.05, 0.7, 0, { mat: darkM, y: h + 2.8, noCollide: true, noEdge: true });
+    }
     // inner partitions → rooms
     const sp = o.split;
     const cuts = sp ? sp.at.slice().sort((a, b) => a - b) : [];
@@ -7743,6 +7823,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const onPhase = ph => {
       if (ph === 'prep') {
         const n = zd.wave;
+        if (ZSTORY[n - 1] && (zmode === 'raid' || n <= 5)) setTimeout(() => showTip('story' + n, ZSTORY[n - 1]), 2500); // story beats ride the tip chip, once each
         announceNow(isBossWave(n) ? (isFinalWave(n) ? '👑 FINAL WAVE NEXT · STOCK UP' : '👹 BOSS WAVE NEXT · STOCK UP') : `🧟 WAVE ${n} · GET READY`, isBossWave(n) ? '#c084fc' : '#a3e635');
         sfx.setRush(false);
         // the squad regroups between waves: the fallen come back, the downed get up, supplies top up
