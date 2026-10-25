@@ -3185,12 +3185,12 @@ const SHOOT_PICKUPS = {
 // ============================================================================
 const ZOMBIE_KINDS = {
   // hb = hitbox [headY, headR, bodyY, bodyR, headFwd, bodyFwd] in mesh units (× size)
-  walker: { name: 'NGMI ZOMBIE', hp: 80, spd: [3.6, 4.8], dmg: 9, reach: 2.3, cd: 1.0, s: 1.45, w: 1, color: '#8fbf7a', shirt: 0x4b5563 },
-  runner: { name: 'PAPER-HAND RUNNER', hp: 55, spd: [8.2, 9.4], dmg: 7, reach: 2.1, cd: 0.8, s: 1.3, w: 0.85, color: '#b5d99c', shirt: 0xe5e7eb },
-  brute: { name: 'BAG HOLDER', hp: 520, spd: [3.2, 3.7], dmg: 26, reach: 3.0, cd: 1.4, s: 2.1, w: 1.45, color: '#6b8f5e', shirt: 0x7c2d12 },
+  walker: { name: 'NGMI ZOMBIE', hp: 95, spd: [4.3, 5.7], dmg: 10, reach: 2.3, cd: 1.0, s: 1.45, w: 1, color: '#8fbf7a', shirt: 0x4b5563 },
+  runner: { name: 'PAPER-HAND RUNNER', hp: 65, spd: [8.8, 10.2], dmg: 8, reach: 2.1, cd: 0.8, s: 1.3, w: 0.85, color: '#b5d99c', shirt: 0xe5e7eb },
+  brute: { name: 'BAG HOLDER', hp: 680, spd: [3.8, 4.4], dmg: 30, reach: 3.0, cd: 1.4, s: 2.1, w: 1.45, color: '#6b8f5e', shirt: 0x7c2d12 },
   bloater: { name: 'RUG BLOATER', hp: 70, spd: [2.8, 3.2], dmg: 0, reach: 2.6, cd: 1, s: 1.7, w: 1.7, color: '#a3e635', shirt: 0x3f6212, pop: true },
   boss: { name: 'THE RUG LORD', hp: 4500, spd: [5.2, 5.2], dmg: 34, reach: 4.6, cd: 1.6, s: 4.2, w: 1.35, color: '#a855f7', shirt: 0x2e1065, boss: true },
-  crawler: { name: 'LIQUIDATED CRAWLER', hp: 60, spd: [5, 6.2], dmg: 8, reach: 1.9, cd: 0.7, s: 1.45, w: 1, color: '#9fb98a', shirt: 0x57534e, crawl: true, hb: [0.42, 0.44, 0.28, 0.55, 1.25, 0.6] },
+  crawler: { name: 'LIQUIDATED CRAWLER', hp: 70, spd: [5.8, 7.2], dmg: 8, reach: 1.9, cd: 0.7, s: 1.45, w: 1, color: '#9fb98a', shirt: 0x57534e, crawl: true, hb: [0.42, 0.44, 0.28, 0.55, 1.25, 0.6] },
   spitter: { name: 'FUD SPITTER', hp: 75, spd: [3.4, 4.0], dmg: 6, reach: 2.2, cd: 1.1, s: 1.6, w: 0.8, color: '#bef264', shirt: 0x365314, spit: true }
 };
 const ZKIND_IDS = ['walker', 'runner', 'brute', 'bloater', 'boss', 'crawler', 'spitter'];
@@ -3206,7 +3206,8 @@ function buildZombieMesh(kind) {
       patch: new THREE.SphereGeometry(0.13, 10, 8),
       eye: new THREE.SphereGeometry(0.042, 8, 6),
       socket: new THREE.SphereGeometry(0.085, 10, 8),
-      tooth: new THREE.ConeGeometry(0.02, 0.07, 4),
+      tooth: new THREE.ConeGeometry(0.019, 0.11, 4),
+      jaw: new THREE.SphereGeometry(0.2, 12, 8),
       claw: new THREE.ConeGeometry(0.022, 0.17, 5),
       strip: new THREE.BoxGeometry(0.09, 0.3, 0.02),
       rib: new THREE.CapsuleGeometry(0.016, 0.13, 3, 5),
@@ -3216,12 +3217,12 @@ function buildZombieMesh(kind) {
       crown: new THREE.CylinderGeometry(0.3, 0.26, 0.2, 8, 1, true),
       spike: new THREE.ConeGeometry(0.06, 0.2, 6),
       wound: new THREE.SphereGeometry(0.11, 8, 6),
-      furs: [std(0xa9b79a), std(0x9aa88a), std(0xb3b8a0)], // sickly grey-green, not clean white
+      furs: [std(0xa2ab9a), std(0x929c8a), std(0xaaaf9e)], // ashen, dead grey (bright enough to read against a night sky)
       toothM: std(0xd8d2b4),
       bone: std(0xcfc7ab),
       flesh: std(0x7c2b2b, { roughness: 0.45 }),
-      dark: std(0x1d241b),
-      blood: std(0x5b0f0f, { roughness: 0.4 }),
+      dark: std(0x0f130e),
+      blood: std(0x6e0b0b, { roughness: 0.35 }),
       mouth: new THREE.MeshBasicMaterial({ color: 0x3b0a0a }),
       eyeM: new THREE.MeshBasicMaterial({ color: 0xe9dc8a }), // milky, dead eyes
       bossEye: new THREE.MeshBasicMaterial({ color: 0xfacc15 }),
@@ -3235,7 +3236,7 @@ function buildZombieMesh(kind) {
   if (!K.shirts[kind]) {
     // three torn-shirt variants per kind so a horde doesn't look cloned
     const base = new THREE.Color(def.shirt);
-    K.shirts[kind] = [0, 1, 2].map(i => new THREE.MeshStandardMaterial({ color: base.clone().offsetHSL(i * 0.05 - 0.05, 0, i * 0.06 - 0.06), roughness: 0.85 }));
+    K.shirts[kind] = [0, 1, 2].map(i => new THREE.MeshStandardMaterial({ color: base.clone().offsetHSL(i * 0.05 - 0.05, -0.1, i * 0.06 - 0.15), roughness: 0.9 }));
   }
   const root = new THREE.Group();
   root.rotation.order = 'YXZ';
@@ -3247,27 +3248,32 @@ function buildZombieMesh(kind) {
     return m;
   };
   const fur = K.furs[Math.floor(Math.random() * K.furs.length)];
-  add(K.body, K.shirts[kind][Math.floor(Math.random() * 3)], 0, 0.66, 0, def.w, 1.12, def.w * 0.9);
+  add(K.body, K.shirts[kind][Math.floor(Math.random() * 3)], 0, 0.68, 0, def.w * (def.pop ? 1 : 0.84), def.pop ? 1.12 : 1.2, def.w * (def.pop ? 0.9 : 0.74)); // gaunt, not round
   const head = new THREE.Group();
   head.position.set(0, 1.36, 0.05);
   root.add(head);
-  add(K.head, fur, 0, 0, 0, 1, 0.95, 1, head);
-  add(K.ear, K.dark, -0.3, 0.33, -0.02, 1, 1, 0.7, head);
-  if (Math.random() < 0.8) add(K.ear, K.dark, 0.31, 0.3, -0.02, 1, 1, 0.7, head); // some lost an ear
-  add(K.patch, K.dark, -0.15, 0.05, 0.33, 1, 1.25, 0.55, head);
-  add(K.patch, K.dark, 0.15, 0.05, 0.33, 1, 1.25, 0.55, head);
+  add(K.head, fur, 0, 0.02, 0, 0.86, 1.06, 0.95, head); // narrower, longer: a skull, not a toy
+  if (Math.random() < 0.6) add(K.ear, K.blood, -0.27, 0.34, -0.02, 0.7, 0.8, 0.5, head); // chewed-off stumps
+  if (Math.random() < 0.35) add(K.ear, K.dark, 0.28, 0.33, -0.02, 0.6, 0.7, 0.5, head);
+  add(K.patch, K.dark, -0.14, 0.07, 0.31, 1.7, 2.0, 0.6, head); // huge black eye hollows
+  add(K.patch, K.dark, 0.14, 0.07, 0.31, 1.7, 2.0, 0.6, head);
+  // exposed skull where the scalp is torn away
+  const sk = Math.random() < 0.5 ? -1 : 1;
+  add(K.wound, K.flesh, sk * 0.17, 0.3, 0.2, 2.0, 1.4, 0.8, head);
+  add(K.wound, K.bone, sk * 0.17, 0.33, 0.25, 1.4, 0.9, 0.5, head);
   const eyeM = def.boss ? K.bossEye : def.spit ? K.spitEye : K.eyeM;
-  add(K.socket, K.dark, -0.15, 0.06, 0.37, 1, 1.05, 0.6, head); // sunken sockets
-  add(K.socket, K.dark, 0.15, 0.06, 0.37, 1, 1.05, 0.6, head);
-  add(K.eye, eyeM, -0.15, 0.06, 0.415, 1, 1, 1, head);
-  add(K.eye, eyeM, 0.15, 0.06, 0.415, 1, 1, 1, head);
-  add(K.patch, K.mouth, 0, -0.18, 0.36, 1.3, def.spit ? 0.9 : 0.55, 0.4, head);
+  add(K.socket, K.dark, -0.14, 0.07, 0.34, 1.15, 1.25, 0.6, head); // sunken sockets
+  add(K.socket, K.dark, 0.14, 0.07, 0.34, 1.15, 1.25, 0.6, head);
+  add(K.eye, eyeM, -0.14, 0.05, 0.4, 1.1, 1.1, 1, head);
+  add(K.eye, eyeM, 0.14, 0.09, 0.4, 0.8, 0.8, 1, head); // one eye smaller and higher: wrong
+  add(K.patch, K.mouth, 0, -0.2, 0.33, 2.0, def.spit ? 1.4 : 1.3, 0.5, head); // jaw hangs open
+  add(K.jaw, K.flesh, 0, -0.36, 0.2, 1.05, 0.55, 0.9, head);
   // a ragged row of teeth top and bottom
   for (let i = -3; i <= 3; i++) {
     if (Math.random() < 0.18) continue; // some are missing
-    const tx = i * 0.034, ty = -0.14 - Math.abs(i) * 0.004, tz = 0.385 - Math.abs(i) * 0.012;
+    const tx = i * 0.036, ty = -0.15 - Math.abs(i) * 0.004, tz = 0.36 - Math.abs(i) * 0.012;
     add(K.tooth, K.toothM, tx, ty, tz, 1, 1, 1, head).rotation.x = Math.PI;
-    if (Math.random() < 0.7) add(K.tooth, K.toothM, tx, ty - 0.1, tz, 1, 0.9, 1, head);
+    if (Math.random() < 0.75) add(K.tooth, K.toothM, tx, ty - 0.2, tz - 0.02, 1, 1, 1, head);
   }
   // wounds and blood stains
   for (let i = 0; i < 1 + Math.floor(Math.random() * 3); i++) {
@@ -3289,12 +3295,13 @@ function buildZombieMesh(kind) {
     st.rotation.x = (Math.random() - 0.5) * 0.4;
   }
   if (def.spit) [[0, -0.32, 0.25], [0.18, -0.25, 0.2], [-0.18, -0.25, 0.2]].forEach(([x, y, z]) => add(K.wart, K.wartM, x, y, z, 0.8, 0.8, 0.8, head));
-  head.rotation.z = (Math.random() - 0.5) * 0.5; // the classic zombie head tilt
+  head.rotation.z = (Math.random() - 0.5) * 0.7; // the classic zombie head tilt
+  head.rotation.x = 0.28; // chin dropped, face pushed toward you
   const arms = [-1, 1].map(sd => {
     const g = new THREE.Group();
     g.position.set(sd * 0.48 * def.w, 0.98, 0.05);
-    add(K.limb, K.dark, 0, 0, 0.32, 1, 1, 1, g).rotation.x = Math.PI / 2;
-    for (let c = -1; c <= 1; c++) add(K.claw, K.toothM, c * 0.05, -0.02 * Math.abs(c), 0.62, 1, 1, 1, g).rotation.x = Math.PI / 2 + 0.2;
+    add(K.limb, K.dark, 0, 0, 0.42, 0.85, 1.5, 0.85, g).rotation.x = Math.PI / 2; // long reaching arms
+    for (let c = -1; c <= 1; c++) add(K.claw, K.toothM, c * 0.05, -0.02 * Math.abs(c), 0.86, 1.2, 1.4, 1.2, g).rotation.x = Math.PI / 2 + 0.2;
     root.add(g);
     return g;
   });
@@ -3326,7 +3333,7 @@ function buildZombieMesh(kind) {
 // the CPU just turns the bones exactly like it turned the groups before. ~8 draw calls → ~2.
 let ZSKIN_MAT = null;
 function skinZombie(src) {
-  if (!ZSKIN_MAT) ZSKIN_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88 });
+  if (!ZSKIN_MAT) ZSKIN_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, emissive: 0x1b2019, emissiveIntensity: 0.7 }); // faint lift so a horde stays readable at night
   const ud = src.userData;
   src.updateMatrixWorld(true);
   const groups = [src, ud.head, ...ud.arms, ...ud.legs];
@@ -5850,6 +5857,20 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const offices = [];
     const dynGeo = new THREE.CylinderGeometry(0.07, 0.07, 0.5, 6);
     const dynMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.6, emissive: 0x7f1d1d, emissiveIntensity: 0.6 });
+    const launchOffice = (tgt, ax, az, owner, mine) => {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(1.6, 2.0, 32), new THREE.MeshBasicMaterial({ color: 0xffa31a, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, fog: false }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(tgt.x, 0.14, tgt.z);
+      scene.add(ring);
+      offices.push({ tgt, ax, az, ring, t: 3.2, n: 0, next: 0, sticks: [], owner });
+      if (mine) {
+        announceNow('📞 "OFFICE, SEND THE DYNAMITE!"', '#fbbf24');
+        setTimeout(() => { if (clipRef.current) clipRef.current.highlight('DYNAMITE RUN'); }, 7000);
+        callout(me, 'nade');
+        sfx.play('radio', 0.7);
+        sfx.play('powerup');
+      }
+    };
     const callOffice = () => {
       if ((me.dynCd || 0) > 0) { announceNow(`📞 OFFICE BUSY · ${Math.ceil(me.dynCd)}s`, '#94a3b8'); return; }
       me.dynCd = OFFICE_CD;
@@ -5860,17 +5881,36 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const mp = me.pos, dd = Math.hypot(tgt.x - mp.x, tgt.z - mp.z);
       if (dd > 60) { tgt.x = mp.x + (tgt.x - mp.x) * 60 / dd; tgt.z = mp.z + (tgt.z - mp.z) * 60 / dd; }
       // the run flies along your line of sight, centred on the spot you aim at
-      const len = Math.hypot(fwd.x, fwd.z) || 1, ax = fwd.x / len, az = fwd.z / len;
-      const ring = new THREE.Mesh(new THREE.RingGeometry(1.6, 2.0, 32), new THREE.MeshBasicMaterial({ color: 0xffa31a, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false, fog: false }));
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.set(tgt.x, 0.14, tgt.z);
-      scene.add(ring);
-      offices.push({ tgt, ax, az, ring, t: 3.2, n: 0, next: 0, sticks: [] });
-      announceNow('📞 "OFFICE, SEND THE DYNAMITE!"', '#fbbf24');
-      setTimeout(() => { if (clipRef.current) clipRef.current.highlight('DYNAMITE RUN'); }, 7000);
-      callout(me, 'nade');
-      sfx.play('radio', 0.7);
-      sfx.play('powerup');
+      const len = Math.hypot(fwd.x, fwd.z) || 1;
+      launchOffice(tgt, fwd.x / len, fwd.z / len, me, true);
+    };
+    // host: the squad radios the office itself when a big pack sits well clear of everyone
+    let botOfficeT = 0, botOfficeCd = 40;
+    const botOfficeTick = dt => {
+      botOfficeCd -= dt;
+      botOfficeT -= dt;
+      if (botOfficeCd > 0 || botOfficeT > 0 || !net.isHost) return;
+      botOfficeT = 1;
+      const crew = fighters.filter(f => f.isBot && !f.dead && !f.downed);
+      if (!crew.length) return;
+      const live = zombies.filter(z => !z.dead && z.hp > 0 && z.rise <= 0 && !z.def.boss);
+      let best = null, bn = 0;
+      for (const z of live) {
+        if (fighters.some(f => !f.dead && Math.hypot(f.pos.x - z.pos.x, f.pos.z - z.pos.z) < 15)) continue; // well clear of the squad
+        let n = 0;
+        for (const o of live) if (Math.hypot(o.pos.x - z.pos.x, o.pos.z - z.pos.z) < 8) n++;
+        if (n > bn) { bn = n; best = z; }
+      }
+      if (!best || bn < (zd.wave >= 6 ? 8 : 11)) return;
+      botOfficeCd = 80;
+      const tgt = new THREE.Vector3(best.pos.x, 0, best.pos.z);
+      const near = crew.reduce((a, c) => (Math.hypot(c.pos.x - tgt.x, c.pos.z - tgt.z) < Math.hypot(a.pos.x - tgt.x, a.pos.z - tgt.z) ? c : a), crew[0]);
+      const ax = tgt.x - near.pos.x, az = tgt.z - near.pos.z, al = Math.hypot(ax, az) || 1;
+      launchOffice(tgt, ax / al, az / al, near, false);
+      callout(near, 'nade');
+      const ev = [5];
+      net.pendingZfx.push(ev);
+      zfxPlay(ev);
     };
     const tickOffices = dt => {
       if (me.dynCd > 0) me.dynCd = Math.max(0, me.dynCd - dt);
@@ -5907,7 +5947,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             o.sticks.splice(j, 1);
             // never blow up on top of your own squad
             const safe = !fighters.some(f => !f.dead && Math.hypot(f.pos.x - st.x, f.pos.z - st.z) < 6);
-            if (safe) explodeAt(new THREE.Vector3(st.x, st.gy + 0.1, st.z), me, false, null, 0.85);
+            if (safe) explodeAt(new THREE.Vector3(st.x, st.gy + 0.1, st.z), o.owner || me, false, null, 0.85);
             else spawnFx({ pos: new THREE.Vector3(st.x, st.gy, st.z), size: 0.8, grow: 2, life: 0.4, color: 0x94a3b8, smoke: true, opacity: 0.6 });
           }
         }
@@ -6015,6 +6055,21 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         bulletHole(res.point, res.normal, 0.2);
         if (vol > 0.25) impactFx(res.point, res.normal, res.obj);
       }
+    };
+
+    // squad bots shove: an adjacent zombie gets knocked back and staggered, buying the whole squad time
+    const botShove = b => {
+      b.shoveCd = 1.1;
+      const fx = Math.sin(b.face), fz = Math.cos(b.face);
+      let any = false;
+      for (const zz of zombies) {
+        if (zz.dead || zz.hp <= 0 || zz.rise > 0 || Math.abs(zz.pos.y - b.pos.y) > 2) continue;
+        const dx = zz.pos.x - b.pos.x, dz = zz.pos.z - b.pos.z, d = Math.hypot(dx, dz);
+        if (d > 3.1 || (dx * fx + dz * fz) / (d || 1) < 0.35) continue;
+        hurtZombie(zz, 5, false, b, false, [(dx / (d || 1)) * 13, (dz / (d || 1)) * 13, 1.1]);
+        any = true;
+      }
+      if (any) play3d('shove', b.pos, 0.7, 1, 50);
     };
 
     // ---------- bots ----------
@@ -6694,6 +6749,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (!Array.isArray(e)) return;
       const n = i => netNum(e[i], -400, 400, 0);
       if (e[0] === 4) startDelta(n(1), n(2), n(3), n(4));
+      else if (e[0] === 5) { announceNow('📞 SQUAD CALLS IN DYNAMITE', '#fbbf24'); sfx.play('radio', 0.6); }
       else if (e[0] === 1) slamFx(n(1), n(2), n(3));
       else if (e[0] === 2 || e[0] === 3) throwRock(new THREE.Vector3(n(1), n(2), n(3)), new THREE.Vector3(n(4), n(5), n(6)), false, e[0] === 3 ? 'spit' : 'rock');
     };
@@ -6902,6 +6958,16 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               t.vel.y = Math.max(t.vel.y, def.boss ? 8 : 5);
             }
           } else zz.atkCd = 0.25;
+        }
+        // runners pounce: a hop-and-burst from mid range (every few seconds) that closes the gap before you can back away
+        if (zz.kind === 'runner' && !frozen) {
+          zz.lungeCd = (zz.lungeCd || 0) - dt;
+          if (zz.lungeT > 0) { zz.lungeT -= dt; spd *= 1.9; }
+          else if (zz.lungeCd <= 0 && d > 4 && d < 9 && zz.onGround && Math.abs(dy) < 1.5 && !zz.wp) {
+            zz.lungeT = 0.45;
+            zz.lungeCd = 3.5 + Math.random() * 2.5;
+            zz.vel.y = 6.5;
+          }
         }
         if (d < def.reach * 0.6 && !zz.wp) { dx = 0; dz = 0; }
         // spitters keep their distance and lob acid
@@ -7403,6 +7469,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           // team play: finish what a teammate started, cover a revive, screen the medic
           sc += Math.min(8, (focus.get(zz) || 0) * 4);
           if (b.cover && Math.hypot(zz.pos.x - b.cover.pos.x, zz.pos.z - b.cover.pos.z) < 9) sc += 16;
+          if (zz.kind === 'runner' && d < 18) sc += 10; // the fast ones are the ones that kill you
+          if (tg && tg !== b && tg.hp < 45 && Math.hypot(zz.pos.x - tg.pos.x, zz.pos.z - tg.pos.z) < 9) sc += 12; // someone weak is being hunted
           if (medic && medic !== b && Math.hypot(zz.pos.x - medic.pos.x, zz.pos.z - medic.pos.z) < 8) sc += b.medRole === 'escort' ? 18 : 8;
           if (b.leader && !b.leader.isBot && Math.hypot(zz.pos.x - b.leader.pos.x, zz.pos.z - b.leader.pos.z) < 6) sc += 6; // keep the human safe
           if (sc <= bs) continue;
@@ -7471,7 +7539,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         const L0 = b.leader;
         const ladderUp = L0 && map.ladders && map.ladders.length && L0.pos.y - b.pos.y > 2.5 && b.pos.y < 1.5;
         b.ladder = null;
-        if (b.mate && (!best || b.nearD > 6)) b.goal = new THREE.Vector3(b.mate.pos.x, b.mate.pos.y, b.mate.pos.z);
+        // badly hurt: fall back to the squad (and a teammate's medkit) instead of dying alone at the front
+        const retreat = b.hp < 38 && !b.mate && b.leader && b.leader !== b && !b.leader.downed && Math.hypot(b.leader.pos.x - b.pos.x, b.leader.pos.z - b.pos.z) > 4.5 && !(b.nearZ && b.nearZ.kind === 'runner' && b.nearD < 5);
+        if (retreat) b.goal = new THREE.Vector3(b.leader.pos.x + Math.sin(b.leader.face + 2.8) * 2.2, b.leader.pos.y, b.leader.pos.z + Math.cos(b.leader.face + 2.8) * 2.2);
+        else if (b.mate && (!best || b.nearD > 6)) b.goal = new THREE.Vector3(b.mate.pos.x, b.mate.pos.y, b.mate.pos.z);
         else if (b.medRole === 'fetch' && mp && mp.spot) b.goal = new THREE.Vector3(mp.spot.x, mp.spot.y, mp.spot.z);
         else if (b.medRole === 'bring' && mp && mp.hurt) b.goal = new THREE.Vector3(mp.hurt.pos.x, mp.hurt.pos.y, mp.hurt.pos.z);
         else if (b.medRole === 'escort' && medic) b.goal = new THREE.Vector3(medic.pos.x + Math.sin(medic.face + 2.4) * 2.5, medic.pos.y, medic.pos.z + Math.cos(medic.face + 2.4) * 2.5);
@@ -7513,7 +7584,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         medPlanAt = -1e9; // re-plan now: with a kit in hand the medic switches to 'bring'
       }
       let dx = 0, dz = 0;
-      const speed = 7.2;
+      const speed = 8.4;
       const t = b.target && !b.target.dead && b.target.hp > 0 ? b.target : null;
       const reviving = b.mate && b.mate.downed && (!t || b.nearD > 6);
       if (b.barrelT && !b.barrelT.dead && !b.downed && !frozen) {
@@ -7563,6 +7634,15 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           }
         }
       }
+      b.shoveCd = (b.shoveCd || 0) - dt;
+      if (zombie && !frozen && !b.downed && b.shoveCd <= 0 && b.nearZ && b.nearD < 3.6 && !b.nearZ.dead) {
+        b.face = Math.atan2(b.nearZ.pos.x - b.pos.x, b.nearZ.pos.z - b.pos.z);
+        botShove(b);
+      }
+      if (zombie && !frozen && !b.downed && !t && !(b.reloadT > 0) && (b.mag == null ? 45 : b.mag) < 24) {
+        b.reloadT = 0.8; // top up while nothing is in sight
+        b.mag = b.wkey === 'gatling' ? 90 : b.wkey === 'rpg' ? 3 : 45;
+      }
       const goal = b.wp ? new THREE.Vector3(b.wp[0], 0, b.wp[1]) : b.goal;
       if (goal) {
         const gx = goal.x - b.pos.x, gz = goal.z - b.pos.z, d = Math.hypot(gx, gz);
@@ -7574,7 +7654,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
       // keep a safe distance (more from bloaters and the boss)
       if (b.nearZ && !reviving) {
-        const keep = b.nearZ.def.pop ? 8 : b.nearZ.def.boss ? 11 : 5;
+        // slow heavies get kited; fast ones can't be outrun, so stand and fight them
+        const keep = b.nearZ.def.pop ? 8 : b.nearZ.def.boss ? 11 : b.nearZ.kind === 'brute' ? 8 : b.nearZ.kind === 'runner' ? 2.4 : 5;
         if (b.nearD < keep) {
           const ax = b.pos.x - b.nearZ.pos.x, az = b.pos.z - b.nearZ.pos.z, al = Math.hypot(ax, az) || 1;
           const push = ((keep - b.nearD) / keep) * 1.8;
@@ -7891,6 +7972,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const zTick = dt => {
       if (zd.phase === 'over' || zd.phase === 'won') return;
       if (zd.phase === 'wave' && zd.teamKills >= zd.deltaAt && !deltas.length) callDelta();
+      if (zd.phase === 'wave') botOfficeTick(dt);
       tickFlow(dt);
       if (zd.phase !== 'boot' && fighters.length && fighters.every(f => f.dead || f.downed)) {
         setPhase('over', 0);
