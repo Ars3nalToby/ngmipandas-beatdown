@@ -10781,7 +10781,7 @@ function App() {
   const [myKos, setMyKos] = useState(0);
   const [killFeed, setKillFeed] = useState([]);
   const [activeBeatdownAlert, setActiveBeatdownAlert] = useState(null);
-  const [cooldowns, setCooldowns] = useState({ smash: 0, dash: 0, cannon: 0, ult: 0 });
+  const [cooldowns, setCooldowns] = useState({ smash: 0, dash: 0, cannon: 0, ult: 0, grab: 0 });
   const [arenaEventText, setArenaEventText] = useState('HIT RIVALS TO RAISE THEIR % • HIGH % = THEY FLY! 🚀');
   const [onlinePeersCount, setOnlinePeersCount] = useState(1);
 
@@ -12152,11 +12152,44 @@ function App() {
       if (f.isLocal) {
         if (hits) {
           spawnMemeSprite(p.x + ax * 2, 2.5, p.z + az * 2, PUNCH_NAMES[f.punchStep - 1], big ? '#fb923c' : '#fde68a');
+          if (big) { f.grabT = 3.5; spawnMemeSprite(p.x, 3.4, p.z, 'GRAB READY 🤼', '#c4b5fd'); sfx.play('pop', 0.6, 1.4); }
           fx.hitStop = Math.max(fx.hitStop, big ? 0.09 : 0.045);
           fx.shake = Math.min(1.6, fx.shake + (big ? 0.45 : 0.18));
           buzz(big ? 18 : 10);
         } else { f.punchStep = 0; f.punchT = 0; } // a whiff resets the combo
       }
+    };
+    // 🤼 GRAB: the PUNCH button turns into this for 3.5 s after a landed haymaker. Seize the nearest rival and hurl them; the button goes back to PUNCH.
+    const doGrab = f => {
+      const p = f.mesh.position;
+      let [ax, az] = forwardOf(f);
+      let best = null, bd = 4.2;
+      fighters.forEach(o => {
+        if (o.id === f.id || o.respawnLock > 0 || Math.abs(o.mesh.position.y - p.y) > 2.2) return;
+        const dx = o.mesh.position.x - p.x, dz = o.mesh.position.z - p.z, d = Math.hypot(dx, dz);
+        const facing = d > 0.01 ? (dx * ax + dz * az) / d : 1;
+        const score = d - facing * 1.2; // prefer someone in front
+        if (d < 4.2 && score < bd) { bd = score; best = o; }
+      });
+      if (!best) { spawnMemeSprite(p.x, 2.4, p.z, 'NOTHING TO GRAB', '#cbd5e1'); return false; }
+      const dx = best.mesh.position.x - p.x, dz = best.mesh.position.z - p.z, d = Math.hypot(dx, dz) || 1;
+      ax = dx / d; az = dz / d;
+      f.mesh.rotation.y = Math.atan2(ax, az);
+      f.grabT = 0;
+      f.punchAnim = 0.5;
+      f.squash = 0.35;
+      if (best.isBot || best.isLocal) { best.mesh.position.x = p.x + ax * 1.3; best.mesh.position.z = p.z + az * 1.3; }
+      launch(best, f, ax, az, 26, 13, 16);
+      triggerShockwave(best.mesh.position.x, best.mesh.position.z, 0xc4b5fd, 5);
+      burst(best.mesh.position.x, 1.2, best.mesh.position.z, '#c4b5fd', 16, 12);
+      sfx.play('smash', f.isLocal ? 0.9 : volAt(p) * 0.6, 1.3);
+      if (f.isLocal) {
+        spawnMemeSprite(p.x + ax * 1.5, 2.8, p.z + az * 1.5, 'GRABBED & THROWN! 🤼', '#c4b5fd');
+        fx.hitStop = Math.max(fx.hitStop, 0.12);
+        fx.shake = Math.min(1.6, fx.shake + 0.7);
+        buzz(24);
+      }
+      return true;
     };
     // 🐂 DASH: short burst that bowls over anyone in the way
     const doDash = (f, dx, dz) => {
@@ -12605,9 +12638,13 @@ function App() {
           used('punch');
         } else if (cdState.punch <= 0 && !tumbling && localFighter.stun <= 0.1) {
           used('punch');
-          cdState.punch = CD_MAX.punch;
-          doPunch(localFighter, moveX, moveZ);
-          netEvents.push('punch');
+          if (localFighter.grabT > 0) {
+            if (doGrab(localFighter)) { cdState.punch = 0.6; netEvents.push('punch'); }
+          } else {
+            cdState.punch = CD_MAX.punch;
+            doPunch(localFighter, moveX, moveZ);
+            netEvents.push('punch');
+          }
         }
       }
 
@@ -12688,6 +12725,7 @@ function App() {
         if (f.stun > 0) f.stun -= dt;
         if (f.punchCd > 0) f.punchCd -= dt;
         if (f.punchT > 0) f.punchT -= dt;
+        if (f.grabT > 0) f.grabT -= dt;
         if (f.squash > 0) f.squash = Math.max(0, f.squash - dt * 4);
         if (f.respawnLock > 0) f.respawnLock -= dt;
         if (f.weapon) {
@@ -13209,9 +13247,10 @@ function App() {
           smash: Number(cdState.smash.toFixed(1)),
           dash: Number(cdState.dash.toFixed(1)),
           cannon: Number(cdState.cannon.toFixed(1)),
-          ult: Math.floor(ult.v)
+          ult: Math.floor(ult.v),
+          grab: localFighter.grabT > 0 ? 1 : 0 // PUNCH turns into GRAB after a landed 3-hit combo
         };
-        setCooldowns(prevCd => (prevCd.smash === cdNext.smash && prevCd.dash === cdNext.dash && prevCd.cannon === cdNext.cannon && prevCd.ult === cdNext.ult ? prevCd : cdNext));
+        setCooldowns(prevCd => (prevCd.smash === cdNext.smash && prevCd.dash === cdNext.dash && prevCd.cannon === cdNext.cannon && prevCd.ult === cdNext.ult && prevCd.grab === cdNext.grab ? prevCd : cdNext));
         setActiveBeatdownAlert(currentBeatdownBanner);
         setMyDmg(Math.round(localFighter.dmg));
         let holder = null;
@@ -14123,7 +14162,7 @@ function App() {
                     { key: 'jump', icon: '🦘', label: 'JUMP', cls: 'w-[88px] h-[88px] right-0 bottom-0 bg-sky-500 border-sky-200', cd: 0, max: 1 },
                     { key: 'smash', icon: '💥', label: 'SMASH', cls: 'w-[66px] h-[66px] right-[100px] bottom-[6px] bg-amber-400 border-yellow-100', cd: cooldowns.smash, max: CD_MAX.smash },
                     { key: 'dash', icon: '🐂', label: 'DASH', cls: 'w-[66px] h-[66px] right-[84px] bottom-[86px] bg-orange-400 border-orange-100', cd: cooldowns.dash, max: CD_MAX.dash },
-                    { key: 'punch', icon: '👊', label: 'PUNCH', cls: 'w-[80px] h-[80px] right-0 bottom-[96px] bg-rose-500 border-rose-200', cd: 0, max: 1 },
+                    { key: 'punch', icon: cooldowns.grab ? '🤼' : '👊', label: cooldowns.grab ? 'GRAB' : 'PUNCH', cls: `w-[80px] h-[80px] right-0 bottom-[96px] ${cooldowns.grab ? 'bg-violet-400 border-white animate-pulse ring-4 ring-violet-300/70' : 'bg-rose-500 border-rose-200'}`, cd: 0, max: 1 },
                     { key: 'cannon', icon: '🐼', label: 'THROW', cls: `w-[66px] h-[66px] right-[160px] bottom-[84px] bg-yellow-300 border-yellow-50 ${myGangSize <= 1 ? 'opacity-50' : ''}`, cd: cooldowns.cannon, max: CD_MAX.cannon, badge: Math.max(0, myGangSize - 1) },
                     ...(cooldowns.ult >= 100 ? [{ key: 'ult', icon: '🌪️', label: 'TORNADO', cls: 'w-[80px] h-[80px] right-[96px] bottom-[164px] bg-sky-400 border-white animate-pulse ring-4 ring-sky-300/70', cd: 0, max: 1 }] : [])
                   ].map(b => (
@@ -14161,7 +14200,7 @@ function App() {
             <div className="absolute right-0 bottom-0 safe-bottom safe-x pointer-events-auto flex flex-wrap justify-end items-end gap-1.5 md:gap-2 max-w-[calc(100vw-12px)] lg:max-w-none">
               {[
                 { key: 'jump', keyLabel: 'SPACE', title: '🦘 JUMP', desc: 'Double jump · dodge smashes · save yourself at the edge', bg: 'bg-sky-500', border: 'border-sky-300', text: 'text-slate-950', cd: 0, max: 1 },
-                { key: 'punch', keyLabel: 'F', title: '👊 PUNCH', desc: 'Fast aimed 3-hit combo · the 3rd is a haymaker · tap it again and again', bg: 'bg-rose-500', border: 'border-rose-200', text: 'text-slate-950', cd: 0, max: 1 },
+                { key: 'punch', keyLabel: 'F', title: cooldowns.grab ? '🤼 GRAB' : '👊 PUNCH', desc: cooldowns.grab ? 'READY! Seize the nearest rival and hurl them' : 'Fast aimed 3-hit combo · land the 3rd and this turns into GRAB', bg: cooldowns.grab ? 'bg-violet-400 animate-pulse' : 'bg-rose-500', border: cooldowns.grab ? 'border-violet-200' : 'border-rose-200', text: 'text-slate-950', cd: 0, max: 1 },
                 { key: 'smash', keyLabel: 'E', title: '💥 SMASH', desc: 'Blast everyone near you away · in the air = ground pound', bg: 'bg-amber-400', border: 'border-yellow-200', text: 'text-slate-950', cd: cooldowns.smash, max: CD_MAX.smash },
                 { key: 'dash', keyLabel: 'SHIFT', title: '🐂 DASH', desc: 'Burst forward and bulldoze anyone in the way', bg: 'bg-orange-400', border: 'border-orange-200', text: 'text-slate-950', cd: cooldowns.dash, max: CD_MAX.dash },
                 { key: 'cannon', keyLabel: 'C', title: '🐼 THROW', desc: 'Throw a gang member at the nearest rival · walk into grey pandas to recruit', bg: 'bg-yellow-300', border: 'border-yellow-100', text: 'text-slate-950', cd: cooldowns.cannon, max: CD_MAX.cannon },
