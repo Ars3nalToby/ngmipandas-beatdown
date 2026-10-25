@@ -197,3 +197,4 @@ Record every decided `OPEN` item here with a date, then update the section above
 | 2026-10-25 | Music engine upgraded (kick-ducked bass/pads, shared room reverb, tempo-synced echo, detuned voices, risers/crashes); Shootout FFA/siege gets its own 3-song set + SUDDEN DEATH rush |
 | 2026-10-25 | Music busy-fight mode + SFX voice budget (crackle with big hordes); 📞 Call the office: dynamite run in zombie mode (60 s cd, squad-safe) |
 | 2026-10-25 | Squad bots tuned for waves 6+ (dmg tracks zombie HP, faster bursts/reload, nade resupply); Delta Force reinforcement at team-kill milestones (host-damage, scripted sweep) |
+| 2026-10-26 | Layered onboarding after community feedback (surface is easy, depth arrives gradually): coach tips, late-unlocked touch buttons, ?fps=1 meter, auto clips for Delta/dynamite |

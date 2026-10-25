@@ -5814,6 +5814,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       scene.add(ring);
       offices.push({ tgt, ax, az, ring, t: 3.2, n: 0, next: 0, sticks: [] });
       announceNow('📞 "OFFICE, SEND THE DYNAMITE!"', '#fbbf24');
+      setTimeout(() => { if (clipRef.current) clipRef.current.highlight('DYNAMITE RUN'); }, 7000);
       callout(me, 'nade');
       sfx.play('radio', 0.7);
       sfx.play('powerup');
@@ -6225,6 +6226,18 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const crowd = () => 0.8 + 0.2 * Math.max(1, fighters.length);
     const isBossWave = w => w > 0 && w % 5 === 0;
     const isFinalWave = w => zmode !== 'incoming' && w >= ZOMBIE_RAID_WAVES;
+    // ---- coach tips: the game reveals itself in layers, each tip once, right when it becomes useful ----
+    const TIPS_KEY = 'ngmi_tips_v1';
+    let tipsSeen = {};
+    try { tipsSeen = JSON.parse(localStorage.getItem(TIPS_KEY) || '{}') || {}; } catch (e) {}
+    const coach = { text: '', until: 0, q: [] };
+    const showTip = (id, text) => {
+      if (tipsSeen[id]) return;
+      tipsSeen[id] = 1;
+      try { localStorage.setItem(TIPS_KEY, JSON.stringify(tipsSeen)); } catch (e) {}
+      coach.q.push(text);
+    };
+    const showFps = /[?&]fps\b/.test(location.search) || (() => { try { return localStorage.getItem('ngmi_fps') === '1'; } catch (e) { return false; } })();
     const zSpawnPoint = (minD = 26) => {
       const pts = map.zspawns || map.spawns;
       const alive = fighters.filter(f => !f.dead);
@@ -7694,6 +7707,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       });
       deltas.push({ x0, z0, x1, z1, dir, len, cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, ops, s: 0, phase: 'in', holdT: 10 });
       announceNow('🎖️ DELTA FORCE · ON THE MOVE', '#a3e635');
+      setTimeout(() => { if (clipRef.current) clipRef.current.highlight('DELTA FORCE'); }, 9000); // save the clip once they are in the thick of it
       sfx.play('radio', 0.7);
       sfx.play('hordeRumble', 0.5);
     };
@@ -8836,6 +8850,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           else if (avg > 1 / 42 && perf.pr > perf.min) setPR(Math.max(perf.min, perf.pr - 0.15));
           else if (avg < 1 / 57 && perf.pr < perf.max) setPR(Math.min(perf.max, perf.pr + 0.1));
           if (perf.warm <= 0) perf.slow = avg > 1 / 42 ? true : avg < 1 / 52 ? false : perf.slow;
+          perf.fps = Math.round(1 / Math.max(0.001, avg));
           perf.acc = 0;
           perf.n = 0;
           perf.t = 0;
@@ -9582,6 +9597,20 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           // busy-fight mode with hysteresis: lots of zombies, or the game is already struggling
           musicBusy = perf.slow || zombies.length > (musicBusy ? 9 : 14);
           sfx.setLoad(musicBusy);
+          // layered coaching (each tip shows once, when it matters)
+          if (!me.dead && match.countdown <= 0) {
+            if (zd.wave >= 1) showTip('move', IS_TOUCH ? '🕹️ Left thumb moves · drag the right side to look · FIRE shoots' : 'WASD moves · mouse aims · click shoots · R reloads');
+            if (nz < 14) showTip('head', '🎯 Headshots do 1.6× damage');
+            if (nz < 3.2) showTip('shove', IS_TOUCH ? '✋ Tap SHOVE to knock zombies back' : '🖱️ Right-click SHOVES zombies back');
+            if (me.nearDowned) showTip('revive', '🆘 Hold FIRE next to a downed teammate to revive them');
+            if (zd.phase === 'wave') {
+              if (zd.wave >= 2) showTip('nade', IS_TOUCH ? '💣 Tap the grenade button on packs of zombies' : '💣 F throws a grenade · aim at packs');
+              if (zd.wave >= 3) showTip('med', IS_TOUCH ? '➕ Throw medkits at hurt teammates' : '➕ H throws a medkit at a hurt teammate');
+              if (zd.wave >= 4) showTip('office', IS_TOUCH ? '📞 Call the OFFICE · dynamite where you aim' : '📞 B calls the office · dynamite run where you aim');
+            }
+          }
+          if (coach.text && now > coach.until) coach.text = '';
+          if (!coach.text && coach.q.length) { coach.text = coach.q.shift(); coach.until = now + 6500; }
           const boss = zombies.find(o => o.def.boss);
           const left = Math.max(0, zd.toSpawn - zd.spawned) + (zd.horde < 3 ? zd.hordeLeft : 0) + zombies.length;
           zHud = { wave: zd.wave, phase: zd.phase, t: Math.max(0, Math.ceil(zd.t)), left, horde: zd.horde, bossWave: zd.bossWave, final: isFinalWave(zd.wave), mode: zmode, boss: boss ? { hp: Math.max(0, boss.hp), max: boss.maxHp, enraged: !!boss.enraged } : null };
@@ -9646,6 +9675,11 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           prot: me.protT > 0 && !me.dead,
           strike: !!me.strikeReady && !me.dead,
           office: zombie ? Math.ceil(me.dynCd || 0) : -1,
+          tip: coach.text,
+          ushove: !zombie || !!tipsSeen.shove || zd.wave >= 3,
+          uoffice: !!tipsSeen.office || zd.wave >= 4,
+          fps: showFps ? perf.fps || 0 : 0,
+          nz: showFps ? zombies.length : 0,
           hurt: me.hurtAt && now - me.hurtAt < 1200 && me.hurtFrom !== undefined && !me.dead ? { ang: (-(me.hurtFrom - me.yaw - Math.PI) * 180) / Math.PI, age: now - me.hurtAt } : null,
           started: everLocked,
           dancing: me.dancing,
@@ -9971,6 +10005,12 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       {hud.office === 0 && !hud.dead && (
         <div className="absolute left-1/2 bottom-[24%] -translate-x-1/2 pointer-events-none text-[11px] md:text-sm font-black px-3 py-1 rounded-full bg-amber-500/90 text-slate-950 border border-white/60">{IS_TOUCH ? '📞 DYNAMITE READY' : '📞 OFFICE · DYNAMITE READY · press B'}</div>
       )}
+      {hud.tip && !hud.dead && (
+        <div className="absolute left-1/2 top-[31%] -translate-x-1/2 pointer-events-none text-center max-w-[70%] text-xs md:text-base font-black px-4 py-2 rounded-xl bg-slate-900/80 border border-lime-300/70 text-lime-200 shadow-lg">{hud.tip}</div>
+      )}
+      {hud.fps > 0 && (
+        <div className="absolute left-2 bottom-2 pointer-events-none text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-black/60 text-lime-300">{hud.fps} fps · {hud.nz} z</div>
+      )}
       {hud.prot && (
         <div className="absolute left-1/2 top-[38%] -translate-x-1/2 pointer-events-none text-[11px] md:text-xs font-black px-3 py-1 rounded-full bg-cyan-500/80 text-slate-950">🛡️ SPAWN SHIELD · shooting ends it</div>
       )}
@@ -10220,9 +10260,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 [`💣 ${hud.nades}`, 'right-[196px] bottom-[8px]', () => { c.nade = true; }, 76, `${hud.nades ? 'bg-lime-400/90 text-slate-900 border-lime-100' : 'bg-slate-900/75 text-slate-400 border-white/40'} text-xl`],
                 ...(hud.zombie ? [[`➕ ${hud.meds}`, 'right-[196px] bottom-[92px]', () => { c.med = true; }, 76, `${hud.meds ? 'bg-rose-400/90 text-slate-900 border-rose-100' : 'bg-slate-900/75 text-slate-400 border-white/40'} text-xl`]] : []),
                 ['⇄', 'right-[280px] bottom-[8px]', () => { c.cycle = 1; }, 54, 'bg-slate-900/75 border-white/70 text-lg'],
-                ['✋', 'right-[276px] bottom-[66px]', () => { c.shove = true; }, 64, 'bg-amber-400/90 border-amber-100 text-slate-900 text-3xl'],
+                ...(hud.ushove ? [['✋', 'right-[276px] bottom-[66px]', () => { c.shove = true; }, 64, 'bg-amber-400/90 border-amber-100 text-slate-900 text-3xl']] : []),
                 ['💃', 'right-[352px] bottom-[8px]', () => { c.dance = true; }, 50, 'bg-slate-900/75 border-white/70 text-base'],
-                ...(variant === 'zombie' ? [['📞', 'right-[352px] bottom-[132px]', () => { c.office = true; }, 56, hud.office === 0 ? 'bg-amber-500/90 border-amber-100 text-2xl' : 'bg-slate-900/70 border-white/50 text-xl opacity-70']] : []),
+                ...(variant === 'zombie' && hud.uoffice ? [['📞', 'right-[352px] bottom-[132px]', () => { c.office = true; }, 56, hud.office === 0 ? 'bg-amber-500/90 border-amber-100 text-2xl' : 'bg-slate-900/70 border-white/50 text-xl opacity-70']] : []),
                 ...(clipRef.current ? [['🎬', 'right-[280px] bottom-[132px]', () => { clipRef.current && clipRef.current.highlight('MY CLIP', 1200); setClipToast('🎬 Saving the last 30–60 s…'); }, 54, 'bg-slate-900/75 border-white/70 text-lg']] : []),
                 ...(hud.strike ? [['☄️', 'right-[274px] bottom-[196px]', () => { c.strike = true; }, 66, 'bg-rose-600/90 border-amber-300 text-2xl animate-pulse']] : [])
               ].map(([label, pos, fn, size, cls]) => (
