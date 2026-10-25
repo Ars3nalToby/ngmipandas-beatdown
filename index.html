@@ -1014,6 +1014,7 @@ function styleRenderer(r) {
 }
 function srgbTex(t) {
   t.encoding = THREE.sRGBEncoding;
+  t.anisotropy = 8; // clamped to what the GPU supports; keeps ground and walls sharp at grazing angles
   return t;
 }
 
@@ -1088,8 +1089,12 @@ function createPost(renderer, scene, camera) {
     float rnd(vec2 co){ return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453); }
     void main(){
       vec2 d = vUv - 0.5; float r2 = dot(d, d);
-      vec2 off = d * r2 * 0.010;
+      vec2 off = d * r2 * 0.004;
       vec3 col = vec3(texture2D(tScene, vUv + off).r, texture2D(tScene, vUv).g, texture2D(tScene, vUv - off).b);
+      // unsharp mask: crisp edges on a soft-looking night scene
+      vec2 px = 1.0 / max(res, vec2(1.0));
+      vec3 nb = (texture2D(tScene, vUv + vec2(px.x, 0.0)).rgb + texture2D(tScene, vUv - vec2(px.x, 0.0)).rgb + texture2D(tScene, vUv + vec2(0.0, px.y)).rgb + texture2D(tScene, vUv - vec2(0.0, px.y)).rgb) * 0.25;
+      col += clamp(col - nb, -0.25, 0.25) * 0.55;
       col += texture2D(tBloom, vUv).rgb * bloomStrength;
       col *= exposure;
       col = aces(col);
@@ -1099,7 +1104,7 @@ function createPost(renderer, scene, camera) {
       col = mix(vec3(l), col, 1.04);
       col = pow(max(col, 0.0), vec3(1.0 / 2.2));
       col *= 1.0 - r2 * 0.95;
-      col += (rnd(vUv * res + fract(time) * 100.0) - 0.5) * 0.05;
+      col += (rnd(vUv * res + fract(time) * 100.0) - 0.5) * 0.025;
       col = mix(col, vec3(1.0), flash);
       gl_FragColor = vec4(col, 1.0);
     }`);
@@ -3195,22 +3200,30 @@ function buildZombieMesh(kind) {
   if (!zombieKit) {
     const std = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, ...extra });
     zombieKit = {
-      body: new THREE.SphereGeometry(0.5, 14, 10),
-      head: new THREE.SphereGeometry(0.42, 16, 12),
+      body: new THREE.SphereGeometry(0.5, 20, 14),
+      head: new THREE.SphereGeometry(0.42, 24, 16),
       ear: new THREE.SphereGeometry(0.14, 10, 8),
       patch: new THREE.SphereGeometry(0.13, 10, 8),
-      eye: new THREE.SphereGeometry(0.055, 8, 6),
+      eye: new THREE.SphereGeometry(0.042, 8, 6),
+      socket: new THREE.SphereGeometry(0.085, 10, 8),
+      tooth: new THREE.ConeGeometry(0.02, 0.07, 4),
+      claw: new THREE.ConeGeometry(0.022, 0.17, 5),
+      strip: new THREE.BoxGeometry(0.09, 0.3, 0.02),
+      rib: new THREE.CapsuleGeometry(0.016, 0.13, 3, 5),
       limb: new THREE.CapsuleGeometry(0.11, 0.42, 4, 8),
       leg: new THREE.CapsuleGeometry(0.13, 0.26, 4, 8),
       wart: new THREE.SphereGeometry(0.12, 8, 6),
       crown: new THREE.CylinderGeometry(0.3, 0.26, 0.2, 8, 1, true),
       spike: new THREE.ConeGeometry(0.06, 0.2, 6),
       wound: new THREE.SphereGeometry(0.11, 8, 6),
-      furs: [std(0xc9dcb8), std(0xb8c9a6), std(0xd4d9c4)],
+      furs: [std(0xa9b79a), std(0x9aa88a), std(0xb3b8a0)], // sickly grey-green, not clean white
+      toothM: std(0xd8d2b4),
+      bone: std(0xcfc7ab),
+      flesh: std(0x7c2b2b, { roughness: 0.45 }),
       dark: std(0x1d241b),
       blood: std(0x5b0f0f, { roughness: 0.4 }),
       mouth: new THREE.MeshBasicMaterial({ color: 0x3b0a0a }),
-      eyeM: new THREE.MeshBasicMaterial({ color: 0xff2d2d }),
+      eyeM: new THREE.MeshBasicMaterial({ color: 0xe9dc8a }), // milky, dead eyes
       bossEye: new THREE.MeshBasicMaterial({ color: 0xfacc15 }),
       spitEye: new THREE.MeshBasicMaterial({ color: 0xd9f99d }),
       wartM: std(0xa3e635, { emissive: 0x4d7c0f, emissiveIntensity: 0.9 }),
@@ -3244,21 +3257,44 @@ function buildZombieMesh(kind) {
   add(K.patch, K.dark, -0.15, 0.05, 0.33, 1, 1.25, 0.55, head);
   add(K.patch, K.dark, 0.15, 0.05, 0.33, 1, 1.25, 0.55, head);
   const eyeM = def.boss ? K.bossEye : def.spit ? K.spitEye : K.eyeM;
-  add(K.eye, eyeM, -0.15, 0.06, 0.4, 1, 1, 1, head);
-  add(K.eye, eyeM, 0.15, 0.06, 0.4, 1, 1, 1, head);
+  add(K.socket, K.dark, -0.15, 0.06, 0.37, 1, 1.05, 0.6, head); // sunken sockets
+  add(K.socket, K.dark, 0.15, 0.06, 0.37, 1, 1.05, 0.6, head);
+  add(K.eye, eyeM, -0.15, 0.06, 0.415, 1, 1, 1, head);
+  add(K.eye, eyeM, 0.15, 0.06, 0.415, 1, 1, 1, head);
   add(K.patch, K.mouth, 0, -0.18, 0.36, 1.3, def.spit ? 0.9 : 0.55, 0.4, head);
+  // a ragged row of teeth top and bottom
+  for (let i = -3; i <= 3; i++) {
+    if (Math.random() < 0.18) continue; // some are missing
+    const tx = i * 0.034, ty = -0.14 - Math.abs(i) * 0.004, tz = 0.385 - Math.abs(i) * 0.012;
+    add(K.tooth, K.toothM, tx, ty, tz, 1, 1, 1, head).rotation.x = Math.PI;
+    if (Math.random() < 0.7) add(K.tooth, K.toothM, tx, ty - 0.1, tz, 1, 0.9, 1, head);
+  }
   // wounds and blood stains
   for (let i = 0; i < 1 + Math.floor(Math.random() * 3); i++) {
     const a = Math.random() * Math.PI * 2;
     add(K.wound, K.blood, Math.cos(a) * 0.45 * def.w, 0.45 + Math.random() * 0.5, Math.abs(Math.sin(a)) * 0.42 * def.w + 0.05, 1.2, 1, 0.35);
   }
   if (Math.random() < 0.5) add(K.wound, K.blood, 0.12, 0.22, 0.32, 0.9, 0.6, 0.35, head);
+  // torn open chest: raw flesh and a few ribs showing through
+  if (!def.pop) {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    add(K.wound, K.flesh, side * 0.16 * def.w, 0.82, 0.42 * def.w, 1.5, 1.7, 0.4);
+    for (let r = 0; r < 3; r++) add(K.rib, K.bone, side * 0.16 * def.w, 0.9 - r * 0.1, 0.5 * def.w, 1, 1, 1).rotation.z = Math.PI / 2 + (r - 1) * 0.12;
+  }
+  // tattered shirt hem
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + Math.random() * 0.5;
+    const st = add(K.strip, K.shirts[kind][1], Math.sin(a) * 0.43 * def.w, 0.2, Math.cos(a) * 0.4 * def.w, 0.8 + Math.random() * 0.7, 0.7 + Math.random() * 0.8, 1);
+    st.rotation.y = a;
+    st.rotation.x = (Math.random() - 0.5) * 0.4;
+  }
   if (def.spit) [[0, -0.32, 0.25], [0.18, -0.25, 0.2], [-0.18, -0.25, 0.2]].forEach(([x, y, z]) => add(K.wart, K.wartM, x, y, z, 0.8, 0.8, 0.8, head));
   head.rotation.z = (Math.random() - 0.5) * 0.5; // the classic zombie head tilt
   const arms = [-1, 1].map(sd => {
     const g = new THREE.Group();
     g.position.set(sd * 0.48 * def.w, 0.98, 0.05);
     add(K.limb, K.dark, 0, 0, 0.32, 1, 1, 1, g).rotation.x = Math.PI / 2;
+    for (let c = -1; c <= 1; c++) add(K.claw, K.toothM, c * 0.05, -0.02 * Math.abs(c), 0.62, 1, 1, 1, g).rotation.x = Math.PI / 2 + 0.2;
     root.add(g);
     return g;
   });
@@ -3326,7 +3362,12 @@ function skinZombie(src) {
     for (let i = 0; i < P.count; i++) {
       pos.push(P.getX(i), P.getY(i), P.getZ(i));
       nor.push(N.getX(i), N.getY(i), N.getZ(i));
-      col.push(m.color.r, m.color.g, m.color.b);
+      // baked grime: slow mottling, darker toward the ground and under surfaces, the odd dried-blood stain
+      const vx = P.getX(i), vy = P.getY(i), vz = P.getZ(i), ny = N.getY(i);
+      const mott = 0.5 + 0.5 * Math.sin(vx * 9.1 + Math.sin(vy * 7.3) * 1.7 + vz * 5.7) * Math.sin(vy * 8.9 + vx * 3.3 + vz * 2.1);
+      let sh = (0.74 + 0.36 * mott) * (0.62 + 0.38 * Math.min(1, Math.max(0, vy / 1.5))) * (ny < -0.25 ? 0.62 : 1);
+      const stain = Math.sin(vx * 5.3 + vz * 4.1) * Math.sin(vy * 11.7 + vx * 2.9) > 0.62;
+      col.push(stain ? m.color.r * sh * 0.8 + 0.07 : m.color.r * sh, stain ? m.color.g * sh * 0.45 : m.color.g * sh, stain ? m.color.b * sh * 0.4 : m.color.b * sh);
       si.push(bi, 0, 0, 0);
       sw.push(1, 0, 0, 0);
     }
@@ -4521,7 +4562,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const W = () => el.clientWidth || window.innerWidth;
     const H = () => el.clientHeight || window.innerHeight;
     const renderer = styleRenderer(new THREE.WebGLRenderer({ antialias: !cinematic, powerPreference: 'high-performance' }));
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_TOUCH ? 1.4 : 2));
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_TOUCH ? 1.7 : 2)); // adaptive resolution (perf) drops it again if the phone struggles
     renderer.setSize(W(), H());
     renderer.shadowMap.enabled = cinematic;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -5738,6 +5779,16 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (visualOnly) return;
       net.pendingEx.push([r1(point.x), r1(point.y), r1(point.z), Math.round(scale * 10)]);
       if (start) queueTracer(start, point);
+      // a wall between the blast and you takes most of the punch (explosions used to hurt straight through buildings)
+      const blastV = new THREE.Vector3(), blastO = new THREE.Vector3(point.x, Math.max(point.y, 0.9) + 0.3, point.z);
+      const walled = (tx, ty, tz, d) => {
+        if (d < 1.4) return false;
+        blastV.set(tx - blastO.x, Math.max(ty, 0.9) - blastO.y, tz - blastO.z);
+        const l = blastV.length();
+        if (l < 0.5) return false;
+        blastV.multiplyScalar(1 / l);
+        return !!wallHit(blastO, blastV, l - 0.3);
+      };
       fighters.forEach(f => {
         if (f.dead) return;
         if (teamPlay && owner && f !== owner && f.team === owner.team) return;
@@ -5746,6 +5797,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (d > R) return;
         let dmg = d < core ? 100 : 100 * (1 - (d - core) / (R - core));
         if (f === owner) dmg *= 0.3;
+        if (walled(cx, cy, cz, d)) dmg *= 0.2;
         if (dmg < 1) return;
         if (f.isMe || (f.isBot && net.isHost)) {
           const kx = (cx - point.x) / (d || 1), kz = (cz - point.z) / (d || 1), kb = 16 * (1 - d / R);
@@ -5761,7 +5813,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           if (zz.dead || zz.hp <= 0) return;
           const d = Math.max(0, Math.hypot(zz.pos.x - point.x, zz.pos.y + zz.s * 0.66 - point.y, zz.pos.z - point.z) - zz.s * 0.3);
           if (d > R) return;
-          const dmg = (d < core ? 100 : 100 * (1 - (d - core) / (R - core))) * 1.3;
+          let dmg = (d < core ? 100 : 100 * (1 - (d - core) / (R - core))) * 1.3;
+          if (walled(zz.pos.x, zz.pos.y + zz.s * 0.9, zz.pos.z, d)) dmg *= 0.2;
           if (dmg < 1) return;
           const kx = (zz.pos.x - point.x) / (d || 1), kz = (zz.pos.z - point.z) / (d || 1), kb = 14 * (1 - d / R);
           if (net.isHost && !zz.def.boss) zz.vel.y = Math.max(zz.vel.y, 5 + 8 * (1 - d / R));
@@ -5836,7 +5889,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             const m = new THREE.Mesh(dynGeo, dynMat);
             m.position.set(x, 34, z);
             scene.add(m);
-            o.sticks.push({ m, x, z, y: 34, vy: -18 });
+            // find what it actually lands on: a roof stops it, it never drops through a building
+            const lh = wallHit(new THREE.Vector3(x, 34, z), new THREE.Vector3(0, -1, 0), 40);
+            o.sticks.push({ m, x, z, y: 34, vy: -18, gy: lh ? Math.max(0.3, lh.point.y + 0.3) : 0.3 });
             if (o.n === 1) o.sound = sfx.play('dynamite', 0.8);
             sfx.play('dynamite', 0.5, 0.9 + Math.random() * 0.3);
           }
@@ -5847,13 +5902,13 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           st.y += st.vy * dt;
           st.m.position.y = st.y;
           st.m.rotation.x += dt * 9;
-          if (st.y <= 0.3) {
+          if (st.y <= st.gy) {
             scene.remove(st.m);
             o.sticks.splice(j, 1);
             // never blow up on top of your own squad
             const safe = !fighters.some(f => !f.dead && Math.hypot(f.pos.x - st.x, f.pos.z - st.z) < 6);
-            if (safe) explodeAt(new THREE.Vector3(st.x, 0.4, st.z), me, false, null, 0.85);
-            else spawnFx({ pos: new THREE.Vector3(st.x, 0.3, st.z), size: 0.8, grow: 2, life: 0.4, color: 0x94a3b8, smoke: true, opacity: 0.6 });
+            if (safe) explodeAt(new THREE.Vector3(st.x, st.gy + 0.1, st.z), me, false, null, 0.85);
+            else spawnFx({ pos: new THREE.Vector3(st.x, st.gy, st.z), size: 0.8, grow: 2, life: 0.4, color: 0x94a3b8, smoke: true, opacity: 0.6 });
           }
         }
         if (o.n >= 10 && !o.sticks.length) {
@@ -7740,10 +7795,18 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           if (o.thinkT <= 0) {
             o.thinkT = 0.2;
             let best = null, bd = D.phase === 'hold' ? 22 : 30;
+            const oeye = new THREE.Vector3(o.x, 1.5, o.z);
+            const near = [];
             for (const zz of zombies) {
               if (zz.dead || zz.hp <= 0 || zz.rise > 0) continue;
               const d = Math.hypot(zz.pos.x - o.x, zz.pos.z - o.z);
-              if (d < bd) { bd = d; best = zz; }
+              if (d < bd) near.push([d, zz]);
+            }
+            near.sort((p, q) => p[0] - q[0]);
+            // nearest few only (cheap): no running through walls after a zombie they can't see
+            for (let q = 0; q < Math.min(4, near.length); q++) {
+              const zz = near[q][1];
+              if (hasLOS(oeye, new THREE.Vector3(zz.pos.x, zz.pos.y + zz.s * 0.9, zz.pos.z))) { best = zz; break; }
             }
             o.tgt = best;
           }
