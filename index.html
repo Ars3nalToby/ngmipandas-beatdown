@@ -22,7 +22,7 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:ital,wght@0,600;0,700;0,800;0,900;1,900&family=Noto+Sans+SC:wght@900&family=Bungee&family=Rubik:wght@400;600;800;900&display=swap" rel="stylesheet" />
   <style>
     html, body { height: 100%; overscroll-behavior: none; background: #050816; }
     body { font-family: 'Rubik', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
@@ -135,6 +135,42 @@
     @keyframes introSlam { 0% { transform: scale(2.4); opacity: 0; filter: blur(10px); } 60% { opacity: 1; filter: blur(0); } 100% { transform: scale(1); opacity: 1; } }
     @keyframes introRing { 0% { transform: scale(0.3); opacity: 1; } 100% { transform: scale(9); opacity: 0; } }
     @keyframes introOut { to { opacity: 0; visibility: hidden; } }
+    /* ---- SHOOTOUT · FLIPSIDE print theme: ink plates, paper cards, red/mustard accents, heavy condensed type ---- */
+    .so-flip { --fp: #f2ebdf; --fi: #1c1b21; --fr: #d33a2c; --fm: #e4bd2c; --fn: #233a70; --fk: #e9a6a3; font-family: 'Barlow Condensed', 'Rubik', system-ui, sans-serif; }
+    .so-flip .font-game { font-family: 'Barlow Condensed', 'Arial Narrow', sans-serif; font-weight: 900; letter-spacing: 0.02em; }
+    .so-flip .font-black { font-weight: 800; letter-spacing: 0.02em; }
+    .so-flip .font-bold, .so-flip .font-semibold { font-weight: 700; }
+    .so-flip .font-mono { font-family: 'Barlow Condensed', ui-monospace, monospace; font-weight: 800; }
+    .so-flip .rounded, .so-flip .rounded-md, .so-flip .rounded-lg, .so-flip .rounded-xl, .so-flip .rounded-2xl, .so-flip .rounded-3xl { border-radius: 2px !important; }
+    .so-flip [class*="shadow"] { box-shadow: none !important; }
+    .so-flip .glass { background: rgba(28, 27, 33, 0.96) !important; backdrop-filter: none; -webkit-backdrop-filter: none; border-color: var(--fp) !important; border-width: 2px; }
+    .so-flip [class*="bg-slate-950"], .so-flip [class*="bg-slate-900"], .so-flip [class*="bg-slate-800"], .so-flip [class*="bg-lime-900"], .so-flip [class*="bg-black/"] { background-color: rgba(28, 27, 33, 0.9) !important; }
+    .so-flip [class*="bg-white"]:not(.rounded-full), .so-flip [class*="bg-sky-300"] { background-color: var(--fp) !important; color: var(--fi) !important; border: 2px solid var(--fi); }
+    .so-flip [class*="bg-slate-300"], .so-flip [class*="bg-slate-700"] { background-color: rgba(120, 108, 96, 0.45) !important; }
+    .so-flip [class*="bg-rose-4"], .so-flip [class*="bg-rose-5"], .so-flip [class*="bg-rose-6"], .so-flip [class*="bg-rose-7"], .so-flip [class*="bg-red-5"], .so-flip [class*="bg-purple-5"] { background-color: var(--fr) !important; }
+    .so-flip [class*="bg-emerald-4"], .so-flip [class*="bg-emerald-5"] { background-color: var(--fi) !important; }
+    .so-flip .rounded-full[class*="bg-emerald-4"] { background-color: var(--fm) !important; }
+    .so-flip [class*="bg-white"] [class*="bg-emerald-5"], .so-flip [class*="bg-slate-9"] [class*="bg-emerald-4"] { background-color: var(--fi) !important; }
+    .so-flip [class*="bg-slate-9"] [class*="bg-emerald-4"], .so-flip [class*="bg-slate-9"] [class*="bg-amber-4"] { background-color: var(--fp) !important; }
+    .so-flip [class*="bg-emerald-9"], .so-flip [class*="bg-indigo-6"], .so-flip [class*="bg-cyan-5"] { background-color: var(--fn) !important; color: var(--fp) !important; }
+    .so-flip [class*="bg-emerald-2"], .so-flip [class*="bg-lime-3"], .so-flip [class*="bg-lime-4"], .so-flip [class*="bg-amber-3"], .so-flip [class*="bg-amber-4"], .so-flip [class*="bg-amber-5"], .so-flip [class*="bg-yellow-3"] { background-color: var(--fm) !important; color: var(--fi) !important; }
+    .so-flip [class*="text-lime-"], .so-flip [class*="text-amber-3"], .so-flip [class*="text-yellow-3"] { color: var(--fm) !important; }
+    .so-flip [class*="text-emerald-3"], .so-flip [class*="text-cyan-3"], .so-flip [class*="text-slate-1"], .so-flip [class*="text-slate-2"] { color: var(--fp) !important; }
+    .so-flip [class*="text-rose-3"], .so-flip [class*="text-rose-4"], .so-flip [class*="text-purple-3"], .so-flip [class*="text-pink-3"] { color: var(--fk) !important; }
+    .so-flip [class*="border-white"], .so-flip [class*="border-lime"], .so-flip [class*="border-amber-1"], .so-flip [class*="border-rose-1"], .so-flip [class*="border-emerald-4"], .so-flip [class*="border-purple"] { border-color: var(--fp) !important; }
+    .so-flip [class*="ring-rose"] { --tw-ring-color: var(--fr) !important; }
+    .so-flip .animate-bounce { animation: none; }
+    .so-flip .touch-btn.rounded-full { border-width: 3px; font-family: 'Barlow Condensed', sans-serif; font-weight: 900; letter-spacing: 0.04em; }
+    .so-flip .xhair span { background: var(--fi) !important; box-shadow: 0 0 0 1px rgba(242, 235, 223, 0.95) !important; }
+    .so-flip .play-btn { background: var(--fr); box-shadow: none; animation: none; color: var(--fp) !important; border-radius: 2px !important; }
+    .so-flip .play-btn::after { display: none; }
+    .so-flip .keycap { border-radius: 2px; background: var(--fp); color: var(--fi); border: 1px solid var(--fp); box-shadow: none; font-family: 'Barlow Condensed', sans-serif; font-size: 13px; }
+    .so-flip canvas.rounded-full { border-radius: 0 !important; clip-path: polygon(25% 4%, 75% 4%, 100% 50%, 75% 96%, 25% 96%, 0 50%); }
+    /* trailer-style call-out: red numeral badge + heavy ink title on a paper plate */
+    .flip-banner { display: inline-flex; align-items: stretch; background: var(--fi); color: var(--fp); animation: flipIn 0.32s cubic-bezier(.2, 1.2, .3, 1) both; max-width: 92vw; }
+    .flip-banner-k { font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif; display: flex; align-items: center; justify-content: center; background: var(--fr); color: var(--fp); font-weight: 900; padding: 0 0.32em; }
+    .flip-banner-t { padding: 0.04em 0.4em 0.08em; font-weight: 900; line-height: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-bottom: 3px solid var(--fr); }
+    @keyframes flipIn { from { opacity: 0; transform: translateX(-28px) skewX(-8deg); clip-path: inset(0 100% 0 0); } to { opacity: 1; transform: none; clip-path: inset(0 0 0 0); } }
   </style>
 </head>
 <body class="bg-[#04060e] text-white overflow-hidden m-0 p-0">
@@ -1070,7 +1106,7 @@ function createPost(renderer, scene, camera) {
   const type = canHalf ? THREE.HalfFloatType : THREE.UnsignedByteType;
   const size = new THREE.Vector2();
   renderer.getDrawingBufferSize(size);
-  const rtScene = new THREE.WebGLRenderTarget(size.x, size.y, { type, samples: isGL2 ? 4 : 0 });
+  const rtScene = new THREE.WebGLRenderTarget(size.x, size.y, { type, samples: isGL2 ? 4 : 0, stencilBuffer: true });
   const rtA = new THREE.WebGLRenderTarget(1, 1, { type });
   const rtB = new THREE.WebGLRenderTarget(1, 1, { type });
   const quadScene = new THREE.Scene();
@@ -1091,11 +1127,20 @@ function createPost(renderer, scene, camera) {
     'c += texture2D(tex, vUv + dir * 3.231).rgb * 0.070; c += texture2D(tex, vUv - dir * 3.231).rgb * 0.070;' +
     'gl_FragColor = vec4(c, 1.0); }');
   const comp = mat(
-    { tScene: { value: null }, tBloom: { value: null }, time: { value: 0 }, res: { value: new THREE.Vector2() }, bloomStrength: { value: 0.55 }, exposure: { value: 0.88 }, flash: { value: 0 } },
-    `uniform sampler2D tScene; uniform sampler2D tBloom; uniform float time; uniform vec2 res; uniform float bloomStrength; uniform float exposure; uniform float flash; varying vec2 vUv;
+    { tScene: { value: null }, tBloom: { value: null }, time: { value: 0 }, res: { value: new THREE.Vector2() }, bloomStrength: { value: 0.55 }, exposure: { value: 0.88 }, flash: { value: 0 }, flip: { value: 0 } },
+    `uniform sampler2D tScene; uniform sampler2D tBloom; uniform float time; uniform vec2 res; uniform float bloomStrength; uniform float exposure; uniform float flash; uniform float flip; varying vec2 vUv;
     vec3 aces(vec3 x){ return clamp((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0); }
     float rnd(vec2 co){ return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453); }
     void main(){
+      if (flip > 0.5) {
+        // FLIPSIDE print look: no grading, no lens tricks; just the flat colours, a touch of glow and paper grain
+        vec3 fc = texture2D(tScene, vUv).rgb + texture2D(tBloom, vUv).rgb * bloomStrength;
+        fc = pow(clamp(fc, 0.0, 1.0), vec3(1.0 / 2.2));
+        fc += (rnd(floor(vUv * res * 0.5)) - 0.5) * 0.018;
+        fc = mix(fc, vec3(1.0), flash);
+        gl_FragColor = vec4(fc, 1.0);
+        return;
+      }
       vec2 d = vUv - 0.5; float r2 = dot(d, d);
       vec2 off = d * r2 * 0.004;
       vec3 col = vec3(texture2D(tScene, vUv + off).r, texture2D(tScene, vUv).g, texture2D(tScene, vUv - off).b);
@@ -1156,6 +1201,232 @@ function createPost(renderer, scene, camera) {
       [bright, blur, comp].forEach(m => m.dispose());
     }
   };
+}
+
+// ---------- FLIPSIDE art direction (Shootout only): flat cel shading, ink lines, flat navy shadows ----------
+// While a Shootout match runs, three's lighting chunks are patched (sun = hard 2-tone step, no PBR shine,
+// hatching in full shade) and restored on exit, so Beatdown keeps its own look. ?art=classic = old look.
+let FLIP_N = 0; // call-out counter: banners are numbered 一 二 三 … like the trailer's chapter cards
+const FLIP_ART = typeof location === 'undefined' || !/[?&]art=classic/.test(location.search);
+const FLIP = { paper: 0xf2ebdf, cream: 0xe6dccb, ink: 0x1c1b21, navy: 0x233a70, shade: 0x4f6bb0, rust: 0x93402a, red: 0xd33a2c, mustard: 0xe4bd2c, pink: 0xe9a6a3, night: 0x16213f };
+// the whole world is pulled toward this short list of print colours
+const FLIP_PAL = [0xf2ebdf, 0xe2d6c2, 0xc9b89c, 0x9a8f82, 0x5d5a5c, 0x2c2b31, 0x1c1b21, 0x233a70, 0x3f5fa8, 0x8ea3cf, 0x93402a, 0xb9502f, 0xd33a2c, 0xe4bd2c, 0xc4912f, 0xe9a6a3, 0x4f7a4c, 0x6f7b4a, 0x7a5b3e];
+function flipHex(hex, pull = 0.8) {
+  const r = (hex >> 16) & 255, g = (hex >> 8) & 255, b = hex & 255;
+  let best = FLIP_PAL[0], bd = Infinity;
+  for (const p of FLIP_PAL) {
+    const pr = (p >> 16) & 255, pg = (p >> 8) & 255, pb = p & 255;
+    const rm = (r + pr) / 2, dr = r - pr, dg = g - pg, db = b - pb;
+    const d = (2 + rm / 256) * dr * dr + 4 * dg * dg + (2 + (255 - rm) / 256) * db * db;
+    if (d < bd) { bd = d; best = p; }
+  }
+  const mix = (a, c) => Math.round(a + (c - a) * pull);
+  return (mix(r, (best >> 16) & 255) << 16) | (mix(g, (best >> 8) & 255) << 8) | mix(b, best & 255);
+}
+let flipChunks = null;
+function flipShaders(on) {
+  const C = THREE.ShaderChunk;
+  if (on && !flipChunks) {
+    flipChunks = { p: C.lights_physical_pars_fragment, f: C.lights_physical_fragment, e: C.lights_fragment_end };
+    let p = C.lights_physical_pars_fragment;
+    const a = p.indexOf('void RE_Direct_Physical(');
+    const b = p.indexOf('\n}', a) + 2;
+    if (a < 0 || b < 2) { flipChunks = null; return; }
+    p = p.slice(0, a) + `void RE_Direct_Physical( const in IncidentLight directLight, const in GeometricContext geometry, const in PhysicalMaterial material, inout ReflectedLight reflectedLight ) {
+	float dotNL = dot( geometry.normal, directLight.direction );
+	vec3 irradiance = smoothstep( -0.04, 0.06, dotNL ) * directLight.color;
+	reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseColor );
+}` + p.slice(b);
+    const c = p.indexOf('void RE_IndirectSpecular_Physical(');
+    const d = p.indexOf('\n}', c) + 2;
+    if (c >= 0) p = p.slice(0, c) + 'void RE_IndirectSpecular_Physical( const in vec3 radiance, const in vec3 irradiance, const in vec3 clearcoatRadiance, const in GeometricContext geometry, const in PhysicalMaterial material, inout ReflectedLight reflectedLight ) {}' + p.slice(d);
+    C.lights_physical_pars_fragment = p;
+    C.lights_physical_fragment = C.lights_physical_fragment.replace('diffuseColor.rgb * ( 1.0 - metalnessFactor )', 'diffuseColor.rgb * ( 1.0 - metalnessFactor * 0.3 )');
+    C.lights_fragment_end = C.lights_fragment_end + `
+	{ // printed hatching where the sun doesn't reach
+		float fD = dot( reflectedLight.directDiffuse, vec3( 0.3333 ) ), fI = dot( reflectedLight.indirectDiffuse, vec3( 0.3333 ) );
+		if ( fD < fI * 0.2 && mod( gl_FragCoord.x - gl_FragCoord.y, 6.0 ) < 1.25 ) reflectedLight.indirectDiffuse *= 0.84;
+	}`;
+  } else if (!on && flipChunks) {
+    C.lights_physical_pars_fragment = flipChunks.p;
+    C.lights_physical_fragment = flipChunks.f;
+    C.lights_fragment_end = flipChunks.e;
+    flipChunks = null;
+  }
+}
+// ink outline = the same geometry pushed out along its normals, drawn back-faces only, flat ink colour
+const FLIP_INK = new Map();
+function inkMat(t, vm = false) {
+  const k = t.toFixed(4) + (vm ? 'v' : '');
+  if (FLIP_INK.has(k)) return FLIP_INK.get(k);
+  const m = new THREE.MeshBasicMaterial({ color: FLIP.ink, side: vm ? THREE.FrontSide : THREE.BackSide, depthTest: !vm, depthWrite: !vm, fog: !vm });
+  m.onBeforeCompile = sh => { sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `vec3 transformed = vec3( position ) + normal * ${t.toFixed(4)};`); };
+  m.customProgramCacheKey = () => 'ink' + k;
+  m.userData.shared = true;
+  FLIP_INK.set(k, m);
+  return m;
+}
+const noRay = () => {};
+// vm = first-person viewmodel: parts are painter-ordered without depth test, so each part gets a slightly
+// scaled ink copy drawn before all of them -> one clean outer silhouette
+function addInk(root, t, vm = false) {
+  const list = [];
+  root.traverse(o => {
+    if (!o.isMesh || o.userData.ink || o.userData.isInk || o.isInstancedMesh) return;
+    const m = o.material;
+    if (!m || Array.isArray(m) || m.transparent || m.isShaderMaterial || m.isSpriteMaterial || !o.geometry || !o.geometry.attributes.normal) return;
+    list.push(o);
+  });
+  const groups = new Map();
+  if (list.length) root.updateMatrixWorld(true);
+  list.forEach(o => {
+    o.userData.ink = true;
+    let h;
+    if (o.isSkinnedMesh) {
+      h = new THREE.SkinnedMesh(o.geometry, inkMat(t));
+      h.bind(o.skeleton, o.bindMatrix);
+      h.position.copy(o.position);
+      h.quaternion.copy(o.quaternion);
+      h.scale.copy(o.scale);
+      h.frustumCulled = o.frustumCulled;
+      o.parent.add(h);
+    } else if (vm) {
+      const g = o.geometry;
+      if (!g.boundingBox) g.computeBoundingBox();
+      const s = g.boundingBox.getSize(new THREE.Vector3()), c = g.boundingBox.getCenter(new THREE.Vector3());
+      h = new THREE.Mesh(g, inkMat(0, true));
+      const kx = (s.x + 2 * t) / Math.max(s.x, 1e-3), ky = (s.y + 2 * t) / Math.max(s.y, 1e-3), kz = (s.z + 2 * t) / Math.max(s.z, 1e-3);
+      h.scale.set(kx, ky, kz);
+      h.position.set(c.x * (1 - kx), c.y * (1 - ky), c.z * (1 - kz));
+      h.renderOrder = 900;
+      o.add(h);
+    } else {
+      // rigid parts: one merged ink shell per animated group (head, arms, gun…) -> a few draw calls per panda
+      if (!o.visible || !o.parent) return;
+      const g = o.geometry;
+      if (!g.boundingSphere) g.computeBoundingSphere();
+      if (g.boundingSphere.radius * o.matrixWorld.getMaxScaleOnAxis() < 0.09) return;
+      if (!groups.has(o.parent)) groups.set(o.parent, []);
+      groups.get(o.parent).push(o);
+      return;
+    }
+    h.userData.isInk = true;
+    h.castShadow = h.receiveShadow = false;
+    h.raycast = noRay;
+  });
+  groups.forEach((arr, parent) => {
+    const geos = arr.map(o => {
+      o.updateMatrix();
+      const src = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry;
+      const gg = new THREE.BufferGeometry();
+      gg.setAttribute('position', src.attributes.position.clone());
+      gg.setAttribute('normal', src.attributes.normal.clone());
+      gg.applyMatrix4(o.matrix);
+      if (src !== o.geometry) src.dispose();
+      return gg;
+    });
+    const h = new THREE.Mesh(concatGeometries(geos), inkMat(t));
+    geos.forEach(x => x.dispose());
+    h.userData.isInk = true;
+    h.castShadow = h.receiveShadow = false;
+    h.raycast = noRay;
+    parent.add(h);
+  });
+}
+// flat graphic surface textures (near-white so the per-building tint shows as a clean print colour)
+function flipSurfTex(kind) {
+  const S = 512;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.fillStyle = '#f7f3ec';
+  g.fillRect(0, 0, S, S);
+  const line = (x0, y0, x1, y1, w, col) => { g.strokeStyle = col; g.lineWidth = w; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); };
+  const ink = a => `rgba(40,30,34,${a})`;
+  if (kind === 'pavement') {
+    // salt-flat hex slabs (flat-top hexes; period = canvas size, slightly squashed vertically)
+    g.fillStyle = '#f4efe7';
+    g.fillRect(0, 0, S, S);
+    const r = S / 3, hy = S / 2;
+    g.strokeStyle = 'rgba(150,132,112,0.55)';
+    g.lineWidth = 3;
+    for (let col = -1; col <= 3; col++) {
+      for (let row = -1; row <= 3; row++) {
+        const cx = col * 1.5 * r, cy = row * hy + (col & 1 ? hy / 2 : 0);
+        g.beginPath();
+        for (let k = 0; k <= 6; k++) {
+          const a = (k / 6) * Math.PI * 2;
+          const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * (hy / 2) / Math.sin(Math.PI / 3);
+          k ? g.lineTo(x, y) : g.moveTo(x, y);
+        }
+        g.stroke();
+      }
+    }
+  } else if (kind === 'wood') {
+    for (let i = 0; i < 6; i++) { line(i * S / 6 + 1, 0, i * S / 6 + 1, S, 4, ink(0.42)); line(i * S / 6 + 7, 0, i * S / 6 + 7, S, 2, 'rgba(255,255,255,0.25)'); }
+    for (let i = 0; i < 6; i++) line(i * S / 6 + 30, (i * 97) % S, i * S / 6 + 30, (i * 97) % S + 40, 3, ink(0.18));
+  } else if (kind === 'metal') {
+    for (let i = 0; i < 16; i++) { g.fillStyle = i & 1 ? '#ddd6cb' : '#f7f3ec'; g.fillRect(i * S / 16, 0, S / 16, S); }
+    for (let i = 0; i < 16; i += 2) line(i * S / 16, 0, i * S / 16, S, 2, ink(0.25));
+  } else if (kind === 'brick') {
+    const ch = S / 8;
+    for (let row = 0; row < 8; row++) {
+      line(0, row * ch, S, row * ch, 3, ink(0.22));
+      for (let k = 0; k < 4; k++) { const x = ((k + (row & 1) * 0.5) * S) / 4; line(x, row * ch, x, row * ch + ch, 3, ink(0.22)); }
+    }
+  } else if (kind === 'block' || kind === 'tiles') {
+    const n = kind === 'tiles' ? 4 : 2;
+    for (let i = 0; i < n; i++) { line(0, i * S / n + 1, S, i * S / n + 1, 3, ink(0.2)); line(i * S / n + 1, 0, i * S / n + 1, S, 3, ink(0.2)); }
+  } else if (kind === 'roof') {
+    for (let i = 0; i < 8; i++) line(0, i * S / 8 + 2, S, i * S / 8 + 2, 4, ink(0.24));
+  } else if (kind === 'asphalt') {
+    g.fillStyle = '#ece5d9';
+    g.fillRect(0, 0, S, S);
+  }
+  // render: plain flat paint
+  const t = srgbTex(new THREE.CanvasTexture(c));
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.anisotropy = 4;
+  t.userData.shared = true;
+  return t;
+}
+// flat navy cast shadows for every box that stands in the world (baked once into one mesh)
+function flipShadowMesh(colliders, sunPos, color = FLIP.shade, opacity = 0.86) {
+  let sx = -sunPos.x / Math.max(1, sunPos.y), sz = -sunPos.z / Math.max(1, sunPos.y);
+  const sl = Math.hypot(sx, sz);
+  if (sl > 1.1) { sx *= 1.1 / sl; sz *= 1.1 / sl; }
+  const pos = [];
+  const hull = pts => {
+    pts.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], up = [];
+    for (const p of pts) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+    for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+    return lo.slice(0, -1).concat(up.slice(0, -1));
+  };
+  colliders.forEach(c => {
+    if (c.off || c.top - c.bottom < 0.25 || c.top > 40 || c.maxX - c.minX > 90 || c.maxZ - c.minZ > 90) return;
+    const pts = [];
+    [c.bottom, c.top].forEach(y => {
+      const ox = sx * y, oz = sz * y;
+      pts.push([c.minX + ox, c.minZ + oz], [c.maxX + ox, c.minZ + oz], [c.maxX + ox, c.maxZ + oz], [c.minX + ox, c.maxZ + oz]);
+    });
+    const h = hull(pts);
+    for (let i = 1; i < h.length - 1; i++) pos.push(h[0][0], 0, h[0][1], h[i + 1][0], 0, h[i + 1][1], h[i][0], 0, h[i][1]);
+  });
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  // stencil: overlapping shadows never double-darken
+  mat.stencilWrite = true;
+  mat.stencilRef = 1;
+  mat.stencilFunc = THREE.NotEqualStencilFunc;
+  mat.stencilZPass = THREE.ReplaceStencilOp;
+  const m = new THREE.Mesh(geo, mat);
+  m.position.y = 0.035;
+  m.renderOrder = -1;
+  m.raycast = noRay;
+  return m;
 }
 
 // PBR upgrade for panda parts: fur gets sheen, metal/helmets get a lacquer clearcoat
@@ -2460,8 +2731,10 @@ function mergeStaticParts(root) {
 // ---- realistic surface textures for the Shootout town (drawn once, shared, seamless) ----
 const SURF_TEX = {};
 const SURF_TILE = { brick: 2.4, render: 3, block: 3.2, metal: 3, roof: 4, asphalt: 9, pavement: 4.5, tiles: 3, wood: 2 };
+if (FLIP_ART) SURF_TILE.pavement = 7.5; // bigger hex slabs
 function surfTex(kind) {
   if (SURF_TEX[kind]) return SURF_TEX[kind];
+  if (FLIP_ART) return (SURF_TEX[kind] = flipSurfTex(kind));
   const S = kind === 'brick' || kind === 'asphalt' || kind === 'pavement' ? 512 : 256;
   const c = document.createElement('canvas');
   c.width = c.height = S;
@@ -2831,9 +3104,40 @@ function mergeSceneStatic(scene, keepRefs) {
   scan(keepRefs);
   scene.updateMatrixWorld(true);
   const buckets = new Map(), lines = new Map();
+  const recolored = new Set(), inkPos = [];
+  const v3 = new THREE.Vector3();
+  const inkEdges = o => {
+    const g = o.geometry, pr = g.parameters || {}, m = o.material;
+    if (m.transparent || !m.depthWrite || m.polygonOffset) return;
+    const e = 0.012;
+    let cs = null, ed = null;
+    if (g.type === 'BoxGeometry') {
+      const w = pr.width / 2 + e, h = pr.height / 2 + e, d = pr.depth / 2 + e;
+      if (Math.max(pr.width, pr.height, pr.depth) < 0.22 || Math.max(pr.width, pr.depth) > 130) return;
+      cs = [[-w, -h, -d], [w, -h, -d], [w, -h, d], [-w, -h, d], [-w, h, -d], [w, h, -d], [w, h, d], [-w, h, d]];
+      ed = [0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6, 6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7];
+    } else if (g.type === 'PlaneGeometry') {
+      const w = pr.width / 2, h = pr.height / 2;
+      if (Math.max(pr.width, pr.height) < 0.4 || Math.max(pr.width, pr.height) > 60) return;
+      cs = [[-w, -h, e], [w, -h, e], [w, h, e], [-w, h, e]];
+      ed = [0, 1, 1, 2, 2, 3, 3, 0];
+    } else return;
+    for (const i of ed) {
+      v3.set(cs[i][0], cs[i][1], cs[i][2]).applyMatrix4(o.matrixWorld);
+      inkPos.push(v3.x, v3.y, v3.z);
+    }
+  };
   const visit = o => {
     if (keep.has(o) || !o.visible) return;
     if (o.isMesh) {
+      if (FLIP_ART && o.material && !Array.isArray(o.material)) {
+        const m = o.material;
+        if (!recolored.has(m) && m.color && !m.userData.shared) {
+          recolored.add(m);
+          m.color.setHex(flipHex(m.color.getHex(), 0.8));
+        }
+        inkEdges(o);
+      }
       if (mergeable(o, keep)) {
         const k = mergeKey(o, '');
         if (!buckets.has(k)) buckets.set(k, []);
@@ -2854,10 +3158,18 @@ function mergeSceneStatic(scene, keepRefs) {
   buckets.forEach(list => {
     before += list.length;
     if (list.length < 2) { after += 1; return; }
-    scene.add(bakeMeshes(list, c => c.matrixWorld, true));
+    scene.add(bakeMeshes(list, c => c.matrixWorld, !FLIP_ART));
     after += 1;
     list.forEach(c => c.parent && c.parent.remove(c)); // detached, still raycastable via `solids`
   });
+  if (inkPos.length) {
+    const ig = new THREE.BufferGeometry();
+    ig.setAttribute('position', new THREE.BufferAttribute(new Float32Array(inkPos), 3));
+    const il = new THREE.LineSegments(ig, new THREE.LineBasicMaterial({ color: FLIP.ink, transparent: true, opacity: 0.8 }));
+    il.raycast = noRay;
+    scene.add(il);
+    after += 1;
+  }
   lines.forEach(list => {
     before += list.length;
     after += 1;
@@ -3767,6 +4079,15 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
     'HODL GYM': ['block', 0xa2b2ae], 'SAFE HOUSE': ['block', 0xa9acaf], GARAGE: ['block', 0x9a9ea2],
     WAREHOUSE: ['metal', 0x9a8f7c]
   };
+  if (FLIP_ART) {
+    // FLIPSIDE colour blocking: rust-red wooden sheds, navy, mustard, pink, paper
+    Object.assign(FACADE, {
+      BARRACKS: ['wood', 0x93402a], 'BARRACKS B': ['wood', 0xa8492f], 'GM COFFEE': ['render', 0x233a70], 'MOTEL 88': ['render', 0xe9a6a3],
+      'MOON EDEN MARKET': ['render', 0xf2ebdf], 'NGMI DINER': ['render', 0xe4bd2c], 'WAGMI FM 99.9': ['wood', 0x233a70], 'DIAMOND HANDS CO': ['render', 0xd33a2c],
+      'NGMI CHEMIST ➕': ['render', 0xf2ebdf], ARCADE: ['render', 0x2c2b31], 'HODL GYM': ['block', 0x3f5fa8], 'SAFE HOUSE': ['block', 0xe2d6c2], GARAGE: ['metal', 0x8ea3cf],
+      WAREHOUSE: ['wood', 0x93402a]
+    });
+  }
   const facadeMat = (label, color) => {
     const f = FACADE[label];
     return f ? surf(f[0], f[1], f[0] === 'metal' ? 0.6 : 0.92, f[0] === 'metal' ? 0.35 : 0) : surf('render', muteHex(color, 0.35, 1.1));
@@ -3886,12 +4207,12 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
     uv.needsUpdate = true;
     return geo;
   };
-  const ground = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(500, 500), 500 / SURF_TILE.pavement, 500 / SURF_TILE.pavement), new THREE.MeshStandardMaterial({ color: zmap ? 0x8f8c86 : 0xb3a994, map: surfTex('pavement'), roughness: 0.95 }));
+  const ground = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(500, 500), 500 / SURF_TILE.pavement, 500 / SURF_TILE.pavement), new THREE.MeshStandardMaterial({ color: FLIP_ART ? (zmap ? 0xb9b4c4 : 0xf6f0e6) : zmap ? 0x8f8c86 : 0xb3a994, map: surfTex('pavement'), roughness: 0.95 }));
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
   solids.push(ground);
-  const roadMat = new THREE.MeshStandardMaterial({ color: zmap ? 0x9a9a9a : 0xc9c6c0, map: surfTex('asphalt'), roughness: 0.9 });
+  const roadMat = new THREE.MeshStandardMaterial({ color: FLIP_ART ? (zmap ? 0xa9a4b6 : 0xe9e0d0) : zmap ? 0x9a9a9a : 0xc9c6c0, map: surfTex('asphalt'), roughness: 0.9 });
   [[0, 0, 124, 9], [0, 0, 9, 124]].forEach(([x, z, w, d]) => {
     const r = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(w, d), w / SURF_TILE.asphalt, d / SURF_TILE.asphalt), roadMat);
     r.rotation.x = -Math.PI / 2;
@@ -3900,6 +4221,18 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
     scene.add(r);
   });
   const dashMat = new THREE.MeshStandardMaterial({ color: zmap ? 0xb9b3a2 : 0xe8e2d0, roughness: 0.8 });
+  if (FLIP_ART) {
+    // painted mustard lanes down both roads + a pink salt-pond square at the crossroads (trailer floor paint)
+    const laneMat = new THREE.MeshBasicMaterial({ color: zmap ? 0x8a7a3a : FLIP.mustard, polygonOffset: true, polygonOffsetFactor: -1 });
+    const pondMat = new THREE.MeshBasicMaterial({ color: zmap ? 0x6d5a6e : FLIP.pink, polygonOffset: true, polygonOffsetFactor: -1 });
+    [[0, 0, 124, 2.6, laneMat], [0, 0, 2.6, 124, laneMat], [0, 0, 7.2, 7.2, pondMat]].forEach(([x, z, w, d, mt], i) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mt);
+      m.rotation.x = -Math.PI / 2;
+      m.position.set(x, 0.026 + i * 0.002, z);
+      m.raycast = noRay;
+      scene.add(m);
+    });
+  }
   // kerbs along both roads, broken at the crossroads
   const kerbMat = surf('block', 0xcfcac0);
   [-4.65, 4.65].forEach(o => [[-33.25, 57.5], [33.25, 57.5]].forEach(([c, len]) => {
@@ -4275,7 +4608,7 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
   flagShape.lineTo(0, -0.7);
   flagShape.closePath();
   const flagGeo = new THREE.ShapeGeometry(flagShape);
-  const flagCols = [0xef4444, 0xfacc15, 0x22c55e, 0x3b82f6, 0xec4899, 0xf97316].map(c => new THREE.Color(c));
+  const flagCols = (FLIP_ART ? [FLIP.red, FLIP.paper, FLIP.navy, FLIP.mustard, FLIP.paper, FLIP.ink] : [0xef4444, 0xfacc15, 0x22c55e, 0x3b82f6, 0xec4899, 0xf97316]).map(c => new THREE.Color(c));
   (zmap ? [] : [[-46, -6, 46, -6], [-46, 6, 46, 6], [-6, -46, -6, 46], [6, -46, 6, 46]]).forEach(([x1, z1, x2, z2]) => {
     const len = Math.hypot(x2 - x1, z2 - z1);
     const n = Math.floor(len / 1.15);
@@ -4412,12 +4745,20 @@ function buildSiegeMap(scene, cinematic) {
   const sandTex = srgbTex(new THREE.CanvasTexture(sandC));
   sandTex.wrapS = sandTex.wrapT = THREE.RepeatWrapping;
   sandTex.repeat.set(40, 40);
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), new THREE.MeshStandardMaterial({ map: sandTex, roughness: 1 }));
+  let groundMat = new THREE.MeshStandardMaterial({ map: sandTex, roughness: 1 });
+  if (FLIP_ART) {
+    // FLIPSIDE: pink salt-flat hex slabs instead of noisy sand
+    const hex = surfTex('pavement').clone();
+    hex.needsUpdate = true;
+    hex.repeat.set(500 / SURF_TILE.pavement, 500 / SURF_TILE.pavement);
+    groundMat = new THREE.MeshStandardMaterial({ map: hex, color: 0xf0d2c0, roughness: 1 });
+  }
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
   solids.push(ground);
-  const road = new THREE.Mesh(new THREE.PlaneGeometry(10, 84), new THREE.MeshStandardMaterial({ color: 0xa8714a, roughness: 1 }));
+  const road = new THREE.Mesh(new THREE.PlaneGeometry(10, 84), new THREE.MeshStandardMaterial({ color: FLIP_ART ? FLIP.mustard : 0xa8714a, roughness: 1 }));
   road.rotation.x = -Math.PI / 2;
   road.position.set(0, 0.02, 20);
   road.receiveShadow = true;
@@ -4653,8 +4994,13 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const renderer = styleRenderer(new THREE.WebGLRenderer({ antialias: !cinematic, powerPreference: 'high-performance' }));
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, IS_TOUCH ? 1.7 : 2)); // adaptive resolution (perf) drops it again if the phone struggles
     renderer.setSize(W(), H());
-    renderer.shadowMap.enabled = cinematic;
+    renderer.shadowMap.enabled = cinematic && !FLIP_ART;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    if (FLIP_ART) {
+      // FLIPSIDE look: flat print colours (no filmic curve), cel-shaded lighting, baked flat shadows
+      flipShaders(true);
+      renderer.toneMapping = THREE.NoToneMapping;
+    }
     el.appendChild(renderer.domElement);
     lockRef.current = renderer.domElement;
     let clipper = null;
@@ -4686,7 +5032,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     scene.add(hemi);
     const sun = new THREE.DirectionalLight(0xfff0d8, 2.1);
     sun.position.set(-40, 70, 30);
-    sun.castShadow = cinematic;
+    sun.castShadow = cinematic && !FLIP_ART;
     sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, { left: -75, right: 75, top: 75, bottom: -75, far: 200 });
     sun.shadow.bias = -0.0005;
@@ -4728,6 +5074,46 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       camera.add(flashlight);
       camera.add(flashlight.target);
     }
+    if (FLIP_ART) {
+      // lit side = the print colour, shade side = the same colour pushed toward ink-blue
+      (map.clouds || []).forEach(c => { c.visible = false; });
+      if (zombie) {
+        scene.background = new THREE.Color(FLIP.night);
+        scene.fog = new THREE.Fog(FLIP.night, 22, 120);
+        hemi.color.set(0x8d9fd6);
+        hemi.groundColor.set(0x3a4670);
+        hemi.intensity = 0.72;
+        sun.color.set(0xc9d4ff);
+        sun.intensity = 0.42;
+      } else {
+        const sky = map.sunset ? 0xf0d9c4 : 0xf1e9dc;
+        scene.background = new THREE.Color(sky);
+        scene.fog = new THREE.Fog(sky, 85, 260);
+        hemi.color.set(0xa9b6dd);
+        hemi.groundColor.set(0x9aa0c0);
+        hemi.intensity = 0.8;
+        sun.color.set(map.sunset ? 0xffd2a6 : 0xfff2dc);
+        sun.intensity = 0.7;
+        if (!map.sunset) sun.position.set(-40, 46, 30); // lower sun = longer graphic shadows
+      }
+      // salt mounds on the horizon: white pyramids, two-tone from the cel light
+      const pg = [];
+      const cone = new THREE.ConeGeometry(1, 1, 4, 1);
+      for (let i = 0; i < 26; i++) {
+        const a = (i / 26) * Math.PI * 2 + Math.sin(i * 7.3) * 0.08, rr = 175 + ((i * 53) % 60);
+        const hgt = 16 + ((i * 37) % 22), wid = hgt * (1.25 + ((i * 11) % 5) * 0.08);
+        const gg = cone.clone().toNonIndexed();
+        gg.scale(wid, hgt, wid);
+        gg.rotateY(Math.PI / 4 + i);
+        gg.translate(Math.cos(a) * rr, hgt / 2 - 0.5, Math.sin(a) * rr);
+        pg.push(gg);
+      }
+      const mounds = new THREE.Mesh(concatGeometries(pg), new THREE.MeshStandardMaterial({ color: zombie ? 0x6f7fae : 0xfbf7f0, roughness: 1, flatShading: true }));
+      pg.forEach(x => x.dispose());
+      cone.dispose();
+      mounds.raycast = noRay;
+      scene.add(mounds);
+    }
     const obj = { stage: 0, prog: 0, contested: false, capturing: false, warnAt: 0 };
     const { colliders, solids } = map;
     // gun reflections: a tiny sky/ground environment rendered once
@@ -4754,8 +5140,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       pm.dispose();
       eg.dispose();
     }
+    if (FLIP_ART) scene.add(flipShadowMesh(colliders, sun.position, zombie ? 0x070b1c : 0x3d58a6, zombie ? 0.5 : 0.8));
     // soft contact shadows around everything that stands on the ground (baked into one mesh below)
-    {
+    if (!FLIP_ART) {
       const shMat = new THREE.MeshBasicMaterial({ map: softRectTex(), color: 0x000000, transparent: true, opacity: zombie ? 0.55 : 0.4, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
       colliders.forEach(c => {
         const w = c.maxX - c.minX, d = c.maxZ - c.minZ;
@@ -4769,7 +5156,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     }
     if (zombie) {
       // street lamps: warm pools of light on the ground, glowing bulbs and a faint light cone
-      const poolMat = new THREE.MeshBasicMaterial({ map: softDotTex(), color: 0xffb35c, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
+      const poolMat = new THREE.MeshBasicMaterial({ map: softDotTex(), color: FLIP_ART ? 0xe4bd2c : 0xffb35c, transparent: true, opacity: FLIP_ART ? 0.42 : 0.5, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
       const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffe2a8 });
       const coneMat = new THREE.MeshBasicMaterial({ color: 0xffc27a, transparent: true, opacity: 0.06, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
       const bulbGlow = new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(255,214,150,1)', 'rgba(255,170,80,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
@@ -4853,7 +5240,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     // ---------- helpers ----------
     const announceNow = (text, color) => {
       if (clipRef.current) clipRef.current.flash(text, color);
-      setAnnounce({ text, color, id: Date.now() + Math.random() });
+      setAnnounce({ text, color, id: Date.now() + Math.random(), n: (FLIP_N = (FLIP_N % 10) + 1) });
       setTimeout(() => setAnnounce(a => (a && a.text === text ? null : a)), 1700);
     };
     const feed = [];
@@ -5246,6 +5633,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       arm.rotation.set(1.1, 0, 0.25);
       gunModel.userData.muzzle.add(flash);
       flash.visible = false;
+      if (FLIP_ART) addInk(gunModel, 0.012, true);
       swapGun(myHolder, myMesh, key);
     };
 
@@ -9005,8 +9393,18 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const post = cinematic ? createPost(renderer, scene, camera) : null;
     if (post) {
       post.comp.uniforms.exposure.value = 1.05;
-      post.comp.uniforms.bloomStrength.value = 0.25;
+      post.comp.uniforms.bloomStrength.value = FLIP_ART ? 0.12 : 0.25;
+      post.comp.uniforms.flip.value = FLIP_ART ? 1 : 0;
     }
+    // FLIPSIDE: ink outlines on every panda and zombie (new ones are picked up a few frames after they spawn)
+    let inkTick = 0;
+    const inkPass = () => {
+      for (const o of scene.children) {
+        const ud = o.userData;
+        if (ud.rightArmGroup) addInk(o, 0.03);
+        else if (ud.head && ud.head.isBone) addInk(o, 0.034);
+      }
+    };
     const onResize = () => {
       fitFov();
       camera.aspect = W() / H();
@@ -9022,7 +9420,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
 
     // ---------- blob shadows: every panda and zombie gets a soft shadow, all in one draw call ----------
     const BLOB_MAX = 72;
-    const blobs = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: softDotTex(), color: 0x000000, transparent: true, opacity: zombie ? 0.6 : 0.45, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }), BLOB_MAX);
+    const blobs = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: softDotTex(), color: FLIP_ART ? (zombie ? 0x05070f : FLIP.shade) : 0x000000, transparent: true, opacity: FLIP_ART ? (zombie ? 0.6 : 0.85) : zombie ? 0.6 : 0.45, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4 }), BLOB_MAX);
     blobs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     blobs.frustumCulled = false;
     scene.add(blobs);
@@ -9751,6 +10149,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         camera.position.y += (Math.random() - 0.5) * me.shake * 0.8;
         me.shake *= Math.exp(-dt * 7);
       }
+      if (FLIP_ART && (inkTick++ % 15) === 0) inkPass();
       if (post) post.render(now * 0.001);
       else renderer.render(scene, camera);
       if (clipRef.current) clipRef.current.frame(perf.slow);
@@ -9940,6 +10339,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       try { if (net.client) net.client.end(true); } catch (e) {}
       if (GUN_ENV) { GUN_ENV.dispose(); GUN_ENV = null; }
       if (post) post.dispose();
+      flipShaders(false);
       renderer.dispose();
       if (renderer.forceContextLoss) renderer.forceContextLoss();
       el.innerHTML = '';
@@ -9959,13 +10359,13 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
   };
 
   return (
-    <div className="game-layer absolute inset-0 z-30 bg-[#9ed0f2] text-white select-none overflow-hidden">
+    <div className={`game-layer absolute inset-0 z-30 text-white select-none overflow-hidden ${FLIP_ART ? 'so-flip bg-[#f2ebdf]' : 'bg-[#9ed0f2]'}`}>
       <div ref={mountRef} className="absolute inset-0" />
-      <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(ellipse at center, transparent 58%, rgba(0,0,0,${variant === 'zombie' ? 0.5 : 0.28}) 100%)` }} />
+      {(!FLIP_ART || variant === 'zombie') && <div className="absolute inset-0 pointer-events-none" style={{ background: `radial-gradient(ellipse at center, transparent 58%, rgba(0,0,0,${variant === 'zombie' ? (FLIP_ART ? 0.3 : 0.5) : 0.28}) 100%)` }} />}
 
       {/* crosshair + hit marker */}
       {!hud.scope && !hud.dead && (
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+        <div className="xhair absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
           <div className="relative w-6 h-6">
             <span className="absolute left-1/2 top-0 w-[2px] h-[7px] -translate-x-1/2 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.75)]" />
             <span className="absolute left-1/2 bottom-0 w-[2px] h-[7px] -translate-x-1/2 bg-white shadow-[0_0_0_1px_rgba(0,0,0,0.75)]" />
@@ -10262,11 +10662,15 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         </div>
       )}
 
-      {announce && (
+      {announce && (FLIP_ART ? (
+        <div key={announce.id} className="absolute inset-x-0 top-[22%] flex justify-center pointer-events-none px-4 text-center">
+          <div className="flip-banner text-2xl md:text-5xl"><span className="flip-banner-k">{'一二三四五六七八九十'[(announce.n || 1) - 1]}</span><span className="flip-banner-t">{announce.text}</span></div>
+        </div>
+      ) : (
         <div key={announce.id} className="absolute inset-x-0 top-[22%] flex justify-center pointer-events-none px-4 text-center">
           <div className="font-game text-3xl md:text-6xl animate-bounce" style={{ color: announce.color, textShadow: '0 4px 0 #000, 0 0 24px rgba(0,0,0,0.5)' }}>{announce.text}</div>
         </div>
-      )}
+      ))}
 
       {/* desktop: start / pause menu (the mouse is free here) */}
       {!IS_TOUCH && !hud.locked && !results && (

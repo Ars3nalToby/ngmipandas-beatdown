@@ -16,7 +16,7 @@ Reference feel: Left 4 Dead horde mode, played on a phone.
 Priority order when things conflict:
 1. **Smooth on mobile** (no stutter, no frame drops)
 2. **Fun chaos** (lots of zombies, big explosions)
-3. **Visual quality** (realistic look)
+3. **Visual quality** (FLIPSIDE graphic print look, see §6)
 
 If a visual upgrade costs smoothness on mobile, smoothness wins.
 
@@ -29,7 +29,7 @@ If a visual upgrade costs smoothness on mobile, smoothness wins.
 | Power fantasy | The player feels strong. Good weapons are never taken away. |
 | Horde chaos | Many zombies on screen; explosions clear groups. |
 | Flow | Nothing interrupts play: no freezes, no hit-stop, no slow-mo, no frozen victory screens. |
-| Grounded look | Semi-realistic, not cartoon. See §6. |
+| Graphic look | Flat cel-shaded "printed" style (FLIPSIDE), not cartoon-bouncy and not realistic. See §6. |
 
 ---
 
@@ -113,29 +113,25 @@ Chaos comes from **numbers + explosions + ragdoll/knockback**, not from screen f
 
 ---
 
-## 6. Art direction — "grounded, not cartoon"
+## 6. Art direction — "FLIPSIDE" graphic print look (decided 2026-10-28)
 
-Applies to **zombies AND player pandas** (all characters get upgraded together, so styles match).
+Owner's reference: the 翻面 FLIPSIDE trailer (salt-flat 5v5 shooter). The look is **designed, flat and graphic**, like a printed poster. It replaces the earlier "grounded semi-realistic" direction.
 
-**Target look:** semi-realistic / stylised-realistic. Think a grounded survival game, not a kids' cartoon.
+**Palette** (`FLIP` / `FLIP_PAL` in index.html): paper `#f2ebdf`, cream `#e6dccb`, ink `#1c1b21`, navy `#233a70`, shadow blue `#3d58a6`, rust-red wood `#93402a`, red `#d33a2c`, mustard `#e4bd2c`, salt pink `#e9a6a3`. Night (zombie) = `#16213f`.
 
 **Do:**
-- Realistic proportions (less big-head / chibi)
-- PBR materials (roughness, normal maps) — fur should look like fur, not flat colour
-- Desaturated, muted colour palette; darker scenes; fog and atmospheric lighting
-- Zombie pandas: matted / torn fur, dirt, exposed patches, cloudy eyes, hunched posture
-- Zombie animation: shambling, limping, uneven gait, reacting to hits
-- Player pandas: tactical gear (vests, straps, helmets), believable weapon holding
-- Rim lighting so characters stay readable against dark backgrounds
+- Cel shading: sun = hard two-tone step, shade side = colour pushed toward ink-blue, diagonal hatching in full shade. No PBR shine, no filmic tone curve.
+- Ink lines: black outline shells on pandas, zombies and the first-person gun; thin ink edges on map boxes, windows and signs.
+- Flat navy cast shadows on the ground (baked shapes, not shadow maps).
+- Colour blocking: rust-red wooden sheds, navy, mustard, pink, paper buildings; hex salt-slab floor; mustard painted lanes; pink salt-pond squares; white salt pyramids on the horizon.
+- HUD: heavy condensed type (Barlow Condensed), ink plates + paper cards, red/mustard accents, square corners, numbered call-out banners with a red badge (一 二 三 …), hex minimap.
 
 **Don't:**
-- Bright saturated primary colours
-- Round, bouncy, smiling cartoon shapes
-- Gore so heavy it's unpleasant for friends/students to play — keep it "horror-lite"
+- Glows, gradients, bloom-heavy FX, rounded bubbly UI, emoji-only signals for new UI
+- Realistic noisy textures (brick photos, grime) — textures are flat paint with a few ink lines
+- Gore so heavy it's unpleasant for friends/students — keep it "horror-lite"
 
-**Technical honesty:** procedural code-built geometry has a ceiling. For true realism, use proper 3D model files (GLB/GLTF) + rigged animations. `OPEN:` decide asset source (AI 3D generation, asset store, or commission).
-
----
+**How it's built (cheap on phones):** while Shootout runs, `flipShaders(true)` patches three's lighting chunks (restored on exit so Beatdown keeps its look). No shadow maps, no extra lights. `?art=classic` in the URL shows the old look for comparison.
 
 ## 7. Performance budget (mobile)
 
@@ -188,7 +184,7 @@ Record every decided `OPEN` item here with a date, then update the section above
 |---|---|
 | 2026-10 | RPG is sticky; RPG + RPG = dual RPG (built 2026-10-25) |
 | 2026-10 | Grenades always available |
-| 2026-10 | All characters move to grounded semi-realistic style (NOT started) |
+| 2026-10 | ~~All characters move to grounded semi-realistic style~~ — superseded 2026-10-28 by FLIPSIDE (§6) |
 | 2026-10-25 | Hold left click (FIRE on touch) next to a downed mate = revive; range 3.6 m, same for bots; prompt and progress bar are big |
 | 2026-10-25 | HUD minimum sizes: nothing important under 13 px on phones; squad panel shows each mate's HP, kills, medkits; "YOU KILLED" + "SQUAD KILLS" counters |
 | 2026-10-25 | Touch action buttons are 54-104 px; 💣 and ➕ are big buttons in the cluster |
@@ -200,3 +196,4 @@ Record every decided `OPEN` item here with a date, then update the section above
 | 2026-10-26 | Layered onboarding after community feedback (surface is easy, depth arrives gradually): coach tips, late-unlocked touch buttons, ?fps=1 meter, auto clips for Delta/dynamite |
 | 2026-10-26 | Visual pass: detailed zombies baked with grime, sharper post-processing, anisotropic filtering; physics fixes: blasts blocked by walls, dynamite lands on roofs, Delta only chases zombies it can see |
 | 2026-10-26 | Horror zombies (no cute), stronger/faster stats + runner pounce; smarter squad (shove, kiting, retreat, idle reload, bot dynamite) |
+| 2026-10-28 | Art direction switched to the FLIPSIDE graphic print look (owner's trailer reference): cel shading, ink outlines, flat navy shadows, palette colour blocking, print-style HUD. Supersedes "grounded semi-realistic" (§6). Rollback tag: `shootout-before-flipside-art` |
