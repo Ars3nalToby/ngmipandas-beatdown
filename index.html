@@ -11848,7 +11848,9 @@ function App() {
         const seq = botSeq++;
         const angle = Math.random() * Math.PI * 2;
         const botClass = PANDA_CLASSES[(seq + 1) % PANDA_CLASSES.length];
-        fighters.push(createFighterEntity(`${myIdRef.current}_b${seq}`, RIVAL_NAMES[seq % RIVAL_NAMES.length], botClass, false, true, angle, seq + 1));
+        const bot = createFighterEntity(`${myIdRef.current}_b${seq}`, RIVAL_NAMES[seq % RIVAL_NAMES.length], botClass, false, true, angle, seq + 1);
+        bot.botStyle = seq % 3; // 0 brawler (fast hands), 1 charger (dashes more), 2 slammer (jump + ground pound)
+        fighters.push(bot);
       }
     };
     const storyMode = storyRunRef.current !== null && !!CHAPTERS[storyRunRef.current];
@@ -11888,6 +11890,84 @@ function App() {
     };
 
     for (let i = 0; i < 9; i++) spawnWildPanda();
+
+    // 🌟 GOLDEN PANDA: a rare runner that flees from everyone. First fighter to catch it gets +3 gang,
+    // sheds 25% damage, and (for you) a chunk of Tornado charge. Local to each screen, like grey pandas.
+    let golden = null;
+    let hazardN = 0;
+    const goldGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeGlowTexture('rgba(255,215,90,0.75)', 'rgba(255,200,60,0)'), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    goldGlow.scale.set(8, 8, 1);
+    goldGlow.position.y = 1.8;
+    const goldFx = new THREE.Group();
+    goldFx.add(goldGlow);
+    {
+      const beam = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 14, 20, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd21f, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+      beam.position.y = 7;
+      const ring = new THREE.Mesh(new THREE.RingGeometry(1.5, 1.9, 32), new THREE.MeshBasicMaterial({ color: 0xffd21f, side: THREE.DoubleSide, transparent: true, opacity: 0.9 }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.07;
+      goldFx.add(beam, ring);
+    }
+    const spawnGolden = () => {
+      if (golden) return;
+      const a = Math.random() * Math.PI * 2, r = 5 + Math.random() * 6;
+      const mesh = takePanda(PANDA_CLASSES[1], '#ffd21f');
+      mesh.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+      mesh.scale.multiplyScalar(1.7);
+      scene.add(mesh);
+      scene.add(goldFx);
+      golden = { mesh, t: 18, dir: Math.random() * 6.28, turn: 0, side: Math.random() < 0.5 ? -1 : 1 };
+      burst(mesh.position.x, 1.5, mesh.position.z, '#ffd21f', 20, 12);
+      triggerShockwave(mesh.position.x, mesh.position.z, 0xffd21f, 7);
+      sfx.play('powerup', 0.8);
+      setArenaEventText('🌟 GOLDEN PANDA ON THE LOOSE: CATCH IT FOR +3 GANG!');
+    };
+    const tickGolden = (dt, now) => {
+      const g = golden, gp = g.mesh.position;
+      g.t -= dt;
+      let near = null, nd = 8;
+      fighters.forEach(o => {
+        const d = Math.hypot(o.mesh.position.x - gp.x, o.mesh.position.z - gp.z);
+        if (d < nd) { nd = d; near = o; }
+      });
+      g.turn -= dt;
+      if (near) g.dir = Math.atan2(gp.z - near.mesh.position.z, gp.x - near.mesh.position.x) + Math.sin(now * 0.004) * 0.5;
+      else if (g.turn <= 0) { g.turn = 0.8 + Math.random(); g.dir += (Math.random() - 0.5) * 2.4; }
+      if (Math.hypot(gp.x, gp.z) > 11.5) g.dir = Math.atan2(-gp.z, -gp.x) + (near ? 0.9 * g.side : 0); // stays clear of the edge and the rug
+      const gs = near ? 10.5 : 4.5;
+      gp.x += Math.cos(g.dir) * gs * dt;
+      gp.z += Math.sin(g.dir) * gs * dt;
+      gp.y = Math.abs(Math.sin(now * 0.012)) * 0.7;
+      g.mesh.rotation.y = Math.atan2(Math.cos(g.dir), Math.sin(g.dir));
+      goldFx.position.set(gp.x, 0, gp.z);
+      goldGlow.material.opacity = 0.7 + Math.sin(now * 0.01) * 0.25;
+      if (Math.random() < 0.35) burst(gp.x, 1.2, gp.z, '#ffd21f', 1, 2);
+      const taker = fighters.find(o => (o.isLocal || o.isBot) && !o.isWhale && !(o.respawnLock > 0) && o.mesh.position.y < 2.2 && Math.hypot(o.mesh.position.x - gp.x, o.mesh.position.z - gp.z) < 2.5);
+      if (!taker && g.t > 0) return;
+      const gx = gp.x, gz = gp.z;
+      releasePanda(g.mesh);
+      scene.remove(goldFx);
+      golden = null;
+      if (!taker) {
+        burst(gx, 1.2, gz, '#ffd21f', 10, 6);
+        setArenaEventText('💨 THE GOLDEN PANDA GOT AWAY...');
+        return;
+      }
+      for (let k = 0; k < 3; k++) addMinionToFighter(taker);
+      taker.dmg = Math.max(0, taker.dmg - 25);
+      burst(gx, 1.5, gz, '#ffd21f', 26, 14);
+      triggerShockwave(gx, gz, 0xffd21f, 7);
+      sfx.play('powerup', taker.isLocal ? 1 : volAt(taker.mesh.position) * 0.7);
+      pushKillFeed(`🌟 ${taker.name} caught the Golden Panda!`, '#facc15');
+      setArenaEventText('🌟 GOLDEN PANDA CAUGHT • BACK TO THE BRAWL!');
+      if (taker.isLocal) {
+        ult.v = Math.min(100, ult.v + 35);
+        announceNow('🌟 GOLDEN PANDA! +3 GANG', '#facc15');
+        spawnMemeSprite(gx, 2.6, gz, '+3 GANG · -25% DAMAGE', '#facc15');
+        fx.kick = 0.8;
+        buzz(20);
+      }
+    };
 
     const triggerShockwave = (x, z, colorHex, maxRadius = 8) => {
       const geo = shockGeo;
@@ -11933,7 +12013,7 @@ function App() {
     const debris = [];
     const particleGeo = new THREE.BoxGeometry(0.28, 0.28, 0.28);
     const partPool = [];
-    const fx = { shake: 0, hitStop: 0, liqTimer: 0, combo: 0, comboTimer: 0, slowmo: 0, postFlash: 0 };
+    const fx = { shake: 0, kick: 0, liqTimer: 0, combo: 0, comboTimer: 0, slowmo: 0, postFlash: 0 };
 
     const burst = (x, y, z, color, count = 12, speed = 12) => {
       for (let i = 0; i < count && particles.length < 320; i++) {
@@ -11949,6 +12029,43 @@ function App() {
         const sp = speed * (0.4 + Math.random() * 0.8);
         particles.push({ m, mat, vx: Math.cos(a) * sp, vy: 4 + Math.random() * speed, vz: Math.sin(a) * sp, life: 0.55 + Math.random() * 0.35 });
       }
+    };
+
+    // Impact sparks: a pooled star flash on every solid hit. Hits read through light and a
+    // camera kick; time never freezes (owner's rule: no hit-stop, no slow-mo).
+    const sparkTex = cachedTex('bd|spark', () => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 128;
+      const g = c.getContext('2d');
+      g.translate(64, 64);
+      const grd = g.createRadialGradient(0, 0, 0, 0, 0, 60);
+      grd.addColorStop(0, 'rgba(255,255,255,1)');
+      grd.addColorStop(0.25, 'rgba(255,255,255,0.75)');
+      grd.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grd;
+      g.beginPath();
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2, r = i % 2 ? 10 : i % 4 ? 38 : 62;
+        g.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+      }
+      g.closePath();
+      g.fill();
+      return srgbTex(new THREE.CanvasTexture(c));
+    });
+    const sparks = [];
+    const sparkPool = [];
+    const impactSpark = (x, y, z, size, color) => {
+      if (sparks.length >= 10) return;
+      let sp = sparkPool.pop();
+      if (!sp) sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: sparkTex, transparent: true, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending }));
+      sp.material.color.set(color);
+      sp.material.opacity = 1;
+      sp.material.rotation = Math.random() * 6.28;
+      sp.position.set(x, y, z);
+      sp.scale.set(size * 0.45, size * 0.45, 1);
+      sp.renderOrder = 9;
+      scene.add(sp);
+      sparks.push({ sp, size, life: 0.16 });
     };
 
     // Knock a minion off a gang so it visibly flies away instead of vanishing
@@ -11991,19 +12108,20 @@ function App() {
       const p = target.mesh.position;
       const isCrit = kb > 32;
       burst(p.x, p.y + 1.5, p.z, attacker.gangColor, 6 + Math.round(kb / 6), 6 + kb * 0.25);
+      if (kb > 5 && (attacker.isLocal || target.isLocal || kb > 14)) impactSpark(p.x - dirX * 0.6, p.y + 1.6, p.z - dirZ * 0.6, Math.min(7, 2.2 + kb * 0.12), kb > 22 ? '#ffffff' : attacker.gangColor);
       const vol = (target.isLocal || attacker.isLocal) ? 1 : volAt(p) * 0.7;
       if (attacker.isLocal && kb > stats.biggestHit) stats.biggestHit = kb;
       if (attacker.isLocal && !(attacker.tornadoT > 0)) ult.v = Math.min(100, ult.v + Math.min(5, 0.6 + kb * 0.1));
       if (target.isLocal && kb > 18) buzz(14);
       if (attacker.isLocal && !target.isLocal) {
-        // you must FEEL your hits: a damage % popping off the victim, a tick of hit-stop, a buzz
+        // you must FEEL your hits: a damage % popping off the victim, a camera kick, a buzz
         const nowN = performance.now();
         if (nowN - (target.numAt || 0) > 220) {
           target.numAt = nowN;
           const pct = Math.round((target.dmg || 0) + dmgAdd);
           spawnMemeSprite(p.x + (Math.random() - 0.5) * 0.8, 3.1, p.z, `${pct}%`, kb > 22 ? '#fb923c' : kb > 10 ? '#fde68a' : '#ffffff');
         }
-        if (kb > 6) fx.hitStop = Math.max(fx.hitStop, Math.min(0.06, kb / 450));
+        if (kb > 6) fx.kick = Math.max(fx.kick, Math.min(0.6, kb / 50));
         buzz(kb > 14 ? 14 : 7);
       }
       if (isCrit) { impactLight.position.set(p.x, p.y + 2.2, p.z); impactLight.intensity = Math.min(7, 2 + kb * 0.06); }
@@ -12024,6 +12142,7 @@ function App() {
       target.vz += dirZ * kb;
       target.vy = Math.max(target.vy, upward + kb * 0.16);
       target.stun = Math.max(target.stun, Math.min(1.4, 0.2 + kb / 55));
+      target.squash = Math.max(target.squash, Math.min(0.55, kb / 45)); // the body visibly crumples on impact
       if (target.isLocal || attacker.isLocal) {
         fx.shake = Math.min(1.6, fx.shake + kb / 45);
         if (kb > 22) fx.shake = Math.min(1.6, fx.shake + (isCrit ? 0.35 : 0.15));
@@ -12437,6 +12556,7 @@ function App() {
     }
 
     const cdState = { smash: 0, dash: 0, cannon: 0, punch: 0 };
+    actionTriggerRef.current.punchHeld = false;
     const pressBuf = { smash: -1e9, dash: -1e9, cannon: -1e9, punch: -1e9 };
     const INPUT_BUFFER_MS = { smash: 450, dash: 450, cannon: 400, punch: 260 };
     let lastDeniedAt = -1e9;
@@ -12557,7 +12677,7 @@ function App() {
         if (hits) {
           spawnMemeSprite(p.x + ax * 2, 2.5, p.z + az * 2, PUNCH_NAMES[f.punchStep - 1], big ? '#fb923c' : '#fde68a');
           if (big) { f.grabT = 3.5; spawnMemeSprite(p.x, 3.4, p.z, 'GRAB READY 🤼', '#c4b5fd'); sfx.play('pop', 0.6, 1.4); }
-          fx.hitStop = Math.max(fx.hitStop, big ? 0.09 : 0.045);
+          fx.kick = Math.max(fx.kick, big ? 0.8 : 0.3);
           fx.shake = Math.min(1.6, fx.shake + (big ? 0.45 : 0.18));
           buzz(big ? 18 : 10);
         } else { f.punchStep = 0; f.punchT = 0; } // a whiff resets the combo
@@ -12589,7 +12709,7 @@ function App() {
       sfx.play('smash', f.isLocal ? 0.9 : volAt(p) * 0.6, 1.3);
       if (f.isLocal) {
         spawnMemeSprite(p.x + ax * 1.5, 2.8, p.z + az * 1.5, 'GRABBED & THROWN! 🤼', '#c4b5fd');
-        fx.hitStop = Math.max(fx.hitStop, 0.12);
+        fx.kick = 1;
         fx.shake = Math.min(1.6, fx.shake + 0.7);
         buzz(24);
       }
@@ -12701,6 +12821,7 @@ function App() {
         actionTriggerRef.current.cannon = true;
       } else if (code === 'KeyF' || code === 'KeyJ') {
         if (!e.repeat) actionTriggerRef.current.punch = true;
+        actionTriggerRef.current.punchHeld = true;
       } else if (code === 'KeyT' || code === 'KeyX' || code === 'KeyQ') {
         actionTriggerRef.current.ult = true;
       } else if (code === 'KeyM') {
@@ -12711,10 +12832,11 @@ function App() {
     };
     const onKeyUp = (e) => {
       keysRef.current[e.code] = false;
+      if (e.code === 'KeyF' || e.code === 'KeyJ') actionTriggerRef.current.punchHeld = false;
     };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
-    const clearKeys = () => { keysRef.current = {}; };
+    const clearKeys = () => { keysRef.current = {}; actionTriggerRef.current.punchHeld = false; };
     window.addEventListener('blur', clearKeys);
     sfx.startMusic();
     sfx.onTrack(name => pushKillFeed(`🎵 Now playing: ${name}`, '#c084fc'));
@@ -12729,11 +12851,7 @@ function App() {
       animationFrameId = requestAnimationFrame(animate);
       const rawDt = Math.max(0, Math.min((now - prevTime) / 1000, 0.1));
       prevTime = now;
-      let dt = rawDt;
-      if (fx.hitStop > 0) {
-        fx.hitStop -= rawDt;
-        dt *= 0.08; // hit-stop: the world freezes for a beat when you land a hit
-      }
+      const dt = rawDt; // time never freezes or slows on a hit
       if (fx.slowmo > 0) {
         fx.slowmo -= rawDt;
       }
@@ -12905,7 +13023,10 @@ function App() {
         spawnWildPanda();
         spawnWildPanda();
         const roll = Math.random();
-        if (roll < 0.4 && !rug) {
+        hazardN += 1;
+        if ((hazardN === 2 || roll > 0.78) && !golden && !frozen) {
+          spawnGolden(); // the second event of every match is always the Golden Panda, so everyone meets it
+        } else if (roll < 0.4 && !rug) {
           startRug();
         } else if (roll < 0.7) {
           fx.liqTimer = 10;
@@ -12986,6 +13107,8 @@ function App() {
       });
       const live = k => now - pressBuf[k] < INPUT_BUFFER_MS[k];
       const used = k => { pressBuf[k] = -1e9; };
+      // hold PUNCH (thumb down, or F held) to keep the combo going: no need to hammer the button
+      if (at.punchHeld && !frozen && !localFighter.weapon && cdState.punch <= 0 && !live('punch')) pressBuf.punch = now;
       const tumbling = localFighter.stun > 0 && localAirborne;
 
       if (live('smash') && !frozen) {
@@ -13043,7 +13166,7 @@ function App() {
         } else if (cdState.punch <= 0 && !tumbling && localFighter.stun <= 0.1) {
           used('punch');
           if (localFighter.grabT > 0) {
-            if (doGrab(localFighter)) { cdState.punch = 0.6; netEvents.push('punch'); }
+            if (doGrab(localFighter)) { cdState.punch = 0.6; netEvents.push('punch'); } else cdState.punch = 0.3;
           } else {
             cdState.punch = CD_MAX.punch;
             doPunch(localFighter, moveX, moveZ);
@@ -13178,51 +13301,118 @@ function App() {
               f.aiDirX = -f.mesh.position.x / distFromCenter;
               f.aiDirZ = -f.mesh.position.z / distFromCenter;
             } else {
-              let bestTarget = localFighter;
-              let minDist = 999;
+              // Pick a target: close, already hurt, wearing the crown, or whoever just hit me.
+              // Never more than two bots on one human, so nobody gets dog-piled by the whole room.
+              const bpos = f.mesh.position;
+              let bestTarget = null, bestScore = 1e9, minDist = 999;
               fighters.forEach(cand => {
-                if (cand.id === f.id) return;
-                const d = f.mesh.position.distanceTo(cand.mesh.position);
-                if (d < minDist) {
-                  minDist = d;
-                  bestTarget = cand;
+                if (cand.id === f.id || cand.respawnLock > 0) return;
+                const d = bpos.distanceTo(cand.mesh.position);
+                let sc = d - Math.min(8, cand.dmg / 20) - ((cand.streak || 0) >= 3 ? 5 : 0);
+                if (cand === f.lastHitBy && now - (f.lastHitAt || 0) < 4000) sc -= 5;
+                if (cand === f.aiTgt) sc -= 2;
+                if (!cand.isBot) {
+                  let on = 0;
+                  fighters.forEach(o => { if (o !== f && o.isBot && o.aiTgt === cand) on++; });
+                  if (on >= 2) sc += 14;
                 }
+                if (sc < bestScore) { bestScore = sc; bestTarget = cand; minDist = d; }
               });
-              const dx = bestTarget.mesh.position.x - f.mesh.position.x;
-              const dz = bestTarget.mesh.position.z - f.mesh.position.z;
+              if (!bestTarget) { bestTarget = localFighter; minDist = bpos.distanceTo(localFighter.mesh.position); }
+              f.aiTgt = bestTarget;
+              const tp = bestTarget.mesh.position;
+              const tr = Math.hypot(tp.x, tp.z) || 1;
+              const tdl = Math.hypot(tp.x - bpos.x, tp.z - bpos.z) || 1;
+              const tdx = (tp.x - bpos.x) / tdl, tdz = (tp.z - bpos.z) / tdl;
+              // come at them from the centre side, so the hits push them toward the edge
+              let gx = tp.x - (tp.x / tr) * 1.4, gz = tp.z - (tp.z / tr) * 1.4;
+              if (!f.isWhale && minDist > 6) {
+                // nobody in reach: a grey panda, a power-up or the Golden Panda nearby beats walking
+                let pick = null, pd = f.minions.length < 3 ? 13 : 7;
+                wildMinions.forEach(w => {
+                  const d = Math.hypot(w.mesh.position.x - bpos.x, w.mesh.position.z - bpos.z);
+                  if (d < pd) { pd = d; pick = w.mesh.position; }
+                });
+                powerups.forEach(pu => {
+                  const d = Math.hypot(pu.grp.position.x - bpos.x, pu.grp.position.z - bpos.z);
+                  if (d < Math.min(pd, 10)) { pd = d; pick = pu.grp.position; }
+                });
+                if (golden && Math.hypot(golden.mesh.position.x - bpos.x, golden.mesh.position.z - bpos.z) < 14) pick = golden.mesh.position;
+                if (pick && !inRug(pick)) { gx = pick.x; gz = pick.z; }
+              }
+              const dx = gx - bpos.x, dz = gz - bpos.z;
               const l = Math.hypot(dx, dz) || 1;
               f.aiDirX = dx / l;
               f.aiDirZ = dz / l;
+              if (inRug({ x: bpos.x + f.aiDirX * 3.5, z: bpos.z + f.aiDirZ * 3.5 })) {
+                // never walk into the hole in the floor
+                f.aiDirX = -bpos.x / (distFromCenter || 1);
+                f.aiDirZ = -bpos.z / (distFromCenter || 1);
+              }
 
-              // bots use the new moves too (the Whale is too heavy to dash or spin)
+              // bots use the same moves you do (the Whale is too heavy to dash, spin or leap)
               if (!f.isWhale && f.stun <= 0) {
                 if (f.botUltAt === undefined) f.botUltAt = now + 25000 + Math.random() * 25000;
-                if (!(f.dashT > 0) && now > (f.botDashAt || 0) && minDist > 3 && minDist < 11 && Math.random() < Math.min(0.5, BOT_AGGRO * 0.9)) {
-                  f.botDashAt = now + 2600 + Math.random() * 2400;
-                  doDash(f, f.aiDirX, f.aiDirZ);
+                const dashy = f.botStyle === 1 ? 1.5 : 1;
+                if (!(f.dashT > 0) && now > (f.botDashAt || 0) && minDist > 3 && minDist < 11 && tr < ARENA_RADIUS - 2.5 && Math.random() < Math.min(0.6, BOT_AGGRO * 0.9 * dashy)) {
+                  f.botDashAt = now + (2600 + Math.random() * 2400) / dashy;
+                  doDash(f, tdx, tdz);
                 }
                 if (!(f.tornadoT > 0) && now > f.botUltAt) {
-                  const close = fighters.filter(o => o.id !== f.id && o.mesh.position.distanceTo(f.mesh.position) < 5.5).length;
+                  const close = fighters.filter(o => o.id !== f.id && o.mesh.position.distanceTo(bpos) < 5.5).length;
                   if (close >= 2 || (close >= 1 && Math.random() < 0.25)) {
                     startTornado(f);
                     f.botUltAt = now + 40000 + Math.random() * 25000;
                   }
                 }
+                // slammers leap at you and ground-pound: the jump is the warning, jump yourself to dodge it
+                if (f.botStyle === 2 && bpos.y <= 0.05 && !(f.dashT > 0) && now > (f.botPoundAt || 0) && minDist > 3 && minDist < 9 && tr < ARENA_RADIUS - 3 && Math.random() < 0.25 + BOT_AGGRO * 0.5) {
+                  f.botPoundAt = now + 9000 + Math.random() * 5000;
+                  if (doJump(f, tdx, tdz)) {
+                    const hop = Math.min(16, minDist / 0.42);
+                    f.vx = tdx * hop;
+                    f.vz = tdz * hop;
+                    f.botPound = true;
+                  }
+                }
               }
 
-              if (minDist < 6.5 && Math.random() < BOT_AGGRO && f.stun <= 0) {
+              if (minDist < 6.5 && Math.random() < BOT_AGGRO * 0.3 && f.stun <= 0 && bpos.y <= 0.05) {
                 f.punchAnim = 0.35;
-                triggerShockwave(f.mesh.position.x, f.mesh.position.z, f.gangColor, 6.5);
-                sfx.play('smash', volAt(f.mesh.position) * 0.45);
+                triggerShockwave(bpos.x, bpos.z, f.gangColor, 6.5);
+                sfx.play('smash', volAt(bpos) * 0.45);
                 fighters.forEach(victim => {
                   if (victim.id === f.id) return;
-                  const vdx = victim.mesh.position.x - f.mesh.position.x;
-                  const vdz = victim.mesh.position.z - f.mesh.position.z;
+                  const vdx = victim.mesh.position.x - bpos.x;
+                  const vdz = victim.mesh.position.z - bpos.z;
                   const vd = Math.hypot(vdx, vdz);
                   if (victim.mesh.position.y > 1.6) return;
                   if (vd < 6.5 && vd > 0.01) launch(victim, f, vdx / vd, vdz / vd, 5 + 5 * (1 - vd / 6.5), 6, 9);
                 });
               }
+            }
+          }
+          // slammer at the top of its leap: come down hard
+          if (f.botPound) {
+            if (f.stun > 0 || f.mesh.position.y <= 0.05 && f.vy <= 0) f.botPound = false;
+            else if (f.vy < 2 && f.mesh.position.y > 2.4) {
+              f.botPound = false;
+              f.pounding = true;
+              f.vy = -48;
+              f.vx *= 0.15;
+              f.vz *= 0.15;
+              sfx.play('fall', volAt(f.mesh.position) * 0.5);
+            }
+          }
+          // fast hands: bots throw the same jab, cross, haymaker you do when their target is in reach
+          const tg = f.aiTgt;
+          if (tg && !f.isWhale && f.stun <= 0 && !(f.dashT > 0) && !f.pounding && !f.botPound && now > (f.botPunchAt || 0) && tg.mesh.parent && !(tg.respawnLock > 0)) {
+            const pdx = tg.mesh.position.x - f.mesh.position.x, pdz = tg.mesh.position.z - f.mesh.position.z, pd = Math.hypot(pdx, pdz);
+            if (pd < 3.8 && pd > 0.01 && Math.abs(tg.mesh.position.y - f.mesh.position.y) < 2) {
+              f.mesh.rotation.y = Math.atan2(pdx, pdz);
+              doPunch(f, pdx, pdz);
+              const pace = (f.botStyle === 0 ? 0.8 : 1) / (0.55 + BOT_AGGRO);
+              f.botPunchAt = now + (f.punchStep === 3 ? 2400 + Math.random() * 1400 : 400 + Math.random() * 180) * pace;
             }
           }
           if (f.stun <= 0 && f.mesh.position.y <= 0.05) {
@@ -13254,7 +13444,8 @@ function App() {
             f.vy = 0;
             f.jumps = 2;
             f.squash = 1;
-            doSmash(f, 9.5, 1.3, '⬇️ GROUND POUND!');
+            if (f.isBot) doSmash(f, 7.5, 1, '⬇️ GROUND POUND!'); // a bot's pound is smaller than yours
+            else doSmash(f, 9.5, 1.3, '⬇️ GROUND POUND!');
           } else if (onArena && pos.y <= 0 && f.vy <= 0 && f.vy > -9) {
             pos.y = 0;
             f.vy = 0;
@@ -13562,6 +13753,7 @@ function App() {
         }
       }
 
+      if (golden) tickGolden(dt, now);
       const lpw = localFighter.mesh.position;
       wildMinions.forEach(wm => {
         wm.mesh.position.y = Math.abs(Math.sin(now * 0.005 + wm.bobOffset)) * 0.25;
@@ -13734,14 +13926,36 @@ function App() {
         setLeaderboard(sortedBoard);
       }
 
-      let shakeX = 0, shakeY = 0;
+      for (let i = sparks.length - 1; i >= 0; i--) {
+        const sk = sparks[i];
+        sk.life -= rawDt;
+        const k = 1 - Math.max(0, sk.life) / 0.16;
+        const sc = sk.size * (0.45 + 0.55 * Math.sqrt(k));
+        sk.sp.scale.set(sc, sc, 1);
+        sk.sp.material.opacity = 1 - k * k;
+        if (sk.life <= 0) {
+          scene.remove(sk.sp);
+          sparkPool.push(sk.sp);
+          sparks.splice(i, 1);
+        }
+      }
+
+      let shakeX = 0, shakeY = 0, kickX = 0, kickY = 0, kickZ = 0;
       if (fx.shake > 0.01) {
         shakeX = (Math.random() - 0.5) * fx.shake * 1.4;
         shakeY = (Math.random() - 0.5) * fx.shake * 1.4;
         fx.shake *= Math.exp(-7 * rawDt);
       }
-      camera.position.x += shakeX;
-      camera.position.y += shakeY;
+      if (fx.kick > 0.01) {
+        // camera kick: punch in toward the action for a few frames when you land a hit
+        const cvx = camLook.x - camera.position.x, cvy = 1 - camera.position.y, cvz = camLook.z - camera.position.z;
+        const k = (fx.kick * 3.4) / (Math.hypot(cvx, cvy, cvz) || 1);
+        kickX = cvx * k; kickY = cvy * k; kickZ = cvz * k;
+        fx.kick *= Math.exp(-11 * rawDt);
+      }
+      camera.position.x += shakeX + kickX;
+      camera.position.y += shakeY + kickY;
+      camera.position.z += kickZ;
       if (post) {
         post.comp.uniforms.flash.value = fx.postFlash;
         fx.postFlash = Math.max(0, fx.postFlash - rawDt * 3);
@@ -13750,8 +13964,9 @@ function App() {
         renderer.render(scene, camera);
       }
       if (bdClipRef.current) bdClipRef.current.frame();
-      camera.position.x -= shakeX;
-      camera.position.y -= shakeY;
+      camera.position.x -= shakeX + kickX;
+      camera.position.y -= shakeY + kickY;
+      camera.position.z -= kickZ;
     };
 
     animationFrameId = requestAnimationFrame(animate);
@@ -14577,6 +14792,10 @@ function App() {
                         e.stopPropagation();
                         actionTriggerRef.current[b.key] = true;
                         const el = e.currentTarget;
+                        if (b.key === 'punch') { // keep the thumb down to keep swinging
+                          actionTriggerRef.current.punchHeld = true;
+                          try { el.setPointerCapture(e.pointerId); } catch (err) {}
+                        }
                         el.classList.add('pressed');
                         setTimeout(() => el.classList.remove('pressed'), 110);
                         buzz(6);
@@ -14586,6 +14805,9 @@ function App() {
                           sfx.play('pop', 0.35, 0.55);
                         }
                       }}
+                      onPointerUp={b.key === 'punch' ? () => { actionTriggerRef.current.punchHeld = false; } : undefined}
+                      onPointerCancel={b.key === 'punch' ? () => { actionTriggerRef.current.punchHeld = false; } : undefined}
+                      onLostPointerCapture={b.key === 'punch' ? () => { actionTriggerRef.current.punchHeld = false; } : undefined}
                       onContextMenu={e => e.preventDefault()}
                       className={`touch-btn act-btn absolute rounded-full border-2 shadow-xl flex flex-col items-center justify-center ${b.cls} ${b.cd > 0 ? 'grayscale brightness-50' : ''}`}
                     >
