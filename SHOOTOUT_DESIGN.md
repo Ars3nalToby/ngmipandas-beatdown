@@ -197,3 +197,5 @@ Record every decided `OPEN` item here with a date, then update the section above
 | 2026-10-26 | Visual pass: detailed zombies baked with grime, sharper post-processing, anisotropic filtering; physics fixes: blasts blocked by walls, dynamite lands on roofs, Delta only chases zombies it can see |
 | 2026-10-26 | Horror zombies (no cute), stronger/faster stats + runner pounce; smarter squad (shove, kiting, retreat, idle reload, bot dynamite) |
 | 2026-10-28 | Art direction switched to the FLIPSIDE graphic print look (owner's trailer reference): cel shading, ink outlines, flat navy shadows, palette colour blocking, print-style HUD. Supersedes "grounded semi-realistic" (§6). Rollback: `git revert 0b8c288` (last commit before it: 35df7a3) |
+| 2026-11-19 | Grenade pool recharges automatically (`NADE_MAX = 3` Zombie / `2` PvP, `10s` recharge timer + HUD countdown/progress bar) to enforce Hard Rule #5 so grenades are never permanently depleted |
+| 2026-11-19 | Dedicated depth-cleared viewmodel render pass (`vmScene` + `vmCam`) with hardware depth test/write on weapons, twin-tube Dual RPG model, and zombie close-range self-explosion cap (`<= 8 HP`) |
