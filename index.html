@@ -456,7 +456,7 @@ const sfx = (() => {
     n.stop(t + dur + 0.05);
   };
 
-  const SFX_KEEP = { explode: 1, cannon: 1, crit: 1, shot_rpg: 1, dynamite: 1, hordeRumble: 1, roar: 1, siren: 1, revive: 1, radio: 1, ko: 1 };
+  const SFX_KEEP = { braam: 1, explode: 1, cannon: 1, crit: 1, shot_rpg: 1, dynamite: 1, hordeRumble: 1, roar: 1, siren: 1, revive: 1, radio: 1, ko: 1 };
   const play = (name, vol = 1, p = 1, pan = null, muffle = 0) => {
     if (!ctx || ctx.state !== 'running' || muted || vol <= 0.02) return;
     const now = ctx.currentTime;
@@ -702,6 +702,13 @@ const sfx = (() => {
         tone('sine', 1900 * p, 380 * p, 0.8, 0.09 * vol);
         hiss(0.5, 0.08 * vol, 'bandpass', 3200, 900);
         break;
+      case 'braam': {
+        // big low brass-like hit: stacked detuned saws through a closing filter, a sub drop and an air swell
+        [55, 55.6, 82.4, 110, 130.8].forEach((f, i) => tone('sawtooth', f * p, f * p * 0.985, 2.4, (i < 2 ? 0.075 : 0.05) * vol, null, now + i * 0.008, 1500));
+        tone('sine', 55 * p, 36, 2.6, 0.55 * vol, null, now);
+        hiss(1.6, 0.1 * vol, 'lowpass', 900, 160, null, now);
+        break;
+      }
       case 'hordeRumble':
         for (let i = 0; i < 3; i++) tone('sawtooth', (80 + Math.random() * 50) * p, 55, 0.9, 0.05 * vol, null, now + i * 0.13, 380);
         hiss(1.1, 0.22 * vol, 'lowpass', 520, 180);
@@ -731,10 +738,13 @@ const sfx = (() => {
   ];
   const SRUSH = { name: 'SUDDEN DEATH', bpm: 158, roots: [55, 55, 49, 43.65], chords: [[0, 3, 7], [0, 3, 7], [0, 4, 7], [0, 4, 7]], kick: [0, 4, 8, 12], snare: [4, 12], bass: [0, 2, 3, 4, 6, 7, 8, 10, 11, 12, 14], bassWave: 'sawtooth', arpWave: 'sawtooth', arpEvery: 1, scale: [0, 3, 5, 7, 10], openHat: true };
   // zombie mode has its own horror soundtrack (Beatdown / lobby keep the playlist above)
+  // each zombie song has a fixed 8-note motif (semitones over the root, null = rest) so it has a hook you remember;
+  // layers are added by `intensity` (calm -> tension strings -> combat drums + bass), like L4D's adaptive score
   const ZTRACKS = [
-    { name: 'DEAD CITY', bpm: 72, roots: [55, 51.91, 55, 46.25], scale: [0, 1, 3, 5, 7, 8], beat: [0, 3], bell: true },
-    { name: 'NO SIGNAL', bpm: 86, roots: [49, 49, 46.25, 51.91], scale: [0, 1, 3, 6, 7, 10], beat: [0, 6, 10], pulse: true, ticker: true },
-    { name: 'LAST LIGHT', bpm: 64, roots: [43.65, 41.2, 43.65, 38.89], scale: [0, 2, 3, 7, 8], beat: [0, 8], keys: true, wind: true }
+    { name: 'DEAD CITY', bpm: 72, roots: [55, 51.91, 55, 46.25], scale: [0, 1, 3, 5, 7, 8], beat: [0, 3], bell: true, motif: [0, 3, 1, null, 0, 7, 5, 1] },
+    { name: 'OUTBREAK', bpm: 100, roots: [49, 46.25, 43.65, 46.25], scale: [0, 1, 3, 5, 6, 8], beat: [0, 10], pulse: true, drive: true, motif: [0, 0, 3, 5, 6, 5, 3, 1] },
+    { name: 'NO SIGNAL', bpm: 86, roots: [49, 49, 46.25, 51.91], scale: [0, 1, 3, 6, 7, 10], beat: [0, 6, 10], pulse: true, ticker: true, motif: [7, null, 6, 3, 1, null, 0, null] },
+    { name: 'LAST LIGHT', bpm: 64, roots: [43.65, 41.2, 43.65, 38.89], scale: [0, 2, 3, 7, 8], beat: [0, 8], keys: true, wind: true, motif: [0, 2, 3, 7, 8, 7, 3, 2] }
   ];
   const ZRUSH = { name: "THEY'RE HERE", bpm: 150, roots: [55, 55, 51.91, 49], scale: [0, 1, 3, 5, 6, 8], hard: true };
   const BARS_PER_SONG = 32;
@@ -870,15 +880,33 @@ const sfx = (() => {
       duck(t, 0.7, 0.18);
     }
     if (tr.pulse && s16 % 2 === 0) voice('square', root * 2, STEP * 0.8, 0.07 + intensity * 0.05, t, 420 + intensity * 1400, { det: 5 });
+    // TENSION layer: low tremolo strings creep in when zombies are around
+    if (intensity >= 0.3 && load <= 0.5 && s16 % 2 === 0) voice('sawtooth', semis(root * 2, [0, 0, 1, 0][(s16 / 2) % 4]), STEP * 1.9, 0.035 + intensity * 0.03, t, 650 + intensity * 700, { det: 8, atk: 0.04 });
+    // COMBAT layer: a real groove when the fight is on (or always, quietly, on the driving track)
+    const combat = intensity >= 0.6 ? 1 : tr.drive && section > 0 ? 0.55 : 0;
+    if (combat) {
+      if (s16 === 0 || s16 === 8 || (combat === 1 && (s16 === 6 || s16 === 14))) kick(t, 0.75 * combat, true);
+      if (s16 === 4 || s16 === 12) snare(t, 0.55 * combat, combat === 1 && section === 2);
+      if (s16 % 2 === 0) {
+        const oct = s16 % 8 === 6 ? 2 : 1;
+        voice('sawtooth', root * oct, STEP * 1.5, 0.22 * combat, t, 480 + intensity * 900, { det: 4, q: 3 });
+      }
+      if (s16 % 4 === 2) hat(t, true, 0.05 * combat);
+    }
     if (tr.ticker && s16 % 4 === 0) hiss(0.015, 0.09, 'highpass', 9000, null, musicBus, t);
     if (intensity > 0.4 && s16 % 2 === 1) hiss(0.02, 0.04 + intensity * 0.05, 'highpass', 9500, null, musicBus, t);
     if (intensity > 0.55 && (s16 === 0 || s16 === 8)) tom(t, root * 3, 0.45); // war drums, far away, getting closer
     if (tr.keys && (s16 === 0 || s16 === 8) && section > 0) [0, 3, 7].forEach((n, i) => voice('triangle', semis(root * 4, n), STEP * 7, 0.05, t + i * 0.03, 1800, { bus: leadBus, det: 4, atk: 0.02 }));
     if (tr.wind && s16 === 0 && bar % 2 === 0) hiss(STEP * 24, 0.05, 'bandpass', 260, 900, musicBus, t);
     // music box: a lonely bell line; the shared echo + room reverb do the rest
-    if ((tr.bell || section === 2) && section > 0 && s16 % 4 === 0 && Math.random() < 0.55) {
-      const m = melody[(s16 / 4 + bar * 4) % 8];
-      if (m !== null) voice('triangle', semis(root * 16, m), STEP * 6, 0.07, t, 5200, { bus: leadBus, det: 3, atk: 0.004 });
+    // the song's motif: a lonely music box when calm, a darker saw lead doubling it in a fight
+    if ((tr.bell || tr.motif || section === 2) && section > 0 && s16 % 4 === 0 && (tr.motif || Math.random() < 0.55)) {
+      const mot = tr.motif || melody;
+      const m = mot[(s16 / 4 + bar * 4) % 8];
+      if (m !== null && m !== undefined) {
+        voice('triangle', semis(root * 16, m), STEP * 6, 0.065, t, 5200, { bus: leadBus, det: 3, atk: 0.004 });
+        if (combat && section === 2) voice('sawtooth', semis(root * 8, m), STEP * 3.5, 0.045, t, 2400, { bus: leadBus, det: 6, atk: 0.01 });
+      }
     }
     // a dissonant string swell now and then, with a riser into it
     if (section === 2 && bar === 3 && s16 === 0) riser(t, STEP * 16, 0.06);
@@ -6301,6 +6329,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (f.isMe) hurtFx(dmg * 0.5);
         return;
       }
+      if (zombie && f.isBot) dmg *= 0.7; // tougher squad: they soak hits so they can carry their weight
       f.hp -= dmg;
       if (f.isMe) {
         hurtFx(dmg);
@@ -7026,6 +7055,21 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       selectSlot(Math.max(0, me.weapons.findIndex(w => !isMelee(w.key))), true);
       announceNow(`🗑️ DROPPED ${SHOOT_WEAPONS[cur.key].short} · slot free`, '#94a3b8');
     };
+    // how squad bots use each gun in zombie mode (dmg per hit before wave scaling, burst size, gap inside a burst, magazine)
+    const BOT_GUN = {
+      ak: { dmg: 27, burst: [4, 7], cd: 0.1, mag: 45 },
+      gatling: { dmg: 17, burst: [16, 26], cd: 0.055, mag: 100 },
+      golden: { dmg: 50, burst: [8, 12], cd: 0.085, mag: 75 },
+      sniper: { dmg: 170, burst: [1, 1], cd: 0.95, mag: 6 },
+      shotgun: { dmg: 20, pellets: 6, burst: [1, 1], cd: 0.6, mag: 8, near: 14 },
+      revolver: { dmg: 70, burst: [1, 1], cd: 0.45, mag: 6 },
+      smg: { dmg: 20, burst: [7, 11], cd: 0.07, mag: 40 },
+      flamer: { dmg: 22, burst: [10, 16], cd: 0.07, mag: 80, near: 16 },
+      rifle: { dmg: 34, burst: [3, 4], cd: 0.16, mag: 30 },
+      rpg: { dmg: 27, burst: [3, 5], cd: 0.1, mag: 3 } // the AK-style sidearm numbers it uses up close
+    };
+    const botGunKey = b => (b.golden ? 'golden' : b.wkey || 'ak');
+    const botGun = b => BOT_GUN[botGunKey(b)] || BOT_GUN.ak;
     const botShoot = (b, t) => {
       const fx0 = Math.sin(b.face), fz0 = Math.cos(b.face);
       const muzzle = new THREE.Vector3(b.pos.x + fx0 * 0.9 + fz0 * 0.35, b.pos.y + 1.45, b.pos.z + fz0 * 0.9 - fx0 * 0.35);
@@ -7046,8 +7090,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       play3d('shot_ak', b.pos, 0.5, 1, 70);
       b.protT = 0;
       if (res.zombie) {
-        // squad bots hit zombies harder so they pull their weight
-        hurtZombie(res.zombie, (b.golden ? 36 : b.wkey === 'gatling' ? 13 : 23) * (res.head ? 1.6 : 1) * (1 + (zd.wave - 1) * 0.17), res.head, b); // keeps pace with zombie HP (+16%/wave)
+        // squad bots hit zombies hard so they pull their weight; each gun has its own punch (BOT_GUN)
+        const P = botGun(b);
+        const fall = P.pellets ? P.pellets * Math.max(0.25, 1 - d0 / 22) : 1; // buckshot: all pellets up close, fewer far away
+        hurtZombie(res.zombie, P.dmg * fall * (res.head ? 1.6 : 1) * (1 + (zd.wave - 1) * 0.17), res.head, b); // keeps pace with zombie HP (+16%/wave)
         if (vol > 0.2) hitFx(res.zombie, res.point, res.head);
       } else if (res.fighter) {
         damage(res.fighter, b, (b.golden ? 20 : b.wkey === 'gatling' ? 6 : 11) * (res.head ? 1.6 : 1) * BOT.dmg, res.head);
@@ -7080,7 +7126,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         const nAtk = fighters.filter(f => f.team === 'atk').length, nDef = fighters.filter(f => f.team === 'def').length;
         const b = createFighter(`${myId}_b${i}`, RIVAL_NAMES[i % RIVAL_NAMES.length], klass, { isBot: true, team: zombie ? 'surv' : siege ? (nAtk <= nDef ? 'atk' : 'def') : null });
         b.skill = 0.85 + Math.random() * 0.5;
-        b.wkey = zombie ? ['ak', 'gatling', 'ak', 'rpg'][i % 4] : ['ak', 'ak', 'ak', 'gatling', 'rpg'][Math.floor(Math.random() * 5)];
+        b.wkey = zombie ? ['rpg', 'gatling', 'ak', 'ak'][i % 4] : ['ak', 'ak', 'ak', 'gatling', 'rpg'][Math.floor(Math.random() * 5)];
         swapGun(b, b.mesh, b.wkey);
         b.dropSeeker = Math.random() < 0.5;
         if (zombie) {
@@ -8064,7 +8110,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     };
 
     // ---- squad chatter: speech bubbles, radio blips and (optional) voices ----
-    const CALLS = { reload: 'RELOADING!', help: 'HELP ME!', horde: 'HORDE INCOMING!', nade: 'FIRE IN THE HOLE!', med: 'CATCH — MEDKIT!', revive: 'I GOT YOU!', thanks: 'THANKS!', boss: 'RUG LORD! FOCUS FIRE!', brute: 'BIG ONE COMING!', bloater: 'BLOATER! SHOOT IT FROM RANGE!', spitter: 'SPITTER! WATCH THE ACID!', hurt: "I'M HURT BAD!", onme: 'ON ME! STICK TOGETHER!', clear: 'CLEAR!', barrel: 'SHOOT THE BARREL!', medrun: 'GETTING A MEDKIT!', cover: "I'LL COVER YOU!", gotkit: 'GOT A KIT · HOLD ON!' };
+    const CALLS = { reload: 'RELOADING!', help: 'HELP ME!', horde: 'HORDE INCOMING!', nade: 'FIRE IN THE HOLE!', med: 'CATCH — MEDKIT!', revive: 'I GOT YOU!', thanks: 'THANKS!', boss: 'RUG LORD! FOCUS FIRE!', brute: 'BIG ONE COMING!', bloater: 'BLOATER! SHOOT IT FROM RANGE!', spitter: 'SPITTER! WATCH THE ACID!', hurt: "I'M HURT BAD!", onme: 'ON ME! STICK TOGETHER!', clear: 'CLEAR!', barrel: 'SHOOT THE BARREL!', medrun: 'GETTING A MEDKIT!', cover: "I'LL COVER YOU!", gotkit: 'GOT A KIT · HOLD ON!', gotgun: 'GOT A BIG GUN!', rocket: 'ROCKET OUT!', gold: "GOLDEN AK · LET'S GO!" };
     const CALL_IDS = Object.keys(CALLS);
     let lastVoiceAt = 0;
     const showBubble = (f, text) => {
@@ -8437,7 +8483,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         b.cover = null;
         if (!b.downed) {
           for (const m of fighters) {
-            if (m === b || !m.downed || m.dead || Math.hypot(m.pos.x - b.pos.x, m.pos.z - b.pos.z) > 45) continue;
+            if (m === b || !m.downed || m.dead || Math.hypot(m.pos.x - b.pos.x, m.pos.z - b.pos.z) > (m.isBot ? 45 : 75)) continue;
             const humanOnIt = fighters.some(o => !o.isBot && !o.dead && !o.downed && o.revTo === m.id);
             const slots = humanOnIt ? 0 : m.isBot ? 1 : 2;
             const crew = fighters.filter(o => o.isBot && o !== m && !o.dead && !o.downed).sort((p, q) => Math.hypot(p.pos.x - m.pos.x, p.pos.z - m.pos.z) - Math.hypot(q.pos.x - m.pos.x, q.pos.z - m.pos.z));
@@ -8446,6 +8492,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             if (!b.cover) b.cover = m;
           }
         }
+        if (b.mate && b.mate !== b.lastMate) callout(b, 'revive');
+        b.lastMate = b.mate;
         // medkit run: someone is hurt, nobody holds a kit -> a pair (medic + escort) fetches one and brings it back
         const mp = b.downed ? null : planMedRun();
         const wasRole = b.medRole;
@@ -8551,14 +8599,49 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           }
         }
         if (b.hp < 35 && !b.downed) callout(b, 'hurt');
+        // ---- gun shopping: grab a better gun lying nearby (never one a human is closer to), or an unclaimed golden AK airdrop ----
+        b.gunGoal = null;
+        if (!frozen && !b.downed && !b.mate && !b.medRole && b.hp > 40 && (b.nearD > 12 || zd.phase !== 'wave')) {
+          const myRank = weaponRank(botGunKey(b));
+          const humans = fighters.filter(f => !f.isBot && !f.dead);
+          const L1 = b.leader;
+          let pick = null, pd = 1e9;
+          for (const sp of pickups) {
+            if (sp.t > 0 || sp.y > 1.5 || !SHOOT_WEAPONS[sp.kind] || isMelee(sp.kind) || weaponRank(sp.kind) <= myRank) continue;
+            if (sp.claim && sp.claim !== b && !sp.claim.dead && fighters.includes(sp.claim)) continue;
+            const d = Math.hypot(sp.x - b.pos.x, sp.z - b.pos.z);
+            if (d > 42 || d >= pd) continue;
+            if (L1 && Math.hypot(sp.x - L1.pos.x, sp.z - L1.pos.z) > 40) continue; // don't wander off from the squad
+            if (humans.some(h => Math.hypot(h.pos.x - sp.x, h.pos.z - sp.z) < d)) continue; // a human is closer: it's theirs
+            pick = sp;
+            pd = d;
+          }
+          if (!b.golden) {
+            const nowD = performance.now();
+            for (const dp of drops) {
+              if (!dp.landed || nowD - (dp.landedAt || nowD) < 8000) continue; // you get first dibs on the golden AK
+              if (dp.claim && dp.claim !== b && !dp.claim.dead && !dp.claim.golden && fighters.includes(dp.claim)) continue; // one bot goes, the rest stay with you
+              const d = Math.hypot(dp.x - b.pos.x, dp.z - b.pos.z);
+              if (dp.claim !== b && fighters.some(o => o !== b && o.isBot && !o.dead && !o.downed && !o.golden && Math.hypot(o.pos.x - dp.x, o.pos.z - dp.z) < d)) continue; // the closest bot goes
+              if (d < 70 && d < pd + 20) { pick = { x: dp.x, y: 0, z: dp.z, drop: dp }; pd = d; }
+            }
+          }
+          if (pick) {
+            if (pick.drop) pick.drop.claim = b;
+            else pick.claim = b;
+            b.gunGoal = pick;
+          }
+        }
         // where to stand
         const L0 = b.leader;
         const ladderUp = L0 && map.ladders && map.ladders.length && L0.pos.y - b.pos.y > 2.2 && b.pos.y < L0.pos.y - 1.5;
         b.ladder = null;
         // badly hurt: fall back to the squad (and a teammate's medkit) instead of dying alone at the front
         const retreat = b.hp < 38 && !b.mate && b.leader && b.leader !== b && !b.leader.downed && Math.hypot(b.leader.pos.x - b.pos.x, b.leader.pos.z - b.pos.z) > 4.5 && !(b.nearZ && b.nearZ.kind === 'runner' && b.nearD < 5);
+        b.urgent = !!(retreat || b.mate || b.medRole || b.gunGoal);
         if (retreat) b.goal = new THREE.Vector3(b.leader.pos.x + Math.sin(b.leader.face + 2.8) * 2.2, b.leader.pos.y, b.leader.pos.z + Math.cos(b.leader.face + 2.8) * 2.2);
-        else if (b.mate && (!best || b.nearD > 6)) b.goal = new THREE.Vector3(b.mate.pos.x, b.mate.pos.y, b.mate.pos.z);
+        else if (b.mate) b.goal = new THREE.Vector3(b.mate.pos.x, b.mate.pos.y, b.mate.pos.z); // commit to the revive: keep shooting on the way, don't turn back
+        else if (b.gunGoal) b.goal = new THREE.Vector3(b.gunGoal.x, b.gunGoal.y || 0, b.gunGoal.z);
         else if (b.medRole === 'fetch' && mp && mp.spot) b.goal = new THREE.Vector3(mp.spot.x, mp.spot.y, mp.spot.z);
         else if (b.medRole === 'bring' && mp && mp.hurt) b.goal = new THREE.Vector3(mp.hurt.pos.x, mp.hurt.pos.y, mp.hurt.pos.z);
         else if (b.medRole === 'escort' && medic) b.goal = new THREE.Vector3(medic.pos.x + Math.sin(medic.face + 2.4) * 2.5, medic.pos.y, medic.pos.z + Math.cos(medic.face + 2.4) * 2.5);
@@ -8579,9 +8662,19 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         } else if (L0) {
           const bots = fighters.filter(f => f.isBot);
           const slot = [Math.PI - 0.75, Math.PI + 0.75, Math.PI, Math.PI - 1.6][Math.max(0, bots.indexOf(b)) % 4];
-          const lf = L0.isMe ? me.yaw + Math.PI : L0.face || 0;
-          const gx = L0.pos.x + Math.sin(lf + slot) * 4, gz = L0.pos.z + Math.cos(lf + slot) * 4;
-          if (!b.goal || Math.hypot(gx - b.goal.x, gz - b.goal.z) > 3 || Math.abs(b.goal.y - L0.pos.y) > 1) b.goal = new THREE.Vector3(gx, L0.pos.y, gz);
+          // formation follows the way the leader WALKS (re-anchored every 3 m), not the way they look,
+          // so turning the camera no longer sends the squad running circles around you
+          if (!b.lAnchor || b.lAnchorWho !== L0) { b.lAnchor = { x: L0.pos.x, z: L0.pos.z }; b.lAnchorWho = L0; b.lHead = L0.isMe ? me.yaw + Math.PI : L0.face || 0; }
+          const mvx = L0.pos.x - b.lAnchor.x, mvz = L0.pos.z - b.lAnchor.z;
+          if (Math.hypot(mvx, mvz) > 3) { b.lHead = Math.atan2(mvx, mvz); b.lAnchor = { x: L0.pos.x, z: L0.pos.z }; }
+          const lf = b.lHead;
+          const gx = L0.pos.x + Math.sin(lf + slot) * 4.5, gz = L0.pos.z + Math.cos(lf + slot) * 4.5;
+          const dLead = Math.hypot(L0.pos.x - b.pos.x, L0.pos.z - b.pos.z);
+          // already in a good spot near the leader: hold it and watch (no fidgeting)
+          const settled = b.goal && dLead > 2.5 && dLead < 8 && Math.abs(b.pos.y - L0.pos.y) < 1 && hasLOS(eye, eyeOf(L0));
+          if (!settled && (!b.goal || Math.hypot(gx - b.goal.x, gz - b.goal.z) > 3 || Math.abs(b.goal.y - L0.pos.y) > 1)) b.goal = new THREE.Vector3(gx, L0.pos.y, gz);
+          if (settled) b.goal = new THREE.Vector3(b.pos.x, b.pos.y, b.pos.z);
+          b.farLead = dLead > 14;
         } else if (!b.goal || b.goal.distanceTo(b.pos) < 2 || b.stuckT > 1.2) {
           b.goal = new THREE.Vector3((Math.random() - 0.5) * 12, 0, (Math.random() - 0.5) * 12);
           b.stuckT = 0;
@@ -8599,11 +8692,32 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         play3d('powerup', b.pos, 0.6, 1, 60);
         medPlanAt = -1e9; // re-plan now: with a kit in hand the medic switches to 'bring'
       }
+      // gun shopping: arrived at the gun -> take it (guests hide it via the 'p' packet, the bot packet carries the new gun)
+      const gg = b.gunGoal;
+      if (gg && !gg.drop && !b.downed && !frozen && gg.t <= 0 && Math.hypot(b.pos.x - gg.x, b.pos.z - gg.z) < 2.2 && Math.abs(b.pos.y - gg.y) < 2) {
+        gg.t = 15;
+        gg.grp.visible = false;
+        gg.claim = null;
+        send({ t: 'p', id: myId, i: pickups.indexOf(gg) });
+        b.wkey = gg.kind;
+        b.golden = false;
+        swapGun(b, b.mesh, gg.kind);
+        b.mag = botGun(b).mag;
+        b.burst = 0;
+        b.gunGoal = null;
+        callout(b, 'gotgun');
+        play3d('powerup', b.pos, 0.6, 1, 60);
+      }
+      if (b.golden && !b.goldSaid) { b.goldSaid = true; callout(b, 'gold'); b.mag = BOT_GUN.golden.mag; }
+      if (!b.golden) b.goldSaid = false;
       let dx = 0, dz = 0;
-      const speed = 8.4;
+      const speed = 9;
       const t = b.target && !b.target.dead && b.target.hp > 0 ? b.target : null;
-      const reviving = b.mate && b.mate.downed && (!t || b.nearD > 6);
-      const maxMag = b.wkey === 'gatling' ? 90 : b.wkey === 'rpg' ? 3 : zombie ? 45 : 30;
+      const reviving = b.mate && b.mate.downed;
+      const maxMag = zombie ? botGun(b).mag : b.wkey === 'gatling' ? 90 : b.wkey === 'rpg' ? 3 : 30;
+      const prevFace = b.face || 0;
+      // a little health comes back while nothing is close (they're tougher, not immortal)
+      if (zombie && !b.downed && !frozen && b.hp < 100 && b.nearD > 14) b.hp = Math.min(100, b.hp + 3 * dt);
       if (b.barrelT && !b.barrelT.dead && !b.downed && !frozen) {
         const br = b.barrelT;
         b.face = Math.atan2(br.x - b.pos.x, br.z - b.pos.z);
@@ -8623,7 +8737,46 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         b.fireCd -= dt;
         if (!frozen && b.react <= 0 && b.fireCd <= 0 && !(b.reloadT > 0)) {
           const tdist = Math.hypot(t.pos.x - b.pos.x, t.pos.z - b.pos.z);
-          if (b.wkey === 'rpg' && !b.golden) {
+          if (zombie && b.wkey === 'rpg' && !b.golden) {
+            // ROCKET MAN: fire into the middle of the pack, never near a teammate; AK sidearm up close
+            let cx = 0, cz = 0, n = 0;
+            for (const zz of zombies) {
+              if (zz.dead || zz.hp <= 0 || zz.rise > 0 || Math.hypot(zz.pos.x - t.pos.x, zz.pos.z - t.pos.z) > 5) continue;
+              cx += zz.pos.x; cz += zz.pos.z; n++;
+            }
+            if (n) { cx /= n; cz /= n; } else { cx = t.pos.x; cz = t.pos.z; }
+            const big = t.def.boss || t.kind === 'brute' || t.def.pop;
+            const safe = fighters.every(f => f.dead || Math.hypot(f.pos.x - cx, f.pos.z - cz) > 6.5);
+            const rd = Math.hypot(cx - b.pos.x, cz - b.pos.z);
+            if (b.rk == null) b.rk = 3;
+            if (safe && rd > 7.5 && b.rk > 0 && (n >= 2 || big || rd > 14)) {
+              b.face = Math.atan2(cx - b.pos.x, cz - b.pos.z);
+              const fx0 = Math.sin(b.face), fz0 = Math.cos(b.face);
+              const mz = new THREE.Vector3(b.pos.x + fx0 * 1.2, b.pos.y + 1.7, b.pos.z + fz0 * 1.2);
+              const aim = new THREE.Vector3(cx, t.pos.y + 0.9, cz);
+              fireRocket(mz, aim.sub(mz).normalize(), b);
+              sfx.play('shot_rpg', Math.max(0, 1 - me.pos.distanceTo(b.pos) / 70) * 0.6);
+              b.fireCd = 1.2 + Math.random() * 0.6;
+              if (n >= 3) callout(b, 'rocket');
+              if (world.frenzyT > 0) b.rk = 3;
+              else if (--b.rk <= 0) { b.reloadT = 1.4; b.rk = 3; }
+            } else {
+              if (b.burst > 0) { b.burst -= 1; b.fireCd = 0.1; } else { b.burst = 4 + Math.floor(Math.random() * 3); b.fireCd = 0.12 + Math.random() * 0.15; }
+              botShoot(b, t); // sidearm
+            }
+            b.mag = maxMag + 1; // rockets are counted in b.rk; the sidearm never needs a reload
+          } else if (zombie) {
+            const P = botGun(b);
+            if (P.near && tdist > P.near + 6) b.fireCd = 0.2; // shotgun/flamer: wait until it's in range
+            else {
+              if (b.burst > 0) { b.burst -= 1; b.fireCd = P.cd; }
+              else {
+                b.burst = P.burst[0] + Math.floor(Math.random() * (P.burst[1] - P.burst[0] + 1)) - 1;
+                b.fireCd = P.burst[1] > 1 ? 0.08 + Math.random() * 0.14 : P.cd;
+              }
+              botShoot(b, t);
+            }
+          } else if (b.wkey === 'rpg' && !b.golden) {
             b.fireCd = 2.6 + Math.random() * 1.5;
             if (tdist > 9) {
               const fx0 = Math.sin(b.face), fz0 = Math.cos(b.face);
@@ -8668,6 +8821,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (d > (reviving ? 1.2 : b.wp ? 0.4 : 1.6)) {
           dx = gx / d;
           dz = gz / d;
+          if (!b.wp && d < 4) { dx *= Math.max(0.3, d / 4); dz *= Math.max(0.3, d / 4); } // ease into the spot instead of overshooting
         }
         if (!t) b.face = Math.atan2(gx, gz);
       }
@@ -8719,8 +8873,16 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
       const l = Math.hypot(dx, dz);
       if (l > 1) { dx /= l; dz /= l; }
-      b.vel.x += (dx * speed - b.vel.x) * Math.min(1, dt * 8);
-      b.vel.z += (dz * speed - b.vel.z) * Math.min(1, dt * 8);
+      // calm walk when nothing is happening, full sprint when it matters (revive, medkit run, catching up)
+      const pace = speed * (!t && !b.urgent && !b.farLead && !reviving ? 0.68 : 1);
+      b.vel.x += (dx * pace - b.vel.x) * Math.min(1, dt * 7);
+      b.vel.z += (dz * pace - b.vel.z) * Math.min(1, dt * 7);
+      // turn like a person (fast, but never a snap); aim still goes straight at the target
+      if (!b.downed) {
+        const df = Math.atan2(Math.sin(b.face - prevFace), Math.cos(b.face - prevFace));
+        const mt = 11 * dt;
+        b.face = prevFace + Math.max(-mt, Math.min(mt, df));
+      }
       b.vel.y -= (world.moonT > 0 ? 9 : 26) * dt;
       // ladders: follow the leader up to the roof
       if (map.ladders && !b.downed) {
@@ -8749,6 +8911,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (hs === 1) {
         announceNow('⚠️ HORDE INCOMING!', '#f87171');
         sfx.play('siren');
+        sfx.play('braam', 1);
         sfx.setRush(true);
         pushFeed('🚨 A horde is coming · check the minimap and group up', '#f87171');
         buzz([60, 40, 60]);
@@ -8794,7 +8957,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           world.frenzyT = 25;
         } else {
           announceNow(`🧟 WAVE ${zd.wave}${zmode === 'incoming' ? '' : ` / ${ZOMBIE_RAID_WAVES}`}`, '#a3e635');
-          sfx.play('streak', 0.6);
+          sfx.play('braam', 0.8);
         }
       } else if (ph === 'clear') {
         announceNow(`✅ WAVE ${zd.wave} CLEARED`, '#4ade80');
@@ -9205,12 +9368,16 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
       g.fillStyle = '#facc15';
       (map.ladders || []).forEach(l => { const [x, y] = P(l.x, l.z); g.fillRect(x - 2, y - 2, 4, 4); });
-      g.fillStyle = 'rgba(74,222,128,0.85)';
+      // medkits: a bold green cross (pinned to the rim when off the map, so you always know which way to go)
       pickups.forEach(p => {
         if (p.kind !== 'medkit' || p.t > 0) return;
-        const [x, y] = P(p.x, p.z);
-        g.fillRect(x - 2.5, y - 0.8, 5, 1.6);
-        g.fillRect(x - 0.8, y - 2.5, 1.6, 5);
+        const [x, y] = edge(p.x, p.z, R - 7);
+        g.fillStyle = '#052e16';
+        g.fillRect(x - 4.5, y - 1.8, 9, 3.6);
+        g.fillRect(x - 1.8, y - 4.5, 3.6, 9);
+        g.fillStyle = '#4ade80';
+        g.fillRect(x - 3.5, y - 1, 7, 2);
+        g.fillRect(x - 1, y - 3.5, 2, 7);
       });
       g.fillStyle = '#4ade80';
       throwables.forEach(th => {
@@ -10190,6 +10357,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             dp.grp.position.y = 0;
             dp.grp.rotation.z = 0;
             dp.landed = true;
+            dp.landedAt = now;
             dp.chute.visible = false;
             dp.strings.visible = false;
             puff(new THREE.Vector3(dp.x, 0.5, dp.z), '#e7d3a8', 14, 6);
@@ -10941,6 +11109,21 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             huntSaid = true;
             pushFeed(`🎯 Last ${zombies.length} zombie${zombies.length > 1 ? 's' : ''} marked on your screen + minimap`, '#a3e635');
           } else if (!huntOn()) huntSaid = false;
+          // hurt and out of medkits: point at the nearest one (they mostly sit around the edge of the map)
+          if (!me.dead && !me.downed && me.hp < 60 && !((me.medkits || 0) > 0)) {
+            let mk = null, md = 1e9;
+            pickups.forEach(pk => {
+              if (pk.kind !== 'medkit' || pk.t > 0) return;
+              const d = Math.hypot(pk.x - me.pos.x, pk.z - me.pos.z);
+              if (d < md) { md = d; mk = pk; }
+            });
+            if (mk) {
+              zmarks.push({ k: '➕', c: '#4ade80', name: 'MEDKIT', ...proj(mk.x, mk.y + 1.6, mk.z) });
+              showTip('findmed', '➕ Low HP? Follow the green ➕ to the nearest medkit · teammates fetch them too');
+            }
+          }
+          // an airdropped golden AK nobody has picked up yet
+          drops.forEach(dp => { if (dp.landed && !me.dead) zmarks.push({ k: '👑', c: '#facc15', name: 'GOLD AK', ...proj(dp.x, 2.2, dp.z) }); });
           fighters.forEach(f => {
             if (f.isMe || !f.downed || f.dead) return;
             zmarks.push({ k: '🆘', c: '#f87171', name: f.name, ...proj(f.pos.x, f.pos.y + 2, f.pos.z) });
