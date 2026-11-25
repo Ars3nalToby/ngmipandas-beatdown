@@ -1031,7 +1031,7 @@ const sfx = (() => {
       load = l;
       if (!ctx) return;
       const t = ctx.currentTime;
-      if (musicOutG) musicOutG.gain.setTargetAtTime(l ? 0.26 : 0.4, t, 0.4);
+      if (musicOutG) musicOutG.gain.setTargetAtTime(l ? 0.34 : 0.4, t, 0.4);
       if (revInG) revInG.gain.setTargetAtTime(l ? 0.1 : 0.36, t, 0.4);
       if (dsendG) dsendG.gain.setTargetAtTime(l ? 0 : 0.3, t, 0.4);
     },
@@ -6739,7 +6739,13 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const dme = me.pos.distanceTo(point);
       me.shake = Math.max(me.shake, Math.max(0, (1.3 - dme / (22 * scale)) * Math.min(1.5, scale)));
       const spx = spatial(point, 90);
-      sfx.play('explode', Math.max(0.15, 1 - dme / 90), 1, spx.pan, Math.min(0.6, dme / 140));
+      // back-to-back blasts: skip the sound inside 120 ms, play it quieter inside 600 ms
+      // (the master compressor ducks EVERYTHING under each boom, so a boom every second buries the music)
+      const tB = performance.now(), gapB = tB - (world.boomSndAt || 0);
+      if (gapB > 120) {
+        world.boomSndAt = tB;
+        sfx.play('explode', Math.max(0.12, 1 - dme / 90) * (gapB < 600 ? 0.5 : 1), 1, spx.pan, Math.min(0.6, dme / 140));
+      }
       if (scale > 1.2) sfx.play('roar', Math.max(0.05, 0.35 - dme / 120), 2.2, spx.pan, 0);
       // snap scorch decal onto the ground or rooftop directly beneath the blast
       blastTmp.set(point.x, point.y + 0.25, point.z);
@@ -7087,7 +7093,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       spawnTracer(muzzle, res.point, b.golden ? 0xffc93c : 0xfff1a8);
       queueTracer(muzzle, res.point);
       const vol = Math.max(0, 1 - me.pos.distanceTo(b.pos) / 70);
-      play3d('shot_ak', b.pos, 0.5, 1, 70);
+      b.shotN = (b.shotN || 0) + 1;
+      if (botGunKey(b) !== 'gatling' || b.shotN % 3 === 0) play3d('shot_ak', b.pos, 0.5, 1, 70);
       b.protT = 0;
       if (res.zombie) {
         // squad bots hit zombies hard so they pull their weight; each gun has its own punch (BOT_GUN)
@@ -8608,6 +8615,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           let pick = null, pd = 1e9;
           for (const sp of pickups) {
             if (sp.t > 0 || sp.y > 1.5 || !SHOOT_WEAPONS[sp.kind] || isMelee(sp.kind) || weaponRank(sp.kind) <= myRank) continue;
+            if (sp.kind === 'rpg' && fighters.some(o => o !== b && o.isBot && o.wkey === 'rpg' && !o.golden)) continue; // one rocket man is plenty
             if (sp.claim && sp.claim !== b && !sp.claim.dead && fighters.includes(sp.claim)) continue;
             const d = Math.hypot(sp.x - b.pos.x, sp.z - b.pos.z);
             if (d > 42 || d >= pd) continue;
@@ -8749,17 +8757,18 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             const safe = fighters.every(f => f.dead || Math.hypot(f.pos.x - cx, f.pos.z - cz) > 6.5);
             const rd = Math.hypot(cx - b.pos.x, cz - b.pos.z);
             if (b.rk == null) b.rk = 3;
-            if (safe && rd > 7.5 && b.rk > 0 && (n >= 2 || big || rd > 14)) {
+            const squadGap = performance.now() - (world.botRkAt || 0) > 1400; // the whole squad: at most one bot rocket per 1.4 s
+            if (safe && squadGap && rd > 7.5 && b.rk > 0 && (n >= 3 || big || (n >= 2 && rd > 14))) {
+              world.botRkAt = performance.now();
               b.face = Math.atan2(cx - b.pos.x, cz - b.pos.z);
               const fx0 = Math.sin(b.face), fz0 = Math.cos(b.face);
               const mz = new THREE.Vector3(b.pos.x + fx0 * 1.2, b.pos.y + 1.7, b.pos.z + fz0 * 1.2);
               const aim = new THREE.Vector3(cx, t.pos.y + 0.9, cz);
               fireRocket(mz, aim.sub(mz).normalize(), b);
               sfx.play('shot_rpg', Math.max(0, 1 - me.pos.distanceTo(b.pos) / 70) * 0.6);
-              b.fireCd = 1.2 + Math.random() * 0.6;
-              if (n >= 3) callout(b, 'rocket');
-              if (world.frenzyT > 0) b.rk = 3;
-              else if (--b.rk <= 0) { b.reloadT = 1.4; b.rk = 3; }
+              b.fireCd = 1.9 + Math.random() * 0.8;
+              if (n >= 4) callout(b, 'rocket');
+              if (--b.rk <= 0) { b.reloadT = world.frenzyT > 0 ? 0.8 : 1.6; b.rk = 3; }
             } else {
               if (b.burst > 0) { b.burst -= 1; b.fireCd = 0.1; } else { b.burst = 4 + Math.floor(Math.random() * 3); b.fireCd = 0.12 + Math.random() * 0.15; }
               botShoot(b, t); // sidearm
@@ -10615,7 +10624,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 if (got === null) {
                   if (now - (me.fullMsgAt || 0) > 2500) {
                     me.fullMsgAt = now;
-                    announceNow(`🎒 SLOTS FULL · ${IS_TOUCH ? 'tap 🔄 SWAP' : 'press X'} to trade your gun`, '#94a3b8');
+                    announceNow(`🎒 SLOTS FULL · ${IS_TOUCH ? 'tap the green SWAP button' : 'press X'} to trade your gun`, '#94a3b8');
                   }
                   return;
                 }
@@ -11173,7 +11182,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             return { k: o.key, x: Math.max(4, Math.min(96, x)), y: Math.max(10, Math.min(90, y)), d: Math.round(Math.hypot(o.x - me.pos.x, o.z - me.pos.z)) };
           })(),
           scope: w.key === 'sniper' && me.adsT > 0.8 && !me.dead,
-          swapGun: me.swapKind && SHOOT_WEAPONS[me.swapKind] ? SHOOT_WEAPONS[me.swapKind].icon : '',
+          swapGun: me.swapKind && SHOOT_WEAPONS[me.swapKind] && !me.dead && !me.downed ? `${SHOOT_WEAPONS[me.swapKind].icon} ${SHOOT_WEAPONS[me.swapKind].short}` : '',
+          swapOut: me.swapKind && gunToTrade() >= 0 ? SHOOT_WEAPONS[me.weapons[gunToTrade()].key].short : '',
           weapons: me.weapons.map((wp, i) => ({ key: wp.key, short: wp.dual ? 'DUAL RPG' : SHOOT_WEAPONS[wp.key].short, icon: wp.dual ? '🚀🚀' : SHOOT_WEAPONS[wp.key].icon, active: i === me.slot })),
           moon: Math.max(0, Math.ceil(world.moonT)),
           bull: Math.max(0, Math.ceil(world.bullT)),
@@ -11527,6 +11537,15 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           </div>
         </div>
       )}
+      {hud.swapGun && !hud.reviveHint && !hud.downed && !results && (
+        <button
+          className="touch-btn absolute left-1/2 top-[58%] -translate-x-1/2 pointer-events-auto z-30 text-center font-black px-5 py-2 rounded-2xl bg-emerald-400 text-slate-950 border-4 border-white shadow-2xl cursor-pointer"
+          onPointerDown={e => { e.stopPropagation(); c.trade = true; }}
+        >
+          <span className="block text-lg md:text-2xl leading-tight">🔄 {IS_TOUCH ? 'TAP TO SWAP' : 'PRESS X TO SWAP'}</span>
+          <span className="block text-xs md:text-sm">{hud.swapOut} → {hud.swapGun}</span>
+        </button>
+      )}
       {hud.reviveHint && !hud.reviving && !hud.downed && !results && (
         <div className="absolute left-1/2 top-[60%] -translate-x-1/2 pointer-events-none z-20 text-center">
           <div className="text-lg md:text-3xl font-black px-5 py-2 rounded-2xl bg-emerald-500/95 text-slate-950 border-4 border-white shadow-2xl animate-pulse">💚 HOLD {IS_TOUCH ? 'THE REVIVE BUTTON' : 'LEFT CLICK'}<span className="block text-base md:text-xl">to revive {hud.reviveHint}</span></div>
@@ -11825,7 +11844,6 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 ['nade', hud.nades > 0 ? `💣${hud.nades}` : `💣${hud.nadeCd || 1}s`, 'right-[176px] bottom-[8px]', () => { c.nade = true; }, 56, `${hud.nades ? 'bg-lime-400/90 text-slate-900 border-lime-100 text-sm' : 'bg-slate-900/80 text-slate-300 border-white/45 text-[11px]'}`],
                 ...(hud.ushove ? [['shove', '✋', 'right-[176px] bottom-[70px]', () => { c.shove = true; }, 56, 'bg-amber-400/90 border-amber-100 text-slate-900 text-2xl']] : []),
                 ...(hud.zombie ? [['med', `➕${hud.meds}`, 'right-[176px] bottom-[132px]', () => { c.med = true; }, 56, `${hud.meds ? 'bg-rose-400/90 text-slate-900 border-rose-100' : 'bg-slate-900/75 text-slate-400 border-white/40'} text-sm`]] : []),
-                ...(hud.swapGun ? [['trade', <span className="leading-tight block text-[11px]">{hud.swapGun}<br />SWAP</span>, 'right-[12px] bottom-[226px]', () => { c.trade = true; }, 60, 'bg-emerald-400 text-slate-950 border-white ring-4 ring-emerald-200/70 animate-pulse']] : []),
                 ...(hud.strike ? [['strike', '☄️', 'right-[12px] bottom-[166px]', () => { c.strike = true; }, 52, 'bg-rose-600/90 border-amber-300 text-xl animate-pulse']] : []),
                 ...(variant === 'zombie' && hud.uoffice ? [['office', hud.office === 0 ? '📞' : `📞${hud.office}`, 'right-[68px] bottom-[166px]', () => { c.office = true; }, 52, hud.office === 0 ? 'bg-amber-500/95 text-slate-950 border-amber-100 text-xl' : 'bg-slate-900/75 border-white/45 text-[11px] opacity-80']] : [])
               ].map(([k, label, pos, fn, size, cls]) => (
