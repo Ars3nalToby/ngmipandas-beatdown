@@ -1536,8 +1536,11 @@ const POWERUPS = [
   { id: 'hammer', icon: '🔨', label: 'BAN HAMMER! 5 SWINGS (E)', color: '#eab308' },
   { id: 'launcher', icon: '🧨', label: 'RUG ROCKET! 3 SHOTS (E)', color: '#ef4444' },
   { id: 'hammer', icon: '🔨', label: 'BAN HAMMER! 5 SWINGS (E)', color: '#eab308' },
-  { id: 'launcher', icon: '🧨', label: 'RUG ROCKET! 3 SHOTS (E)', color: '#ef4444' }
+  { id: 'launcher', icon: '🧨', label: 'RUG ROCKET! 3 SHOTS (E)', color: '#ef4444' },
+  { id: 'liquidator', icon: '⚡', label: 'LIQUIDATOR! 6 MEGA SLAMS (E)', color: '#a855f7' }
 ];
+// Beatdown hand weapons (also the whitelist for weapon kinds arriving over the network)
+const BD_WEAPONS = { hammer: { icon: '🔨', label: 'HAMMER', uses: 5 }, launcher: { icon: '🧨', label: 'ROCKET', uses: 3 }, liquidator: { icon: '⚡', label: 'LIQUIDATOR', uses: 6 } };
 
 // canvas textures are expensive to draw and upload mid-match, so identical ones are built once
 const TEX_CACHE = new Map();
@@ -12871,7 +12874,11 @@ function App() {
         sfx.play('hit', vol, 0.85 + Math.random() * 0.4);
       }
       if (!target.isLocal && !target.isBot) {
-        // remote fighter: its owner applies the knockback with its own %
+        // remote fighter: its owner applies the knockback with its own %.
+        // Meanwhile predict it on my screen so my hit lands instantly (no round-trip lag).
+        target.pred = { vx: dirX * kb, vz: dirZ * kb, vy: Math.max(0, upward + kb * 0.16), t: Math.min(0.42, 0.22 + kb / 220) };
+        target.squash = Math.max(target.squash || 0, Math.min(0.55, kb / 45));
+        if (attacker.isLocal) fx.shake = Math.min(1.6, fx.shake + kb / 60);
         send({ t: 'h', id: myIdRef.current, to: target.id, from: attacker.id, dx: dirX, dz: dirZ, b: base, u: upward, dm: dmgAdd, pw: attacker.pandaClass.power * (attacker.buffs.pump > 0 ? 1.7 : 1), fl: base > 8 ? 1 : 0 });
         return kb;
       }
@@ -13038,6 +13045,30 @@ function App() {
         g.add(handle, headM, plate);
         g.rotation.x = 0.9;
         g.position.set(0.1, -0.1, 0.55);
+      } else if (kind === 'liquidator') {
+        // LIQUIDATOR: oversized war hammer with a glowing violet core and spiked faces
+        const metal = new THREE.MeshStandardMaterial({ color: 0x2a2140, metalness: 0.9, roughness: 0.3 });
+        const glow = new THREE.MeshStandardMaterial({ color: 0xc084fc, emissive: 0xa855f7, emissiveIntensity: 1.6 });
+        const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 1.9, 8), metal);
+        handle.position.y = 0.7;
+        const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.5, 8), new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 }));
+        grip.position.y = 0.1;
+        const headM = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.6, 0.6), metal);
+        headM.position.y = 1.7;
+        const core = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.18, 0.64), glow);
+        core.position.y = 1.7;
+        g.add(handle, grip, headM, core);
+        [-1, 1].forEach(sd => {
+          const spike = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.45, 6), glow);
+          spike.rotation.z = -sd * Math.PI / 2;
+          spike.position.set(sd * 0.8, 1.7, 0);
+          g.add(spike);
+        });
+        const tip = new THREE.Mesh(new THREE.OctahedronGeometry(0.2), glow);
+        tip.position.y = 2.15;
+        g.add(tip);
+        g.rotation.x = 0.9;
+        g.position.set(0.1, -0.1, 0.55);
       } else {
         const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 1.5, 14), new THREE.MeshStandardMaterial({ color: 0x2f3a2a, roughness: 0.55, metalness: 0.4 }));
         tube.rotation.x = Math.PI / 2;
@@ -13055,7 +13086,7 @@ function App() {
       }
       const mesh = makeWeaponMesh(kind);
       f.mesh.userData.rightArmGroup.add(mesh);
-      f.weapon = { kind, uses: kind === 'hammer' ? 5 : 3, cd: 0, mesh, swing: 0 };
+      f.weapon = { kind, uses: (BD_WEAPONS[kind] || BD_WEAPONS.launcher).uses, cd: 0, mesh, swing: 0 };
     };
     const dropWeapon = f => {
       if (!f.weapon) return;
@@ -13068,17 +13099,37 @@ function App() {
       const r = f.mesh.rotation.y;
       return [Math.sin(r), Math.cos(r)];
     };
-    const useWeapon = f => {
+    // ghost = another player's swing seen on my screen: visuals only (their client sends the hits)
+    const useWeapon = (f, ghost) => {
       const w = f.weapon;
-      if (!w || w.cd > 0 || w.uses <= 0) return false;
+      if (!w) return false;
+      if (!ghost && (w.cd > 0 || w.uses <= 0)) return false;
       const [fx0, fz0] = forwardOf(f);
       const p = f.mesh.position;
-      if (w.kind === 'hammer') {
+      if (w.kind === 'liquidator') {
+        w.cd = 0.5;
+        w.swing = 0.3;
+        sfx.play('smash', f.isLocal ? 1 : volAt(p) * 0.6, 0.7);
+        sfx.play('crit', f.isLocal ? 0.8 : volAt(p) * 0.45);
+        triggerShockwave(p.x, p.z, 0xa855f7, 11);
+        burst(p.x, 0.8, p.z, '#c084fc', 22, 15);
+        burst(p.x + fx0 * 3, 1, p.z + fz0 * 3, '#ffffff', 10, 12);
+        if (f.isLocal) { fx.shake = Math.min(1.6, fx.shake + 0.7); flash(0.25); buzz(20); }
+        if (!ghost) fighters.forEach(o => {
+          if (o.id === f.id || o.respawnLock > 0 || Math.abs(o.mesh.position.y - p.y) > 3.2) return;
+          const dx = o.mesh.position.x - p.x, dz = o.mesh.position.z - p.z;
+          const d = Math.hypot(dx, dz);
+          if (d < 0.01) return;
+          const front = (dx * fx0 + dz * fz0) / d > 0.35;
+          // a full 360° slam around you, reaching further in the direction you face
+          if (d < 7.5 || (front && d < 10)) launch(o, f, dx / d, dz / d, 22, 13, Math.round(26 - 8 * Math.min(1, d / 10)));
+        });
+      } else if (w.kind === 'hammer') {
         w.cd = 0.45;
         w.swing = 0.3;
         sfx.play('smash', f.isLocal ? 0.9 : volAt(p) * 0.5);
         burst(p.x + fx0 * 3, 0.8, p.z + fz0 * 3, '#ffb347', 10, 8);
-        fighters.forEach(o => {
+        if (!ghost) fighters.forEach(o => {
           if (o.id === f.id || o.respawnLock > 0 || Math.abs(o.mesh.position.y - p.y) > 2.6) return;
           const dx = o.mesh.position.x - p.x, dz = o.mesh.position.z - p.z;
           const d = Math.hypot(dx, dz);
@@ -13091,20 +13142,21 @@ function App() {
         const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.32, 12, 10), new THREE.MeshBasicMaterial({ color: 0xffb070 }));
         mesh.position.set(p.x + fx0 * 2.2, p.y + 1.6, p.z + fz0 * 2.2);
         scene.add(mesh);
-        projectiles.push({ mesh, owner: f, vx: fx0 * 38, vz: fz0 * 38, life: 1.3 });
+        projectiles.push({ mesh, owner: f, vx: fx0 * 38, vz: fz0 * 38, life: 1.3, ghost: !!ghost });
         sfx.play('swarm', f.isLocal ? 0.7 : volAt(p) * 0.4);
         if (f.isLocal) fx.shake = Math.min(1.6, fx.shake + 0.25);
       }
+      if (ghost) return true;
       w.uses -= 1;
       if (w.uses <= 0) bdLater(() => { if (f.weapon === w) dropWeapon(f); }, 350);
       return true;
     };
-    const explode = (x, z, owner) => {
+    const explode = (x, z, owner, ghost) => {
       triggerShockwave(x, z, 0xff6a2a, 7);
       burst(x, 1, z, '#ff6a2a', 26, 16);
       burst(x, 1, z, '#ffd27a', 12, 10);
       sfx.play('crit', owner.isLocal ? 1 : volAt(new THREE.Vector3(x, 0, z)) * 0.7);
-      fighters.forEach(o => {
+      if (!ghost) fighters.forEach(o => {
         if (o.id === owner.id) return;
         const dx = o.mesh.position.x - x, dz = o.mesh.position.z - z;
         const d = Math.hypot(dx, dz);
@@ -13156,7 +13208,7 @@ function App() {
       if (type.id === 'burger') f.buffs.speed = 7;
       if (type.id === 'diamond') f.buffs.armor = 8;
       if (type.id === 'rocket') f.buffs.pump = 6;
-      if (type.id === 'hammer' || type.id === 'launcher') giveWeapon(f, type.id);
+      if (BD_WEAPONS[type.id]) giveWeapon(f, type.id);
       if (type.id === 'gift') {
         addMinionToFighter(f);
         addMinionToFighter(f);
@@ -13199,6 +13251,14 @@ function App() {
       f.targetX = netNum(d.x, -120, 120);
       f.targetY = netNum(d.y, -60, 80);
       f.targetZ = netNum(d.z, -120, 120);
+      // velocity lets us draw them where they are NOW, not where they were one packet ago
+      f.netVx = netNum(d.vx, -150, 150, 0);
+      f.netVy = netNum(d.vy, -150, 150, 0);
+      f.netVz = netNum(d.vz, -150, 150, 0);
+      f.netAt = performance.now();
+      const wk = typeof d.w === 'string' && BD_WEAPONS[d.w] ? d.w : null;
+      if (wk && (!f.weapon || f.weapon.kind !== wk)) giveWeapon(f, wk);
+      else if (!wk && f.weapon && d.w !== undefined) dropWeapon(f);
       f.dmg = netNum(d.d, 0, 999);
       f.kos = Math.round(netNum(d.k, 0, 999));
       f.deaths = Math.round(netNum(d.dt, 0, 999));
@@ -13221,7 +13281,9 @@ function App() {
         client = window.mqtt.connect(MQTT_URL, {
           clientId: `ngmi_${myIdRef.current}`,
           clean: true,
-          connectTimeout: 4000
+          connectTimeout: 4000,
+          keepalive: 20,
+          reconnectPeriod: 1200
         });
         client.__topic = topic;
         mqttClientRef.current = client;
@@ -13253,6 +13315,7 @@ function App() {
           if (evs.includes('dash')) doDash(f, Math.sin(f.mesh.rotation.y), Math.cos(f.mesh.rotation.y));
           if (evs.includes('punch')) { f.punchAnim = 0.25; sfx.play('dash', volAt(f.mesh.position) * 0.3, 1.1); }
           if (evs.includes('cannon')) fireCannon(f);
+          if (evs.includes('w')) useWeapon(f, true);
           if (evs.includes('tornado')) startTornado(f);
           if (evs.includes('smash')) {
             triggerShockwave(f.mesh.position.x, f.mesh.position.z, f.gangColor, 9);
@@ -13884,7 +13947,7 @@ function App() {
 
       if (live('smash') && !frozen) {
         if (localFighter.weapon) {
-          if (useWeapon(localFighter)) used('smash');
+          if (useWeapon(localFighter)) { used('smash'); netEvents.push('w'); }
         } else if (cdState.smash <= 0 && !tumbling) {
           used('smash');
           cdState.smash = CD_MAX.smash;
@@ -13931,7 +13994,7 @@ function App() {
 
       if (live('punch') && !frozen) {
         if (localFighter.weapon) {
-          if (useWeapon(localFighter)) used('punch');
+          if (useWeapon(localFighter)) { used('punch'); netEvents.push('w'); }
         } else if (cdState.punch <= 0 && !tumbling && localFighter.stun <= 0.1) {
           used('punch');
           if (localFighter.grabT > 0 && doGrab(localFighter, true)) {
@@ -14040,7 +14103,7 @@ function App() {
               const d = o.mesh.position.distanceTo(f.mesh.position);
               if (d < nd) { nd = d; near = o; }
             });
-            if (near && ((f.weapon.kind === 'hammer' && nd < 5) || (f.weapon.kind === 'launcher' && nd < 26 && nd > 5))) {
+            if (near && ((f.weapon.kind === 'hammer' && nd < 5) || (f.weapon.kind === 'liquidator' && nd < 6.5) || (f.weapon.kind === 'launcher' && nd < 26 && nd > 5))) {
               f.mesh.rotation.y = Math.atan2(near.mesh.position.x - f.mesh.position.x, near.mesh.position.z - f.mesh.position.z);
               if (Math.random() < 4.8 * dt) useWeapon(f);
             }
@@ -14191,12 +14254,34 @@ function App() {
             f.vz += ((f.aiDirZ || 0) * botSpeed - f.vz) * 4 * dt;
           }
         } else if (!f.isLocal && f.targetX !== undefined) {
-          const ox = f.mesh.position.x, oz = f.mesh.position.z;
-          f.mesh.position.x += (f.targetX - f.mesh.position.x) * 12 * dt;
-          f.mesh.position.z += (f.targetZ - f.mesh.position.z) * 12 * dt;
-          f.mesh.position.y += ((f.targetY || 0) - f.mesh.position.y) * 12 * dt;
-          f.vx = (f.mesh.position.x - ox) / Math.max(dt, 0.001);
-          f.vz = (f.mesh.position.z - oz) / Math.max(dt, 0.001);
+          const rp = f.mesh.position;
+          const ox = rp.x, oz = rp.z;
+          if (f.pred && f.pred.t > 0) {
+            // I just hit them: show the knockback right away instead of waiting a network round trip.
+            // Their own client sends the real result a moment later and we blend into it.
+            const pr = f.pred;
+            pr.t -= dt;
+            rp.x += pr.vx * dt;
+            rp.z += pr.vz * dt;
+            rp.y = Math.max(0, rp.y + pr.vy * dt);
+            pr.vy -= 38 * dt;
+            pr.vx *= Math.exp(-2.2 * dt);
+            pr.vz *= Math.exp(-2.2 * dt);
+          } else {
+            // dead reckoning: last known position + velocity × packet age (capped so a lost packet can't fling them)
+            const age = Math.min(0.14, Math.max(0, (performance.now() - (f.netAt || 0)) / 1000));
+            const tx = f.targetX + (f.netVx || 0) * age;
+            const tz = f.targetZ + (f.netVz || 0) * age;
+            const grounded = (f.targetY || 0) <= 0.05 && (f.netVy || 0) <= 0;
+            const ty = grounded ? (f.targetY || 0) : (f.targetY || 0) + (f.netVy || 0) * age - 19 * age * age;
+            if (Math.hypot(tx - rp.x, tz - rp.z) > 9) { rp.x = tx; rp.z = tz; rp.y = ty; }
+            const k = 1 - Math.exp(-18 * dt);
+            rp.x += (tx - rp.x) * k;
+            rp.z += (tz - rp.z) * k;
+            rp.y += (ty - rp.y) * k;
+          }
+          f.vx = (rp.x - ox) / Math.max(dt, 0.001);
+          f.vz = (rp.z - oz) / Math.max(dt, 0.001);
         }
 
         if (f.isLocal || f.isBot) {
@@ -14492,7 +14577,7 @@ function App() {
         if (Math.random() < 0.8) burst(pr.mesh.position.x, pr.mesh.position.y, pr.mesh.position.z, '#ffb070', 1, 0.8);
         const hit = fighters.find(o => o.id !== pr.owner.id && o.respawnLock <= 0 && Math.hypot(o.mesh.position.x - pr.mesh.position.x, o.mesh.position.z - pr.mesh.position.z) < 1.9 && Math.abs(o.mesh.position.y + 1.2 - pr.mesh.position.y) < 3);
         if (hit || pr.life <= 0) {
-          explode(pr.mesh.position.x, pr.mesh.position.z, pr.owner);
+          explode(pr.mesh.position.x, pr.mesh.position.z, pr.owner, pr.ghost);
           scene.remove(pr.mesh);
           disposeObj(pr.mesh);
           projectiles.splice(i, 1);
@@ -14601,15 +14686,15 @@ function App() {
         if (len > 1e-4) sp.beam.quaternion.setFromUnitVectors(BEAM_DOWN, spotDir.divideScalar(len));
       });
 
-      if (now - lastNetBroadcast > 66 || netEvents.length) {
+      if (now - lastNetBroadcast > 45 || netEvents.length) { // ~22 updates/s (was 15)
         lastNetBroadcast = now;
         const r2 = v => Math.round(v * 100) / 100;
         const lp = localFighter.mesh.position;
-        const pkt = { t: 's', id: myIdRef.current, name: playerName, c: selectedClass.id, cos: prof.cosmetic, x: r2(lp.x), y: r2(lp.y), z: r2(lp.z), d: Math.round(localFighter.dmg), m: localFighter.minions.length, k: localFighter.kos, dt: localFighter.deaths, st: localFighter.streak || 0, ev: netEvents.length ? netEvents.join(',') : null };
+        const pkt = { t: 's', id: myIdRef.current, name: playerName, c: selectedClass.id, cos: prof.cosmetic, x: r2(lp.x), y: r2(lp.y), z: r2(lp.z), d: Math.round(localFighter.dmg), m: localFighter.minions.length, k: localFighter.kos, dt: localFighter.deaths, st: localFighter.streak || 0, ev: netEvents.length ? netEvents.join(',') : null, vx: r2(localFighter.vx), vy: r2(localFighter.vy), vz: r2(localFighter.vz), w: localFighter.weapon ? localFighter.weapon.kind : 0 };
         if (net.isHost) {
           pkt.left = Math.round(match.left * 10) / 10;
           pkt.ov = match.over ? 1 : 0;
-          pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.pandaClass.id, x: r2(b.mesh.position.x), y: r2(b.mesh.position.y), z: r2(b.mesh.position.z), d: Math.round(b.dmg), m: b.minions.length, k: b.kos, dt: b.deaths, st: b.streak || 0 }));
+          pkt.b = fighters.filter(f => f.isBot).map(b => ({ i: b.id, n: b.name, c: b.pandaClass.id, x: r2(b.mesh.position.x), y: r2(b.mesh.position.y), z: r2(b.mesh.position.z), d: Math.round(b.dmg), m: b.minions.length, k: b.kos, dt: b.deaths, st: b.streak || 0, vx: r2(b.vx), vy: r2(b.vy), vz: r2(b.vz), w: b.weapon ? b.weapon.kind : 0 }));
         }
         send(pkt);
       }
@@ -14647,7 +14732,7 @@ function App() {
         if (b.speed > 0) hud.push(`🍔 ${b.speed.toFixed(0)}s`);
         if (b.armor > 0) hud.push(`💎 ${b.armor.toFixed(0)}s`);
         if (b.pump > 0) hud.push(`🚀 ${b.pump.toFixed(0)}s`);
-        if (localFighter.weapon) hud.push(`${localFighter.weapon.kind === 'hammer' ? '🔨' : '🧨'} x${localFighter.weapon.uses}${IS_TOUCH ? '' : ' · E'}`);
+        if (localFighter.weapon) hud.push(`${(BD_WEAPONS[localFighter.weapon.kind] || BD_WEAPONS.launcher).icon} x${localFighter.weapon.uses}${IS_TOUCH ? '' : ' · E'}`);
         setBuffHud(prevHud => (prevHud.length === hud.length && prevHud.every((x, i) => x === hud[i]) ? prevHud : hud));
         let nearest = 999;
         fighters.forEach(o => {
@@ -15405,8 +15490,8 @@ function App() {
 
       {screen === 'playing' && (() => {
         const [wKind, wUses] = cooldowns.weapon ? cooldowns.weapon.split(':') : ['', ''];
-        const wIcon = wKind === 'hammer' ? '🔨' : wKind === 'launcher' ? '🧨' : '';
-        const wLabel = wKind === 'hammer' ? 'HAMMER' : wKind === 'launcher' ? 'ROCKET' : '';
+        const wIcon = BD_WEAPONS[wKind] ? BD_WEAPONS[wKind].icon : '';
+        const wLabel = BD_WEAPONS[wKind] ? BD_WEAPONS[wKind].label : '';
         const wUsesNum = wUses ? Number(wUses) : undefined;
         return (
         <div className="game-layer absolute inset-0 z-10 pointer-events-none safe-top safe-bottom safe-x">
