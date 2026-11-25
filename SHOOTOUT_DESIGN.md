@@ -65,6 +65,8 @@ Rank: pistol 1 · revolver/smg 2 · shotgun/rifle/flamer 3 · ak/sniper 4 · gat
 | Dual RPG | RPG | Refill only |
 | 5 slots full | Better gun | Replaces the **weakest** gun, never the RPG |
 | 5 slots full | Gun no better than your weakest | Not picked up (stays on the floor, "SLOTS FULL" hint) |
+| 5 slots full | Any gun you choose to take | **Player SWAP** (X / touch 🔄 SWAP, button only shows while standing on it): trades the gun in your hands; if holding the RPG or a hand weapon, trades your weakest gun. The RPG is never traded |
+| Anywhere | X with no gun underfoot | **DROP** the gun in your hands to free a slot (never the RPG, never your last gun) |
 
 ### 3.3 RPG behaviour
 - Splash damage clears groups of zombies.

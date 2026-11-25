@@ -6991,6 +6991,41 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       }
       return '';
     };
+    // Player-chosen trade (never automatic, so the pickup rules still hold): the gun in your hands
+    // goes, the new one comes in. The RPG is never traded; holding it or a hand weapon trades your weakest gun.
+    const gunToTrade = () => {
+      const cur = me.weapons[me.slot];
+      if (cur && cur.key !== 'rpg' && !isMelee(cur.key)) return me.slot;
+      let lo = -1;
+      me.weapons.forEach((w, j) => {
+        if (w.key === 'rpg' || isMelee(w.key)) return;
+        if (lo < 0 || weaponRank(w.key) < weaponRank(me.weapons[lo].key)) lo = j;
+      });
+      return lo;
+    };
+    const swapWeapon = key => {
+      const j = gunToTrade();
+      if (j < 0) return null;
+      const old = me.weapons[j].key;
+      me.weapons[j] = { key, mag: SHOOT_WEAPONS[key].mag };
+      me.lastSlot = undefined;
+      selectSlot(j, true);
+      return `🔄 ${SHOOT_WEAPONS[old].short} → ${SHOOT_WEAPONS[key].short}`;
+    };
+    // drop the gun in your hands to free a slot (never the RPG, never your last gun)
+    const dropHeldGun = () => {
+      const cur = me.weapons[me.slot];
+      const guns = me.weapons.filter(w => !isMelee(w.key)).length;
+      if (!cur || cur.key === 'rpg' || isMelee(cur.key) || guns <= 1) {
+        announceNow(cur && cur.key === 'rpg' ? '🚀 The RPG stays with you' : '✋ Nothing to drop', '#94a3b8');
+        return;
+      }
+      me.weapons.splice(me.slot, 1);
+      me.lastSlot = undefined;
+      me.slot = -1;
+      selectSlot(Math.max(0, me.weapons.findIndex(w => !isMelee(w.key))), true);
+      announceNow(`🗑️ DROPPED ${SHOOT_WEAPONS[cur.key].short} · slot free`, '#94a3b8');
+    };
     const botShoot = (b, t) => {
       const fx0 = Math.sin(b.face), fz0 = Math.cos(b.face);
       const muzzle = new THREE.Vector3(b.pos.x + fx0 * 0.9 + fz0 * 0.35, b.pos.y + 1.45, b.pos.z + fz0 * 0.9 - fx0 * 0.35);
@@ -9627,6 +9662,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       if (e.code === 'KeyH') c.med = true;
       if (e.code === 'KeyT') c.onme = true;
       if (e.code === 'KeyQ') c.swap = true;
+      if (e.code === 'KeyX') c.trade = true;
       if (/^Digit[1-6]$/.test(e.code)) {
         const n = Number(e.code.slice(5)) - 1;
         // 6 always means "my hand weapon", wherever it sits in the list
@@ -10378,6 +10414,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         me.adsT += ((c.ads && me.reloadT <= 0 && !def.melee ? 1 : 0) - me.adsT) * Math.min(1, dt * 10);
 
         // pickups
+        const wantTrade = !!c.trade;
+        c.trade = false;
+        let tradeTaken = false;
+        me.swapKind = null;
         pickups.forEach((p, pi) => {
           if (p.t > 0) {
             p.t -= dt;
@@ -10399,14 +10439,20 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               if (me.grenades >= 4) return;
               me.grenades = Math.min(4, me.grenades + 2);
             } else {
-              const got = addWeapon(p.kind);
+              let got = addWeapon(p.kind);
               if (got === null) {
-                // inventory full and this gun is no upgrade: leave it on the floor
-                if (now - (me.fullMsgAt || 0) > 2500) {
-                  me.fullMsgAt = now;
-                  announceNow('🎒 SLOTS FULL · this gun is no better than yours', '#94a3b8');
+                // inventory full and this gun is no upgrade: the player can still choose to SWAP for it
+                me.swapKind = p.kind;
+                if (wantTrade && !tradeTaken) got = swapWeapon(p.kind);
+                if (got === null) {
+                  if (now - (me.fullMsgAt || 0) > 2500) {
+                    me.fullMsgAt = now;
+                    announceNow(`🎒 SLOTS FULL · ${IS_TOUCH ? 'tap 🔄 SWAP' : 'press X'} to trade your gun`, '#94a3b8');
+                  }
+                  return;
                 }
-                return;
+                tradeTaken = true;
+                me.swapKind = null;
               }
               pickMsg = got;
             }
@@ -10417,6 +10463,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             sfx.play('powerup');
           }
         });
+        // X away from any gun on the floor = drop the gun in your hands
+        if (wantTrade && !tradeTaken && !me.swapKind && !me.dead && !me.downed && !match.over) dropHeldGun();
       }
       if (c.strike && me.strikeReady && !me.dead && !me.downed && !frozen) callStrike();
       c.strike = false;
@@ -10942,6 +10990,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             return { k: o.key, x: Math.max(4, Math.min(96, x)), y: Math.max(10, Math.min(90, y)), d: Math.round(Math.hypot(o.x - me.pos.x, o.z - me.pos.z)) };
           })(),
           scope: w.key === 'sniper' && me.adsT > 0.8 && !me.dead,
+          swapGun: me.swapKind && SHOOT_WEAPONS[me.swapKind] ? SHOOT_WEAPONS[me.swapKind].icon : '',
           weapons: me.weapons.map((wp, i) => ({ key: wp.key, short: wp.dual ? 'DUAL RPG' : SHOOT_WEAPONS[wp.key].short, icon: wp.dual ? '🚀🚀' : SHOOT_WEAPONS[wp.key].icon, active: i === me.slot })),
           moon: Math.max(0, Math.ceil(world.moonT)),
           bull: Math.max(0, Math.ceil(world.bullT)),
@@ -11403,6 +11452,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               <span className="flex gap-1"><span className="keycap">W</span><span className="keycap">A</span><span className="keycap">S</span><span className="keycap">D</span></span><span>Move · <span className="keycap">SHIFT</span> sprint</span>
               <span className="keycap">MOUSE</span><span>Aim · left click shoot · <b>right click SHOVE</b> · hold Z to aim down sights · 6 = hand weapon</span>
               <span className="keycap">WHEEL</span><span>Switch weapon (or <span className="keycap">1</span>–<span className="keycap">5</span>, <span className="keycap">Q</span> last gun)</span>
+              <span className="keycap">X</span><span>Swap for the gun you stand on · elsewhere: drop the gun in your hands</span>
               <span className="keycap">SPACE</span><span>Jump · cyan pads launch you onto rooftops</span>
               <span className="keycap">R</span><span>Reload · ammo is endless</span>
               <span className="keycap">F</span><span>Throw a grenade 💣 (recharges automatically)</span>
@@ -11592,6 +11642,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
                 ['nade', hud.nades > 0 ? `💣${hud.nades}` : `💣${hud.nadeCd || 1}s`, 'right-[176px] bottom-[8px]', () => { c.nade = true; }, 56, `${hud.nades ? 'bg-lime-400/90 text-slate-900 border-lime-100 text-sm' : 'bg-slate-900/80 text-slate-300 border-white/45 text-[11px]'}`],
                 ...(hud.ushove ? [['shove', '✋', 'right-[176px] bottom-[70px]', () => { c.shove = true; }, 56, 'bg-amber-400/90 border-amber-100 text-slate-900 text-2xl']] : []),
                 ...(hud.zombie ? [['med', `➕${hud.meds}`, 'right-[176px] bottom-[132px]', () => { c.med = true; }, 56, `${hud.meds ? 'bg-rose-400/90 text-slate-900 border-rose-100' : 'bg-slate-900/75 text-slate-400 border-white/40'} text-sm`]] : []),
+                ...(hud.swapGun ? [['trade', <span className="leading-tight block text-[11px]">{hud.swapGun}<br />SWAP</span>, 'right-[12px] bottom-[226px]', () => { c.trade = true; }, 60, 'bg-emerald-400 text-slate-950 border-white ring-4 ring-emerald-200/70 animate-pulse']] : []),
                 ...(hud.strike ? [['strike', '☄️', 'right-[12px] bottom-[166px]', () => { c.strike = true; }, 52, 'bg-rose-600/90 border-amber-300 text-xl animate-pulse']] : []),
                 ...(variant === 'zombie' && hud.uoffice ? [['office', hud.office === 0 ? '📞' : `📞${hud.office}`, 'right-[68px] bottom-[166px]', () => { c.office = true; }, 52, hud.office === 0 ? 'bg-amber-500/95 text-slate-950 border-amber-100 text-xl' : 'bg-slate-900/75 border-white/45 text-[11px] opacity-80']] : [])
               ].map(([k, label, pos, fn, size, cls]) => (
