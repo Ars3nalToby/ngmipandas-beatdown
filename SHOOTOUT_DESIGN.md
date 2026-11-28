@@ -108,6 +108,8 @@ Rank: pistol 1 · revolver/smg 2 · shotgun/rifle/flamer 3 · ak/sniper 4 · gat
 | Runner | Fast, low health |
 | Brute | Big, slow, tanky |
 | Boss | Co-op target, large, attack patterns |
+| Bloater / Crawler / Spitter | Pop at range / low and fast / acid from range |
+| FOMO Screamer (2026-11-29) | Hangs back, screams: frenzies nearby zombies, calls in runners. Priority target (pink 📣 marker) |
 `OPEN:` add or remove types.
 
 ### 5.3 Chaos without breaking flow
@@ -202,4 +204,6 @@ Record every decided `OPEN` item here with a date, then update the section above
 | 2026-11-19 | Grenade pool recharges automatically (`NADE_MAX = 3` Zombie / `2` PvP, `10s` recharge timer + HUD countdown/progress bar) to enforce Hard Rule #5 so grenades are never permanently depleted |
 | 2026-11-19 | Dedicated depth-cleared viewmodel render pass (`vmScene` + `vmCam`) with hardware depth test/write on weapons, twin-tube Dual RPG model, and zombie close-range self-explosion cap (`<= 8 HP`) |
 | 2026-11-26 | Player SWAP/DROP when 5 gun slots are full (X / contextual 🔄 SWAP touch button). Player-chosen only; automatic pickup rules unchanged; the RPG is never traded or dropped |
+| 2026-11-29 | Two new venues for FFA + Zombies: RUG PULL DOCKS (container yard, gantry cranes, cargo ship) and NGMI UNI (Great Court, cloisters, clock tower); Siege stays at Fort HODL. Venue is part of the room channel so friends always share a map |
+| 2026-11-29 | FOMO Screamer special zombie (wave 3+) and a between-wave report card (kills per teammate, MVP, headshots, downs). Lobby restructured: story only under Beatdown; Shootout defaults to Zombies |
 | 2026-11-26 | Smarter, tougher squad (owner: "moving like a dog", no RPG/gold AK use, no rescues, can't find medkits): per-gun bot tactics, rocket bot fires into packs away from teammates, bots pick up better guns no human is closer to and the gold AK airdrop after you've had 8 s, formation follows where you walk (not where you look), committed revives, bots take 0.7× damage + slow regen, on-screen ➕ MEDKIT marker when hurt. Zombie score: fixed motifs, new OUTBREAK track, adaptive tension/combat layers, braam stinger |

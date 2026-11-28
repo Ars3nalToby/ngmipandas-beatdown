@@ -456,7 +456,7 @@ const sfx = (() => {
     n.stop(t + dur + 0.05);
   };
 
-  const SFX_KEEP = { braam: 1, explode: 1, cannon: 1, crit: 1, shot_rpg: 1, dynamite: 1, hordeRumble: 1, roar: 1, siren: 1, revive: 1, radio: 1, ko: 1 };
+  const SFX_KEEP = { shriek: 1, braam: 1, explode: 1, cannon: 1, crit: 1, shot_rpg: 1, dynamite: 1, hordeRumble: 1, roar: 1, siren: 1, revive: 1, radio: 1, ko: 1 };
   const play = (name, vol = 1, p = 1, pan = null, muffle = 0) => {
     if (!ctx || ctx.state !== 'running' || muted || vol <= 0.02) return;
     const now = ctx.currentTime;
@@ -709,6 +709,12 @@ const sfx = (() => {
         hiss(1.6, 0.1 * vol, 'lowpass', 900, 160, null, now);
         break;
       }
+      case 'shriek':
+        // the FOMO Screamer: a rising, wavering scream with a breathy tail
+        [0, 0.012, 0.025].forEach((d, i) => tone('sawtooth', (620 + i * 37) * p, (1450 + i * 60) * p, 0.55, 0.07 * vol, null, now + d, 2600));
+        tone('sawtooth', 1450 * p, 520 * p, 0.7, 0.07 * vol, null, now + 0.55, 2200);
+        hiss(1.1, 0.18 * vol, 'bandpass', 2400 * p, 900, null, now + 0.05);
+        break;
       case 'hordeRumble':
         for (let i = 0; i < 3; i++) tone('sawtooth', (80 + Math.random() * 50) * p, 55, 0.9, 0.05 * vol, null, now + i * 0.13, 380);
         hiss(1.1, 0.22 * vol, 'lowpass', 520, 180);
@@ -2512,7 +2518,7 @@ function getGameArt() {
 
 const TICKER = [
   ['$NGMI ▲ 420.69%', '#34d399'], ['🚀 GME TO THE MOON', '#facc15'], ['💀 PaperHands_99 got RUGGED off the moon', '#fb7185'],
-  ['👑 Golden AK spotted in Cartoon Town', '#fbbf24'], ['🏰 Fort HODL is under siege', '#60a5fa'], ['☄️ 4-kill streak = MOON STRIKE', '#f87171'],
+  ['⚓ NEW VENUES · Rug Pull Docks & NGMI Uni', '#38bdf8'], ['📣 Kill the FOMO Screamer first', '#f472b6'], ['👑 Golden AK spotted in Cartoon Town', '#fbbf24'], ['🏰 Fort HODL is under siege', '#60a5fa'], ['☄️ 4-kill streak = MOON STRIKE', '#f87171'],
   ['💎 DIAMOND HANDS ONLY', '#a5f3fc'], ['📉 $PAPER ▼ 69%', '#f87171'], ['🐼 EST. 2022 ON SOLANA', '#c4b5fd'],
   ['🎉 Level up to unlock crowns, halos & jetpacks', '#86efac'], ['📖 STORY MODE: 5 chapters to hunt down PaperHands', '#fde68a'], ['🧻 Wanted: PaperHands, for the Rug of 2022', '#fca5a5'], ['💃 Press V to dance & heal', '#f0abfc'], ['🥊 Gang up. Pump their %. Ring them out.', '#6ee7b7']
 ];
@@ -3618,6 +3624,14 @@ function buildPandaFresh(config, isMinion, gangColor, word) {
 // ============================================================================
 const SHOOT_SECONDS = 180;
 const KILL_TARGET = 25;
+// Shootout venues (FFA + Zombies; Siege always plays Fort HODL). `town` is the original map; the id goes into the MQTT
+// topic for non-town venues so friends in one room always load the same map.
+const SHOOT_VENUES = {
+  town: { name: 'CARTOON TOWN', icon: '🏙️', sub: 'Crossroads, rooftops & a water tower', col: '#fbbf24' },
+  docks: { name: 'RUG PULL DOCKS', icon: '⚓', sub: 'Container maze, gantry cranes & a cargo ship', col: '#38bdf8' },
+  campus: { name: 'NGMI UNI', icon: '🎓', sub: 'Great Court, sandstone cloisters & a clock tower', col: '#c084fc' }
+};
+const cleanVenue = v => (SHOOT_VENUES[v] ? v : 'town');
 // reloads are ~45% quicker and every mag holds about 50% more than launch day
 const SHOOT_WEAPONS = {
   rifle: { name: 'MOON RIFLE', short: 'RIFLE', icon: '🌙', dmg: 24, rate: 0.115, mag: 45, reload: 0.8, spread: 0.012, moveSpread: 0.03, pellets: 1, auto: true, recoil: 0.016, snd: 'shot_rifle', zoom: 1.4 },
@@ -3682,9 +3696,11 @@ const ZOMBIE_KINDS = {
   bloater: { name: 'RUG BLOATER', hp: 70, spd: [2.8, 3.2], dmg: 0, reach: 2.6, cd: 1, s: 1.7, w: 1.7, color: '#a3e635', shirt: 0x3f6212, pop: true },
   boss: { name: 'THE RUG LORD', hp: 4500, spd: [5.2, 5.2], dmg: 34, reach: 4.6, cd: 1.6, s: 4.2, w: 1.35, color: '#a855f7', shirt: 0x2e1065, boss: true },
   crawler: { name: 'LIQUIDATED CRAWLER', hp: 70, spd: [5.8, 7.2], dmg: 8, reach: 1.9, cd: 0.7, s: 1.45, w: 1, color: '#9fb98a', shirt: 0x57534e, crawl: true, hb: [0.42, 0.44, 0.28, 0.55, 1.25, 0.6] },
-  spitter: { name: 'FUD SPITTER', hp: 75, spd: [3.4, 4.0], dmg: 6, reach: 2.2, cd: 1.1, s: 1.6, w: 0.8, color: '#bef264', shirt: 0x365314, spit: true }
+  spitter: { name: 'FUD SPITTER', hp: 75, spd: [3.4, 4.0], dmg: 6, reach: 2.2, cd: 1.1, s: 1.6, w: 0.8, color: '#bef264', shirt: 0x365314, spit: true },
+  // special: hangs back and screams — nearby zombies frenzy and runners answer the call. Kill it first.
+  screamer: { name: 'FOMO SCREAMER', hp: 120, spd: [5.0, 5.6], dmg: 6, reach: 2.1, cd: 1.0, s: 1.6, w: 0.7, color: '#f472b6', shirt: 0xd33a2c, scream: true }
 };
-const ZKIND_IDS = ['walker', 'runner', 'brute', 'bloater', 'boss', 'crawler', 'spitter'];
+const ZKIND_IDS = ['walker', 'runner', 'brute', 'bloater', 'boss', 'crawler', 'spitter', 'screamer']; // index goes on the wire: only ever append
 const ZOMBIE_RAID_WAVES = 10;
 let zombieKit = null;
 // Radio story beats for the zombie raid (one per wave, shown once). Canon: the rug pull didn't just drain the liquidity, the Moon turned the rugged pandas into the undead, and PaperHands became the Rug Lord.
@@ -3789,12 +3805,12 @@ function buildZombieMesh(kind) {
   const sk = Math.random() < 0.5 ? -1 : 1;
   add(K.wound, K.flesh, sk * 0.17, 0.3, 0.2, 2.0, 1.4, 0.8, head);
   add(K.wound, K.bone, sk * 0.17, 0.33, 0.25, 1.4, 0.9, 0.5, head);
-  const eyeM = def.boss ? K.bossEye : def.spit ? K.spitEye : K.eyeM;
+  const eyeM = def.boss || def.scream ? K.bossEye : def.spit ? K.spitEye : K.eyeM;
   add(K.socket, K.dark, -0.14, 0.07, 0.34, 1.15, 1.25, 0.6, head); // sunken sockets
   add(K.socket, K.dark, 0.14, 0.07, 0.34, 1.15, 1.25, 0.6, head);
   add(K.eye, eyeM, -0.14, 0.05, 0.4, 1.1, 1.1, 1, head);
   add(K.eye, eyeM, 0.14, 0.09, 0.4, 0.8, 0.8, 1, head); // one eye smaller and higher: wrong
-  add(K.patch, K.mouth, 0, -0.2, 0.33, 2.0, def.spit ? 1.4 : 1.3, 0.5, head); // jaw hangs open
+  add(K.patch, K.mouth, 0, def.scream ? -0.24 : -0.2, 0.33, def.scream ? 1.7 : 2.0, def.scream ? 2.3 : def.spit ? 1.4 : 1.3, 0.5, head); // jaw hangs open (the screamer's gapes)
   add(K.jaw, K.flesh, 0, -0.36, 0.2, 1.05, 0.55, 0.9, head);
   // a ragged row of teeth top and bottom
   for (let i = -3; i <= 3; i++) {
@@ -4296,7 +4312,8 @@ const scaleUV = (geo, su, sv) => {
   return geo;
 };
 
-function buildShootoutMap(scene, cinematic, zmap = false) {
+function buildShootoutMap(scene, cinematic, zmap = false, venue = 'town') {
+  const V = cleanVenue(venue), TOWN = V === 'town';
   const colliders = [], solids = [];
   const rooms = [], portals = [], ladders = [];
   const edgeMat = new THREE.LineBasicMaterial({ color: 0x15141c, transparent: true, opacity: 0.55 });
@@ -4315,7 +4332,13 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
     'MOON EDEN MARKET': ['render', 0xaeb8bf], 'NGMI DINER': ['render', 0xd6c194], 'WAGMI FM 99.9': ['render', 0x8f8a99], 'DIAMOND HANDS CO': ['render', 0xa6b39a],
     'NGMI CHEMIST ➕': ['render', 0xe4e2da], ARCADE: ['render', 0x6a6578],
     'HODL GYM': ['block', 0xa2b2ae], 'SAFE HOUSE': ['block', 0xa9acaf], GARAGE: ['block', 0x9a9ea2],
-    WAREHOUSE: ['metal', 0x9a8f7c]
+    WAREHOUSE: ['metal', 0x9a8f7c],
+    // docks
+    'DOCK SHED A': ['metal', 0x8f7a64], 'DOCK SHED B': ['metal', 0x6e7f8f], 'CUSTOMS HOUSE': ['brick', 0xc9a48c], 'HARBOUR MASTER': ['render', 0xd8d2c4], 'FISH MARKET': ['block', 0x9fb3b8],
+    'FERRY TERMINAL': ['render', 0xc0c8d0], 'SEAFARERS CLINIC ➕': ['render', 0xe4e2da], 'COLD STORE': ['metal', 0xa9b2b8], 'SHIPPING OFFICE': ['brick', 0xb8907a], 'NGMI LOGISTICS': ['metal', 0x9a8f7c], 'PUMP HOUSE': ['brick', 0xa8806a],
+    // campus (sandstone)
+    LIBRARY: ['block', 0xd9c49a], 'LECTURE HALL A': ['block', 0xd4bc8e], 'PHARMACY SCHOOL ➕': ['block', 0xdcc8a0], 'STUDENT UNION': ['render', 0xc9b48c], REFECTORY: ['brick', 0xc79a78], BOOKSHOP: ['render', 0xd0c0a0],
+    ENGINEERING: ['block', 0xb8b0a0], 'SPORTS HALL': ['metal', 0xa0a8b0], DORMS: ['brick', 0xc8a080], 'COLLEGE BAR': ['brick', 0xb88a6a], OBSERVATORY: ['render', 0xd8d4cc], 'BOAT SHED': ['wood', 0x9a6a48], GREENHOUSE: ['metal', 0xa8c0b0], 'UNI KIOSK': ['render', 0xd0b890]
   };
   if (FLIP_ART) {
     // FLIPSIDE colour blocking: rust-red wooden sheds, navy, mustard, pink, paper
@@ -4323,7 +4346,11 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
       BARRACKS: ['wood', 0x93402a], 'BARRACKS B': ['wood', 0xa8492f], 'GM COFFEE': ['render', 0x233a70], 'MOTEL 88': ['render', 0xe9a6a3],
       'MOON EDEN MARKET': ['render', 0xf2ebdf], 'NGMI DINER': ['render', 0xe4bd2c], 'WAGMI FM 99.9': ['wood', 0x233a70], 'DIAMOND HANDS CO': ['render', 0xd33a2c],
       'NGMI CHEMIST ➕': ['render', 0xf2ebdf], ARCADE: ['render', 0x2c2b31], 'HODL GYM': ['block', 0x3f5fa8], 'SAFE HOUSE': ['block', 0xe2d6c2], GARAGE: ['metal', 0x8ea3cf],
-      WAREHOUSE: ['wood', 0x93402a]
+      WAREHOUSE: ['wood', 0x93402a],
+      'DOCK SHED A': ['wood', 0x93402a], 'DOCK SHED B': ['metal', 0x3f5fa8], 'CUSTOMS HOUSE': ['render', 0xe2d6c2], 'HARBOUR MASTER': ['render', 0x233a70], 'FISH MARKET': ['render', 0xe9a6a3],
+      'FERRY TERMINAL': ['render', 0xf2ebdf], 'SEAFARERS CLINIC ➕': ['render', 0xf2ebdf], 'COLD STORE': ['metal', 0x8ea3cf], 'SHIPPING OFFICE': ['render', 0xe4bd2c], 'NGMI LOGISTICS': ['wood', 0xa8492f], 'PUMP HOUSE': ['render', 0x2c2b31],
+      LIBRARY: ['block', 0xe2d6c2], 'LECTURE HALL A': ['block', 0xc9b89c], 'PHARMACY SCHOOL ➕': ['block', 0xf2ebdf], 'STUDENT UNION': ['render', 0xe4bd2c], REFECTORY: ['wood', 0x93402a], BOOKSHOP: ['render', 0x233a70],
+      ENGINEERING: ['block', 0x3f5fa8], 'SPORTS HALL': ['metal', 0x8ea3cf], DORMS: ['wood', 0xa8492f], 'COLLEGE BAR': ['render', 0xd33a2c], OBSERVATORY: ['render', 0xf2ebdf], 'BOAT SHED': ['wood', 0x93402a], GREENHOUSE: ['metal', 0x8ea3cf], 'UNI KIOSK': ['render', 0xe9a6a3]
     });
   }
   const facadeMat = (label, color) => {
@@ -4396,6 +4423,7 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
     box(px + nx * 0.08, pz + nz * 0.08, alongX ? ww + 0.3 : 0.2, 0.1, alongX ? 0.2 : ww + 0.3, 0, { mat: sillMat, y: py - wh / 2 - 0.1, noCollide: true });
     box(px + nx * 0.03, pz + nz * 0.03, alongX ? ww + 0.2 : 0.08, 0.14, alongX ? 0.08 : ww + 0.2, 0, { mat: sillMat, y: py + wh / 2, noCollide: true });
   };
+  const ladClear = {}; // label → face that gets a roof ladder on a solid building (zombie venues)
   const building = (x, z, w, h, d, color, roof, label, face, signBg, signFg, muralFace = null) => {
     if (zmap && WALK[label]) return walkIn(x, z, w, d, 4.8, color, roof, label, { ...WALK[label], signBg, signFg });
     box(x, z, w, h, d, 0, { mat: facadeMat(label, color) });
@@ -4409,7 +4437,7 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
       for (let i = 0; i < k; i++) {
         const along = (i - (k - 1) / 2) * (fs / k);
         if (f === face && Math.abs(along) < 2.5) continue; // door space
-        if (zmap && ((label === 'BARRACKS B' && f === 'z+') || (label === 'DIAMOND HANDS CO' && f === 'z-')) && Math.abs(along) < 2.0) continue; // ladder clearance
+        if (zmap && ((label === 'BARRACKS B' && f === 'z+') || (label === 'DIAMOND HANDS CO' && f === 'z-') || ladClear[label] === f) && Math.abs(along) < 2.0) continue; // ladder clearance
         const [px, pz] = faceOffset(f, x, z, w, d, along, 0.03);
         windowAt(f, px, Math.min(h - 1.6, 3.4), pz, 1.6, 1.5);
         // upper floor (leave blank on mural faces so murals never clip sills)
@@ -4447,7 +4475,8 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
   scene.fog = new THREE.Fog(0xcfe6f3, 70, 230);
 
   // worn concrete lot (UVs in metres so slabs keep their real size)
-  const groundMat = new THREE.MeshStandardMaterial({ color: FLIP_ART ? (zmap ? 0xb9b4c4 : 0xf6f0e6) : zmap ? 0x8f8c86 : 0xb3a994, map: surfTex('pavement'), roughness: 0.95 });
+  const GROUND_C = { town: [0xb9b4c4, 0xf6f0e6, 0x8f8c86, 0xb3a994], docks: [0x9ea6b8, 0xd9dde2, 0x7d8288, 0xa3a7aa], campus: [0xbcb39c, 0xece0c4, 0x8f8670, 0xc4b48e] }[V];
+  const groundMat = new THREE.MeshStandardMaterial({ color: FLIP_ART ? (zmap ? GROUND_C[0] : GROUND_C[1]) : zmap ? GROUND_C[2] : GROUND_C[3], map: surfTex('pavement'), roughness: 0.95 });
   if (FLIP_ART) groundMat.userData.noFlip = true;
   const ground = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(500, 500), 500 / SURF_TILE.pavement, 500 / SURF_TILE.pavement), groundMat);
   ground.rotation.x = -Math.PI / 2;
@@ -4457,6 +4486,7 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
   const roadMat = new THREE.MeshStandardMaterial({ color: FLIP_ART ? (zmap ? 0xa9a4b6 : 0xe9e0d0) : zmap ? 0x9a9a9a : 0xc9c6c0, map: surfTex('asphalt'), roughness: 0.9 });
   if (FLIP_ART) { roadMat.userData.noFlip = true; roadMat.userData.noInk = true; }
   // Stop roads cleanly at ±46.8m so kerbs and asphalt never protrude into road-end buildings (±47m)
+  if (TOWN) {
   [[0, 0, 93.6, 9], [0, 0, 9, 93.6]].forEach(([x, z, w, d]) => {
     const r = new THREE.Mesh(scaleUV(new THREE.PlaneGeometry(w, d), w / SURF_TILE.asphalt, d / SURF_TILE.asphalt), roadMat);
     r.rotation.x = -Math.PI / 2;
@@ -4495,6 +4525,7 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
     box(c, o, len, 0.14, 0.3, 0, { mat: kerbMat, noCollide: true });
     box(o, c, 0.3, 0.14, len, 0, { mat: kerbMat, noCollide: true });
   }));
+  } // TOWN roads
 
   // ---- perimeter wall + invisible tall colliders ----
   const L = zmap ? 86 : 62;
@@ -4676,11 +4707,35 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
       addLadder(fx, fz, nx, nz, h);
     }
     if (o.props === 'shelves') {
+      // shelves on the back wall, counters beside the doors (mirrored when the doors face x-)
+      const sx = doors.some(dd => dd.side === 'x-') ? -1 : 1;
       const shelf = new THREE.MeshStandardMaterial({ color: 0xd9dbde, roughness: 0.55, metalness: 0.2 });
-      [[minX + 2.2, z - 6], [minX + 2.2, z + 6]].forEach(([px, pz]) => box(px, pz, 1, 1.9, 5, 0, { mat: shelf }));
+      [[x - sx * (w / 2 - 2.2), z - 6], [x - sx * (w / 2 - 2.2), z + 6]].forEach(([px, pz]) => box(px, pz, 1, 1.9, 5, 0, { mat: shelf }));
       // dispensary counters sit beside the doors, never in front of them
-      box(maxX - 3, z - 2.7, 1, 1.1, 3.4, 0x9ca3af);
-      box(maxX - 3, z + 2.7, 1, 1.1, 3.4, 0x9ca3af);
+      box(x + sx * (w / 2 - 3), z - 2.7, 1, 1.1, 3.4, 0x9ca3af);
+      box(x + sx * (w / 2 - 3), z + 2.7, 1, 1.1, 3.4, 0x9ca3af);
+    } else if (o.props === 'cargo') {
+      // pallets of crates in the corners (never in a door lane)
+      const cm = surf('wood', 0xe0c8a8, 0.85);
+      [[minX + 2, minZ + 2, 2], [maxX - 2, minZ + 2, 1], [minX + 2, maxZ - 2, 1], [maxX - 2, maxZ - 2, 2]].forEach(([px, pz, n]) => {
+        for (let k = 0; k < n; k++) box(px, pz, 1.9, 1.9, 1.9, 0, { mat: cm, y: k * 1.9 });
+      });
+    } else if (o.props === 'desks') {
+      // lecture rows: low desks across the room, aisles down both sides and the middle
+      const dm = surf('wood', 0xc8a27a, 0.8);
+      bounds.forEach(([a, b, c, e]) => {
+        const alongZ = e - c > b - a;
+        [3.2, -3.2].forEach(off => {
+          if (alongZ) [-1, 1].forEach(sd => box((a + b) / 2 + sd * (b - a) * 0.17, off > 0 ? c + off : e + off, (b - a) * 0.18, 0.85, 0.7, 0, { mat: dm }));
+          else [-1, 1].forEach(sd => box(off > 0 ? a + off : b + off, (c + e) / 2 + sd * (e - c) * 0.17, 0.7, 0.85, (e - c) * 0.18, 0, { mat: dm }));
+        });
+      });
+    } else if (o.props === 'stacks') {
+      // library book stacks: two free-standing shelves per room with aisles all round
+      const bm = surf('wood', 0x8a5a3a, 0.8);
+      bounds.forEach(([a, b, c, e]) => {
+        [0.3, 0.7].forEach(f => box(a + (b - a) * f, (c + e) / 2, 0.9, 2.1, (e - c) * 0.4, 0, { mat: bm }));
+      });
     } else if (o.props === 'crates') {
       const cm = surf('wood', 0xe0c8a8, 0.85);
       [[x - 6, z - 2], [x - 4, z + 3], [x + 5, z - 3], [x + 7, z + 2], [x, z + 1]].forEach(([px, pz]) => box(px, pz, 2, 2, 2, 0, { mat: cm }));
@@ -4692,7 +4747,217 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
     addLadder(nx ? (nx > 0 ? x + w / 2 : x - w / 2) : x, nz ? (nz > 0 ? z + d / 2 : z - d / 2) : z, nx, nz, top);
   };
 
+  // ---- new venues: shared helpers ----
+  // b = [x, z, w, d, h, color, roof, label, face, signBg, signFg, walk]; zombie mode turns `walk` buildings into walk-ins
+  const vd = {};
+  const place = b => {
+    const [x, z, w, d, h, color, roof, label, face, signBg, signFg, walk, lad] = b;
+    if (zmap && walk) return walkIn(x, z, w, d, walk.h || 4.8, color, roof, label, { ...walk, signBg, signFg });
+    if (zmap && lad) ladClear[label] = lad;
+    building(x, z, w, h, d, color, roof, label, face, signBg, signFg);
+    if (zmap && lad) solidLadder(x, z, w, d, lad, h);
+  };
+  const flatPaint = (w, d, x, z, color, y = 0.026, rot = 0) => {
+    const mt = new THREE.MeshBasicMaterial({ color, polygonOffset: true, polygonOffsetFactor: -1 });
+    mt.userData.noFlip = true;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mt);
+    m.rotation.set(-Math.PI / 2, 0, rot);
+    m.position.set(x, y, z);
+    m.raycast = noRay;
+    scene.add(m);
+    return m;
+  };
+  const CONT2 = [0x9a4a3a, 0x3f5a7a, 0x4e6b4f, 0xa07a44, 0x7a7e82, 0x8a5a3a, 0xc4912f, 0x233a70].map(c => surf('metal', c, 0.6, 0.35));
+  // a shipping container stack: r = 1 turns it 90°, n = how many high
+  const container = (x, z, r, n, ci = 0) => {
+    for (let k = 0; k < n; k++) box(x, z, r ? 2.6 : 6, 3, r ? 6 : 2.6, 0, { mat: CONT2[(ci + k * 3) % CONT2.length], y: k * 3 });
+  };
+
+  // ======== RUG PULL DOCKS: a harbour container yard at the water's edge (water + cargo ship on the -z side) ========
+  const buildDocks = () => {
+    const Q = -L;
+    // the harbour beyond the quay wall: water, a moored cargo ship and a far shore (all scenery, out of reach)
+    const water = flatPaint(700, 320, 0, Q - 160.7, FLIP_ART ? (zmap ? 0x1b2a52 : 0x3f5fa8) : (zmap ? 0x0f1d33 : 0x2f5f8a), 0.05);
+    water.renderOrder = -1;
+    const hullC = FLIP_ART ? FLIP.navy : 0x2b3a55, hullR = FLIP_ART ? FLIP.red : 0x8a2d24;
+    box(-6, Q - 26, 150, 9, 26, hullC, { y: -2, noCollide: true });
+    box(-6, Q - 26, 150.4, 2.2, 26.4, hullR, { y: -2, noCollide: true });
+    box(-6, Q - 26, 148, 0.4, 25, 0xb9b4ac, { y: 7, noCollide: true });
+    box(52, Q - 26, 18, 14, 20, FLIP_ART ? FLIP.paper : 0xe8e4dc, { y: 7.4, noCollide: true });
+    box(52, Q - 26, 19, 0.6, 21, FLIP_ART ? FLIP.red : 0xb91c1c, { y: 21.4, noCollide: true });
+    box(56, Q - 26, 2.4, 8, 2.4, FLIP_ART ? FLIP.ink : 0x1f2937, { y: 22, noCollide: true });
+    for (let i = 0; i < 9; i++) for (let k = 0; k < 2 + (i % 3); k++) box(-60 + i * 11, Q - 26, 10, 3, 22, 0, { mat: CONT2[(i * 3 + k) % CONT2.length], y: 7.4 + k * 3, noCollide: true });
+    const nameMat = signMat('M/V PAPER HANDS', '#233a70', '#f2ebdf', 30, 3);
+    plane(30, 3, nameMat, -40, 3, Q - 12.9, 0);
+    box(0, Q - 175, 700, 10, 30, 0x4a5a4a, { y: -2, noCollide: true });
+    // quay edge: yellow safety line and bollards
+    flatPaint(2 * L - 2, 0.5, 0, Q + 2.4, FLIP.mustard, 0.03);
+    for (let x = -L + 6; x < L - 4; x += 12) box(x, Q + 1.3, 0.6, 0.8, 0.6, 0x2c2b31);
+    // two gantry cranes straddle the quay (legs block, the frame overhead does not)
+    const craneC = FLIP_ART ? FLIP.mustard : 0xd9a520;
+    const crane = cx => {
+      const cz = Q + 9;
+      [[-5, -4], [5, -4], [-5, 4], [5, 4]].forEach(([ox, oz]) => box(cx + ox, cz + oz, 0.9, 22, 0.9, craneC));
+      box(cx - 5, cz, 0.7, 0.8, 8.9, craneC, { y: 6, noCollide: true });
+      box(cx + 5, cz, 0.7, 0.8, 8.9, craneC, { y: 6, noCollide: true });
+      box(cx, cz, 11, 1.4, 1.4, craneC, { y: 21, noCollide: true });
+      box(cx, cz - 24, 2.2, 1.6, 70, craneC, { y: 22.4, noCollide: true }); // boom out over the water
+      box(cx + 1.8, cz + 2, 3, 2.6, 3, FLIP_ART ? FLIP.ink : 0x334155, { y: 18.2, noCollide: true }); // cab
+      box(cx, cz - 14, 0.12, 9, 0.12, 0x1c1b21, { y: 13.4, noCollide: true }); // cable
+      box(cx, cz - 14, 6, 3, 2.6, 0, { mat: CONT2[4], y: 10.4, noCollide: true }); // a box on the hook
+    };
+    crane(-20);
+    crane(24);
+    // the container yard (lanes ≥ 4 m so the horde can always get through)
+    [[-30, -38, 0, 1], [-18, -38, 0, 2], [14, -38, 0, 1], [26, -38, 0, 2],
+      [-28, -24, 1, 2], [-14, -26, 0, 1], [0, -26, 0, 3], [16, -24, 0, 1], [30, -24, 1, 1],
+      [-20, -12, 1, 1], [20, -12, 1, 2], [-30, 0, 1, 1], [30, 0, 1, 1],
+      [-20, 12, 1, 2], [20, 12, 1, 1], [-10, 20, 0, 1], [10, 20, 0, 2], [-34, 14, 0, 1], [34, 14, 0, 1]
+    ].forEach(([x, z, r, n], i) => container(x, z, r, n, i));
+    addLadder(0, -24.7, 0, 1, 9); // up the triple stack: sniper's nest
+    // the open plaza in the middle: forklift, pallets, cable reels
+    box(5, 4, 1.6, 1.4, 2.4, FLIP_ART ? FLIP.mustard : 0xe0a82e);
+    box(5, 3.2, 1.5, 1.2, 1.2, 0x2c2b31, { y: 1.4, noCollide: true });
+    box(5, 2.6, 1.2, 3.6, 0.2, 0x2c2b31, { noCollide: true });
+    [[-5, -4], [-6.4, -2.6], [-3.6, 5]].forEach(([x, z]) => box(x, z, 1.3, 0.7, 1.3, 0, { mat: surf('wood', 0xc8a27a, 0.85) }));
+    box(-6, 6, 1.8, 1.8, 1.8, 0x7a5b3e);
+    if (FLIP_ART) {
+      // painted yard lines
+      [[0, -32, 60], [0, -18, 60], [0, -6, 60], [0, 6, 60], [0, 26, 60]].forEach(([x, z, w]) => flatPaint(w, 0.35, x, z, FLIP.mustard));
+      flatPaint(0.35, 60, -40, -6, FLIP.mustard);
+      flatPaint(0.35, 60, 40, -6, FLIP.mustard);
+    }
+    // buildings around the yard
+    [
+      [-42, 34, 24, 14, 9, 0x93402a, 0x5a2416, 'DOCK SHED A', 'z-', '#1c1b21', '#e4bd2c', { doors: [['z-', -8], ['z-', 8], ['x+', -3]], ladder: ['z+', 0], props: 'cargo' }],
+      [42, 34, 24, 14, 9, 0x3f5fa8, 0x1e2f5a, 'DOCK SHED B', 'z-', '#f2ebdf', '#233a70', { doors: [['z-', -8], ['z-', 8], ['x-', -3]], ladder: ['z+', 0], props: 'cargo' }],
+      [0, 46, 18, 10, 9, 0xc9a48c, 0x7a4a2a, 'CUSTOMS HOUSE', 'z-', '#233a70', '#f2ebdf', { doors: [['z-', -5], ['z-', 5]], split: { axis: 'x', at: [0], door: true }, ladder: ['z+', 0] }],
+      [-46, -30, 12, 12, 10, 0x233a70, 0x14234a, 'HARBOUR MASTER', 'x+', '#f2ebdf', '#233a70', { doors: [['x+', 0], ['z+', 3]], ladder: ['x-', 0] }],
+      [46, -30, 14, 12, 6, 0xe9a6a3, 0x9a4a46, 'FISH MARKET', 'x-', '#d33a2c', '#ffffff', { doors: [['x-', 0], ['z+', -3]], ladder: ['x+', 0] }]
+    ].forEach(place);
+    if (zmap) {
+      [
+        [-74, -20, 14, 24, 7, 0xc0c8d0, 0x4a5568, 'FERRY TERMINAL', 'x+', '#0f172a', '#7dd3fc', { doors: [['x+', -7], ['x+', 7]], split: { axis: 'z', at: [0], door: true }, ladder: ['x-', 0] }],
+        [74, -20, 14, 22, 7, 0x4ade80, 0x166534, 'SEAFARERS CLINIC ➕', 'x-', '#14532d', '#ffffff', { doors: [['x-', -6], ['x-', 6]], split: { axis: 'z', at: [0], door: true }, ladder: ['x+', 0], props: 'shelves' }],
+        [-72, 40, 16, 16, 7, 0xa9b2b8, 0x475569, 'COLD STORE', 'x+', '#0f172a', '#bae6fd', { doors: [['x+', 0], ['z-', 0]], ladder: ['x-', 0], props: 'cargo' }],
+        [72, 40, 16, 14, 7, 0xe4bd2c, 0x8a6a10, 'SHIPPING OFFICE', 'x-', '#1c1b21', '#e4bd2c', { doors: [['x-', 0], ['z-', 0]], split: { axis: 'x', at: [3], door: true }, ladder: ['z+', 0] }],
+        [0, 74, 26, 14, 6, 0xa8492f, 0x5a2416, 'NGMI LOGISTICS', 'z-', '#1c1b21', '#fbbf24', { doors: [['z-', -7], ['z-', 7], ['x+', 0]], ladder: ['z+', 0], props: 'cargo', h: 6 }],
+        [-40, 72, 12, 10, 6, 0x2c2b31, 0x111111, 'PUMP HOUSE', 'z-', '#e4bd2c', '#1c1b21', { doors: [['z-', 0]], ladder: ['x-', 0] }]
+      ].forEach(place);
+      [[-58, -60, 0, 2], [60, -62, 1, 1], [-56, 58, 1, 1], [56, 58, 0, 2], [-30, -60, 0, 1], [32, -58, 1, 2], [-60, 8, 1, 1], [60, 12, 1, 2]].forEach(([x, z, r, n], i) => container(x, z, r, n, i + 3));
+    }
+    vd.lamps = [[-10, -10], [10, 10], [-26, -31], [26, -31], [-37, 22], [37, 22], [0, 30]];
+    if (zmap) vd.lamps.push([-60, -40], [60, -40], [-56, 66], [56, 66], [18, 60], [-30, -70], [30, -70]);
+    vd.spawns = [[0, 0], [-40, 0], [40, 0], [-8, -46], [12, -46], [-22, 46], [22, 46], [-48, -14], [48, -14], [-24, -6], [24, 6], [-36, -48], [36, -48]];
+    vd.pickups = [[-12, -6, 'ak'], [12, 6, 'ak'], [0, -18, 'gatling'], [-40, -44, 'rpg'], [40, -44, 'rpg'], [0, 34, 'gatling'], [-26, 20, 'smg'], [26, -6, 'smg'], [-14, 30, 'shotgun'], [14, -32, 'shotgun'], [-36, -14, 'burger'], [36, -14, 'burger'], [-46, 6, 'burger'], [0, -26, 'sniper', 9], [-26, -46, 'flamer'], [28, 24, 'flamer'], [-8, 10, 'revolver'], [8, -12, 'revolver']];
+    if (zmap) vd.pickups.push(
+      [-27, -4, 'knife'], [27, 11, 'machete'], [17, -9, 'bat'], [-41, 8, 'shovel'], [5, -21, 'crowbar'], [41, -8, 'axe'], [-12, -44, 'katana'], [30, 52, 'sledge'], [-57, 30, 'bat'], [57, -30, 'shovel'],
+      [77, -25, 'medkit'], [77, -15, 'medkit'], [71, -27, 'nade'], [0, 72, 'rpg'], [8, 72, 'nade'], [-74, -14, 'sniper'], [-72, 36, 'gatling'], [72, 44, 'revolver'], [-40, 72, 'medkit'], [0, -60, 'medkit'], [-46, -42, 'nade'], [42, 34, 'medkit'], [-42, 34, 'flamer']
+    );
+    vd.zspawns = [[-84, -50], [-84, 10], [-84, 62], [84, -50], [84, 10], [84, 62], [-60, -82], [60, -82], [-5, -82], [-84, -84], [84, 84], [84, -84], [-84, 84], [-60, 84], [60, 84], [30, 84], [-62, -50], [62, -50]];
+  };
+
+  // ======== NGMI UNI: sandstone campus around a Great Court (lawn, cloisters, fountain, clock tower) ========
+  const buildCampus = () => {
+    const lawnC = FLIP_ART ? (zmap ? 0x3a4f3c : 0x6f7b4a) : (zmap ? 0x2f4a2a : 0x5d8a4a);
+    const pathC = FLIP_ART ? (zmap ? 0x8f8676 : 0xe2d6c2) : (zmap ? 0x7a7262 : 0xcbbd9c);
+    flatPaint(44, 44, 0, 0, lawnC, 0.022);
+    flatPaint(5, 60, 0, 0, pathC, 0.026);
+    flatPaint(60, 5, 0, 0, pathC, 0.028);
+    flatPaint(5, 30, 0, -36, pathC, 0.026);
+    flatPaint(5, 30, 0, 36, pathC, 0.026);
+    // fountain + a panda statue in the middle of the court
+    const stone = surf('block', 0xd9c49a);
+    box(0, 0, 5.4, 0.9, 5.4, 0, { mat: stone });
+    flatPaint(4.4, 4.4, 0, 0, FLIP_ART ? 0x3f5fa8 : 0x3d7fb0, 0.93);
+    box(0, 0, 1, 2.6, 1, 0, { mat: stone });
+    box(0, 0, 1.6, 1.4, 1.2, FLIP_ART ? FLIP.paper : 0xf2efe6, { y: 2.6, noCollide: true });
+    box(0, 0.1, 1.1, 1, 1, FLIP_ART ? FLIP.paper : 0xf2efe6, { y: 4, noCollide: true });
+    [[-0.45, 0], [0.45, 0]].forEach(([ox]) => box(ox, 0.1, 0.35, 0.35, 0.35, 0x1c1b21, { y: 4.9, noCollide: true }));
+    // sandstone cloisters on all four sides (columns block, the roof walk is scenery), open at each path
+    const colM = surf('block', 0xe0cca4), roofM = surf('roof', 0xb06a4a);
+    const C = 26;
+    for (let a = -22; a <= 22; a += 4) {
+      if (Math.abs(a) < 4) continue;
+      [[a, -C], [a, C], [-C, a], [C, a]].forEach(([x, z]) => box(x, z, 0.8, 4.4, 0.8, 0, { mat: colM }));
+    }
+    [[0, -C, 48, 3.6], [0, C, 48, 3.6], [-C, 0, 3.6, 48], [C, 0, 3.6, 48]].forEach(([x, z, w, d]) => {
+      if (w > d) [-14, 14].forEach(o => box(x + o, z, 20, 0.5, d, 0, { mat: roofM, y: 4.4, noCollide: true }));
+      else [-14, 14].forEach(o => box(x, z + o, w, 0.5, 20, 0, { mat: roofM, y: 4.4, noCollide: true }));
+    });
+    // trees on the lawn (trunks block) and planters as low cover
+    const leaf = new THREE.MeshStandardMaterial({ color: FLIP_ART ? 0x4f7a4c : 0x3d6a34, roughness: 0.95 });
+    [[-14, -14], [14, 14], [-14, 14], [14, -14]].forEach(([x, z]) => {
+      box(x, z, 0.7, 3, 0.7, 0x5a3e2a);
+      const cr = new THREE.Mesh(new THREE.SphereGeometry(3.2, 10, 8), leaf);
+      cr.position.set(x, 5, z);
+      cr.scale.y = 0.85;
+      scene.add(cr);
+    });
+    const plM = surf('block', 0xc9b48c);
+    [[0, -11, 6, 1.1], [0, 11, 6, 1.1], [-11, 0, 1.1, 6], [11, 0, 1.1, 6]].forEach(([x, z, w, d]) => box(x, z, w, 1.1, d, 0, { mat: plM }));
+    // clock tower (landmark)
+    const tx = 29, tz = -29;
+    box(tx, tz, 5, 24, 5, 0, { mat: surf('block', 0xd9c49a) });
+    box(tx, tz, 5.6, 0.6, 5.6, 0, { mat: copingMat, y: 24, noCollide: true });
+    const spire = new THREE.Mesh(new THREE.ConeGeometry(3.6, 6, 4), new THREE.MeshStandardMaterial({ color: FLIP_ART ? FLIP.navy : 0x3a4a5a, roughness: 0.7 }));
+    spire.position.set(tx, 27.6, tz);
+    spire.rotation.y = Math.PI / 4;
+    scene.add(spire);
+    const clockMat = new THREE.MeshBasicMaterial({ map: cachedTex('campus_clock', () => {
+      const c = document.createElement('canvas');
+      c.width = c.height = 128;
+      const g = c.getContext('2d');
+      g.fillStyle = '#f2ebdf'; g.beginPath(); g.arc(64, 64, 60, 0, 6.28); g.fill();
+      g.lineWidth = 6; g.strokeStyle = '#1c1b21'; g.stroke();
+      g.lineWidth = 4;
+      for (let i = 0; i < 12; i++) { const an = i * Math.PI / 6; g.beginPath(); g.moveTo(64 + Math.sin(an) * 46, 64 - Math.cos(an) * 46); g.lineTo(64 + Math.sin(an) * 54, 64 - Math.cos(an) * 54); g.stroke(); }
+      g.lineWidth = 6; g.beginPath(); g.moveTo(64, 64); g.lineTo(64, 26); g.stroke();
+      g.beginPath(); g.moveTo(64, 64); g.lineTo(92, 74); g.stroke();
+      return srgbTex(new THREE.CanvasTexture(c));
+    }), transparent: true });
+    clockMat.userData.noFlip = true;
+    [['z+', 0, 2.56], ['z-', 0, -2.56], ['x+', 2.56, 0], ['x-', -2.56, 0]].forEach(([f, ox, oz]) => {
+      const m = plane(3.4, 3.4, clockMat, tx + ox, 20.5, tz + oz, ROT[f]);
+      m.raycast = noRay;
+    });
+    // buildings round the court
+    [
+      [0, -44, 28, 12, 11, 0xd9c49a, 0x8a5a3a, 'LIBRARY', 'z+', '#233a70', '#f2ebdf', { doors: [['z+', -6], ['z+', 6]], split: { axis: 'x', at: [0], door: true }, ladder: ['z-', 0], props: 'stacks' }],
+      [0, 44, 24, 12, 8, 0xe4bd2c, 0x8a6a10, 'STUDENT UNION', 'z-', '#1c1b21', '#e4bd2c', { doors: [['z-', -6], ['z-', 6], ['x+', 0]], split: { axis: 'x', at: [-3], door: true }, ladder: ['z+', 0] }],
+      [-44, 0, 12, 26, 9, 0xd4bc8e, 0x8a5a3a, 'LECTURE HALL A', 'x+', '#93402a', '#f2ebdf', { doors: [['x+', -7], ['x+', 7]], split: { axis: 'z', at: [0], door: true }, ladder: ['x-', 0], props: 'desks' }],
+      [44, 0, 14, 22, 9, 0xdcc8a0, 0x166534, 'PHARMACY SCHOOL ➕', 'x-', '#14532d', '#ffffff', { doors: [['x-', -6], ['x-', 6]], split: { axis: 'z', at: [0], door: true }, ladder: ['x+', 0], props: 'shelves' }],
+      [-42, -40, 14, 12, 7, 0x93402a, 0x5a2416, 'REFECTORY', 'z+', '#f2ebdf', '#93402a', { doors: [['z+', 0], ['x+', 2]], ladder: ['x-', 0] }],
+      [42, -40, 12, 12, 7, 0x233a70, 0x14234a, 'BOOKSHOP', 'z+', '#e4bd2c', '#233a70', null, 'x+'],
+      [-42, 40, 14, 14, 11, 0x3f5fa8, 0x1e2f5a, 'ENGINEERING', 'z-', '#f2ebdf', '#233a70', null, 'x-'],
+      [42, 40, 16, 14, 9, 0x8ea3cf, 0x3f5fa8, 'SPORTS HALL', 'z-', '#1c1b21', '#8ea3cf', { doors: [['z-', -4], ['x-', 3]], ladder: ['x+', 0] }]
+    ].forEach(place);
+    if (zmap) {
+      [
+        [-74, 0, 14, 26, 7, 0xa8492f, 0x5a2416, 'DORMS', 'x+', '#1c1b21', '#fde68a', { doors: [['x+', -8.7], ['x+', 0], ['x+', 8.7]], split: { axis: 'z', at: [-4.33, 4.33], door: false }, ladder: ['x-', 0] }],
+        [74, 0, 14, 20, 7, 0xd33a2c, 0x7a1d16, 'COLLEGE BAR', 'x-', '#1c1b21', '#fca5a5', { doors: [['x-', -5], ['x-', 5]], split: { axis: 'z', at: [0], door: true }, ladder: ['x+', 0] }],
+        [0, -74, 18, 14, 7, 0xf2ebdf, 0x233a70, 'OBSERVATORY', 'z+', '#233a70', '#f2ebdf', { doors: [['z+', -4], ['z+', 4]], split: { axis: 'x', at: [0], door: true }, ladder: ['z-', 0] }],
+        [0, 74, 26, 12, 6, 0x93402a, 0x5a2416, 'BOAT SHED', 'z-', '#1c1b21', '#e4bd2c', { doors: [['z-', -7], ['z-', 7], ['x+', 0]], ladder: ['z+', 0], props: 'cargo', h: 6 }],
+        [-70, -70, 16, 12, 6, 0x8ea3cf, 0x3f5fa8, 'GREENHOUSE', 'x+', '#14532d', '#bbf7d0', { doors: [['x+', 0], ['z+', 0]], ladder: ['x-', 0] }],
+        [70, 70, 12, 12, 6, 0xe9a6a3, 0x9a4a46, 'UNI KIOSK', 'x-', '#1c1b21', '#fbcfe8', { doors: [['x-', 0], ['z-', 0]], ladder: ['z+', 0] }]
+      ].forEach(place);
+      // bike racks and hedges out in the grounds
+      [[-58, -30, 6, 1.1], [58, 30, 6, 1.1], [-30, 58, 1.1, 6], [30, -58, 1.1, 6], [-58, 30, 6, 1.1], [58, -30, 6, 1.1]].forEach(([x, z, w, d]) => box(x, z, w, 1.1, d, 0, { mat: plM }));
+    }
+    vd.lamps = [[-16, -31], [16, 31], [-31, 16], [31, -16], [-16, 31], [16, -31]];
+    if (zmap) vd.lamps.push([-60, -42], [60, 42], [-42, 60], [42, -60], [-60, 42], [60, -42]);
+    vd.spawns = [[-34, -20], [34, 20], [-34, 20], [34, -20], [-20, -34], [20, 34], [-8, -6], [8, 6], [0, -32], [0, 32], [-20, 20], [20, -20], [-54, -22]];
+    vd.pickups = [[-8, -14, 'ak'], [8, 14, 'ak'], [18, 0, 'gatling'], [-18, 0, 'gatling'], [-6, -34, 'rpg'], [6, 34, 'rpg'], [-32, -6, 'smg'], [32, 6, 'smg'], [-18, -18, 'shotgun'], [18, 18, 'shotgun'], [-30, 30, 'burger'], [30, -36, 'burger'], [-6, 0, 'burger'], [-22, -30, 'sniper'], [-22, 30, 'flamer'], [20, -20, 'flamer'], [-34, 22, 'revolver'], [34, -22, 'revolver']];
+    if (zmap) vd.pickups.push(
+      [-27, -4, 'knife'], [27, 11, 'machete'], [17, -9, 'bat'], [-30, 8, 'shovel'], [3, -22, 'crowbar'], [30, -8, 'axe'], [-12, -32, 'katana'], [30, 50, 'sledge'], [-57, 22, 'bat'], [57, -22, 'shovel'],
+      [47, -6, 'medkit'], [47, 6, 'medkit'], [41, -8, 'nade'], [0, 72, 'rpg'], [8, 72, 'nade'], [-4, -74, 'medkit'], [4, -72, 'sniper'], [74, -6, 'burger'], [74, 6, 'flamer'], [-70, -70, 'gatling'], [70, 70, 'revolver'], [-74, 8, 'medkit'], [-46, -32, 'nade'], [42, 36, 'medkit']
+    );
+    vd.zspawns = [[-82, -40], [-82, 40], [82, -40], [82, 40], [-40, -82], [40, -82], [-40, 82], [40, 82], [-82, -82], [82, 82], [82, -82], [-82, 82], [-56, -56], [60, -60], [-60, 60], [56, 56], [-84, -20], [20, 84]];
+  };
+
   // ---- buildings ----
+  if (!TOWN) (V === 'docks' ? buildDocks : buildCampus)();
+  if (TOWN) {
   building(-40, -38, 22, 9, 12, 0xef6a86, 0x9b2c46, 'BARRACKS', 'z+', '#1f2937', '#fde68a', 'x+');
   building(38, -40, 20, 8, 12, 0x5b8def, 0x223f8a, 'MOON EDEN MARKET', 'z+', '#fef3c7', '#1e3a8a');
   building(-42, 40, 16, 7, 14, 0xf4c84a, 0xa5761a, 'NGMI DINER', 'z-', '#b91c1c', '#ffffff');
@@ -4712,8 +4977,10 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
     walkIn(-70, -70, 14, 14, 4.8, 0x64748b, 0x1e293b, 'GARAGE', { doors: [['x+', 0], ['z+', 0]], ladder: ['x-', 0], signBg: '#111827', signFg: '#e5e7eb' });
     walkIn(70, 70, 16, 14, 4.8, 0xec4899, 0x831843, 'ARCADE', { doors: [['x-', 0], ['z-', 0]], split: { axis: 'x', at: [3], door: true }, ladder: ['z+', 0], signBg: '#4a044e', signFg: '#f0abfc' });
   }
+  } // TOWN buildings
 
   // ---- water tower ----
+  if (TOWN) {
   const towerMat = new THREE.MeshStandardMaterial({ color: 0x7c8084, roughness: 0.55, metalness: 0.5 });
   const tx = 14, tz = -14;
   [[-2.4, -2.4], [2.4, -2.4], [-2.4, 2.4], [2.4, 2.4]].forEach(([ox, oz]) => {
@@ -4765,9 +5032,10 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
     plane(8, 2.6, new THREE.MeshStandardMaterial({ color: 0x374151 }), x, 5.6, z, ry + Math.PI);
   });
 
+  } // TOWN water tower, containers, billboards
   // ---- lamps ----
-  const lamps = [[-6, -20], [6, 20], [-20, 6], [20, -6], [-46, -22], [46, 22]];
-  if (zmap) lamps.push([-60, -34], [60, 34], [-34, 60], [34, -60], [-60, 30], [60, -30], [30, 60], [-30, -60]);
+  const lamps = TOWN ? [[-6, -20], [6, 20], [-20, 6], [20, -6], [-46, -22], [46, 22]] : vd.lamps;
+  if (zmap && TOWN) lamps.push([-60, -34], [60, 34], [-34, 60], [34, -60], [-60, 30], [60, -30], [30, 60], [-30, -60]);
   lamps.forEach(([x, z]) => {
     box(x, z, 0.25, 6, 0.25, 0x2f3542, { noEdge: true });
     box(x + 0.6, z, 1.4, 0.25, 0.5, 0x2f3542, { y: 6, noCollide: true, noEdge: true });
@@ -4778,6 +5046,7 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4f3d2c, roughness: 0.95 });
   for (let i = 0; i < 70; i++) {
     const a = (i / 70) * Math.PI * 2 + Math.random() * 0.05;
+    if (V === 'docks' && Math.sin(a) < -0.15) continue; // the harbour side is open water
     const r = (zmap ? 100 : 72) + Math.random() * 38;
     const t = new THREE.Group();
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, 2.5, 6), trunkMat);
@@ -4853,7 +5122,7 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
     m.userData.noFlip = true;
     return m;
   };
-  if (zmap) {
+  if (!TOWN) { /* murals belong to the town's walls */ } else if (zmap) {
     plane(4.0, 2.3, mural('WAGMI', '#7c3aed'), -28.94, 2.5, -34.3, Math.PI / 2);
     plane(5.8, 2.8, mural('GMI', '#0ea5e9'), 34.94, 2.5, 34.5, -Math.PI / 2);
   } else {
@@ -4869,7 +5138,7 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
   flagShape.closePath();
   const flagGeo = new THREE.ShapeGeometry(flagShape);
   const flagCols = (FLIP_ART ? [FLIP.red, FLIP.paper, FLIP.navy, FLIP.mustard, FLIP.paper, FLIP.ink] : [0xef4444, 0xfacc15, 0x22c55e, 0x3b82f6, 0xec4899, 0xf97316]).map(c => new THREE.Color(c));
-  (zmap ? [] : [[-46, -6, 46, -6], [-46, 6, 46, 6], [-6, -46, -6, 46], [6, -46, 6, 46]]).forEach(([x1, z1, x2, z2]) => {
+  (zmap || !TOWN ? [] : [[-46, -6, 46, -6], [-46, 6, 46, 6], [-6, -46, -6, 46], [6, -46, 6, 46]]).forEach(([x1, z1, x2, z2]) => {
     const len = Math.hypot(x2 - x1, z2 - z1);
     const n = Math.floor(len / 1.15);
     const inst = new THREE.InstancedMesh(flagGeo, new THREE.MeshStandardMaterial({ side: THREE.DoubleSide, roughness: 0.8 }), n);
@@ -4895,7 +5164,7 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
   const padGeo = new THREE.CylinderGeometry(1.5, 1.7, 0.3, 20);
   const arrowGeo = new THREE.ConeGeometry(0.5, 0.6, 4);
   const arrowMat = new THREE.MeshBasicMaterial({ color: 0xa5f3fc, transparent: true, opacity: 0.8 });
-  const pads = [[-47, -28.5, 0, -1], [45, -30.5, 0, -1], [-47, 29.5, 0, 1], [46, 26.5, 0, 1]].map(([x, z, dx, dz]) => {
+  const pads = (TOWN ? [[-47, -28.5, 0, -1], [45, -30.5, 0, -1], [-47, 29.5, 0, 1], [46, 26.5, 0, 1]] : []).map(([x, z, dx, dz]) => {
     const padMat = new THREE.MeshStandardMaterial({ color: 0x0e7490, emissive: 0x22d3ee, emissiveIntensity: 0.9, roughness: 0.3 });
     const pad = new THREE.Mesh(padGeo, padMat);
     pad.position.set(x, 0.15, z);
@@ -4911,14 +5180,15 @@ function buildShootoutMap(scene, cinematic, zmap = false) {
   });
 
   const spawns = [[-48, -22], [48, 22], [-48, 22], [48, -22], [-20, -46], [20, 46], [0, 0], [-40, 0], [40, 0], [0, -40], [0, 40], [-24, 34], [24, -34]];
-  const pickupSpots = [[-24, -8, 'ak'], [24, 8, 'ak'], [14, -14, 'gatling'], [-44, 12, 'rpg'], [0, -40, 'gatling'], [44, -12, 'rpg'], [-14, -42, 'smg'], [30, 44, 'shotgun'], [-16, 30, 'shotgun'], [12, -36, 'smg'], [-38, -24, 'burger'], [38, 24, 'burger'], [-40, -38, 'ak', zmap ? 4.8 : 9], [42, 38, 'rpg', zmap ? 4.8 : 10], [-42, 40, 'burger', zmap ? 4.8 : 7], [0, 22, 'sniper'], [-25, -45, 'flamer'], [34, -26, 'revolver'], [8, 30, 'flamer'], [-6, -22, 'revolver']];
+  const pickupSpots = [[-24, -10.5, 'ak'], [24, 10.5, 'ak'], /* nudged off the billboard posts */ [14, -14, 'gatling'], [-44, 12, 'rpg'], [0, -40, 'gatling'], [44, -12, 'rpg'], [-14, -42, 'smg'], [30, 44, 'shotgun'], [-16, 30, 'shotgun'], [12, -36, 'smg'], [-38, -24, 'burger'], [38, 24, 'burger'], [-40, -38, 'ak', zmap ? 4.8 : 9], [42, 38, 'rpg', zmap ? 4.8 : 10], [-42, 40, 'burger', zmap ? 4.8 : 7], [0, 22, 'sniper'], [-25, -45, 'flamer'], [34, -26, 'revolver'], [8, 30, 'flamer'], [-6, -22, 'revolver']];
   if (zmap) {
     pickupSpots.forEach(sp => { if (sp[0] === -25 && sp[1] === -45) { sp[0] = -22; sp[1] = -48; } });
     pickupSpots.push([-27, -4, 'knife'], [27, 11, 'machete'], [17, -9, 'bat'], [-41, 8, 'shovel'], [3, -27, 'crowbar'], [41, -8, 'axe'], [-12, -38, 'katana'], [33, 40, 'sledge'], [-57, 30, 'bat'], [57, -30, 'shovel']);
     pickupSpots.push([-76, -5, 'medkit'], [-76, 5, 'medkit'], [-73, -8.5, 'nade'], [0, 71, 'rpg'], [10, 71, 'nade'], [-5, -76, 'medkit'], [5, -72, 'sniper'], [74, -8, 'burger'], [74, 8, 'flamer'], [-70, -70, 'gatling'], [70, 70, 'revolver'], [66, 66, 'medkit'], [-46, -40, 'nade'], [42, 40, 'medkit']);
   }
   const zspawns = zmap ? [[-82, -40], [-82, 40], [82, -40], [82, 40], [-40, -82], [40, -82], [-40, 82], [40, 82], [-82, -82], [82, 82], [82, -82], [-82, 82], [-60, -60], [60, -60], [-60, 60], [60, 60], [-82, 0], [0, 82]] : null;
-  return { colliders, solids, spawns, pickupSpots, clouds, pads, rooms, portals, ladders, zspawns, lamps, bound: L };
+  if (!TOWN) return { colliders, solids, spawns: vd.spawns, pickupSpots: vd.pickups, clouds, pads, rooms, portals, ladders, zspawns: zmap ? vd.zspawns : null, lamps, bound: L, venue: V, sunset: V === 'docks' && !zmap };
+  return { colliders, solids, spawns, pickupSpots, clouds, pads, rooms, portals, ladders, zspawns, lamps, bound: L, venue: V };
 }
 
 function makeSmokeTexture() {
@@ -5247,7 +5517,7 @@ function buildSiegeMap(scene, cinematic) {
   return { colliders, solids, spawns, pickupSpots, clouds: [], pads: [], objectives, dropSpots, sunset: true, anim: { searchlights, barrels, ledMat, wheel, flags } };
 }
 
-function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant = 'ffa', team = 'auto', zmode = 'raid', story = null }) {
+function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant = 'ffa', team = 'auto', zmode = 'raid', story = null, venue = 'town' }) {
   const sensRef = useRef(loadProfile().sens || 1);
   const touchSensRef = useRef(loadProfile().touchSens || 1);
   const autoFireRef = useRef(loadProfile().autoFire !== false);
@@ -5284,6 +5554,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
   const lockRef = useRef(null);
   const [hud, setHud] = useState({ zombie: null, squad: [], downed: null, reviving: null, zmarks: [], prot: false, hurt: null, siege: false, team: null, obj: null, marker: null, weapons: [], moon: 0, bull: 0, started: false, hp: 100, mag: 45, reserve: Infinity, wname: 'AK-47', wkey: 'ak', reloading: 0, kills: 0, deaths: 0, left: SHOOT_SECONDS, feed: [], dead: null, board: [], aim: null, scope: false, locked: false, peers: 1, net: 'CONNECTING', nades: variant === 'zombie' ? 3 : 2, nadeCd: 0, nadePct: 1, meds: 0 });
   const [announce, setAnnounce] = useState(null);
+  const [waveRep, setWaveRep] = useState(null); // zombie: between-wave report card
   const [results, setResults] = useState(null);
   const clipRef = useRef(null);
   const allClips = useClips();
@@ -5383,7 +5654,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const siege = variant === 'siege';
     const zombie = variant === 'zombie';
     const teamPlay = siege || zombie; // no friendly fire
-    const map = siege ? buildSiegeMap(scene, cinematic) : buildShootoutMap(scene, cinematic, zombie);
+    const map = siege ? buildSiegeMap(scene, cinematic) : buildShootoutMap(scene, cinematic, zombie, venue);
     if (map.sunset) {
       sun.color.set(0xffa868);
       sun.intensity = 2.5;
@@ -6227,7 +6498,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
 
     // ---------- network ----------
     const net = { isHost: true, hostId: myId, seen: {}, peers: {}, status: 'CONNECTING', client: null, pendingTr: [], pendingEx: [], pendingZfx: [] };
-    const topic = zombie ? `ngmipandas/shootout/v1/zombie/${cleanRoom(room)}` : `ngmipandas/shootout/v1/${cleanRoom(room)}`;
+    const vTag = !siege && cleanVenue(venue) !== 'town' ? `${cleanVenue(venue)}/` : ''; // different venue = different room channel
+    const topic = zombie ? `ngmipandas/shootout/v1/zombie/${vTag}${cleanRoom(room)}` : `ngmipandas/shootout/v1/${vTag}${cleanRoom(room)}`;
     const send = obj => {
       const c = net.client;
       if (c && c.connected) {
@@ -7347,7 +7619,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     const ZPHASES = ['boot', 'prep', 'wave', 'clear', 'over', 'won'];
     // phase: boot → prep → wave → clear → prep … ; ends in over (squad wiped) or won (raid finale)
     // horde: 0 not yet · 1 siren warning · 2 pouring in · 3 done
-    const zd = { wave: 0, phase: 'boot', t: 2, toSpawn: 0, spawned: 0, horde: 0, hordeT: 0, hordeLeft: 0, hordeAt: [0, 0], bossWave: false, bossDown: false, brutes: 0, spitters: 0, hpMul: 1, dmgMul: 1, spdMul: 1, teamKills: 0, deltaAt: 45, deltaN: 0 };
+    const zd = { wave: 0, phase: 'boot', t: 2, toSpawn: 0, spawned: 0, horde: 0, hordeT: 0, hordeLeft: 0, hordeAt: [0, 0], bossWave: false, bossDown: false, brutes: 0, spitters: 0, hpMul: 1, dmgMul: 1, spdMul: 1, teamKills: 0, deltaAt: 45, deltaN: 0, screamers: 0 };
     const corpses = [];
     const takeZMesh = kind => {
       const pl = zPool[kind] || (zPool[kind] = []);
@@ -7372,7 +7644,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         pos: new THREE.Vector3(x, 0, z), vel: new THREE.Vector3(), face: Math.random() * 6.28,
         hp: hp || def.hp, maxHp: hp || def.hp, dead: false, atkCd: 0.6, thinkT: 0, target: null,
         spd: def.spd[0] + Math.random() * (def.spd[1] - def.spd[0]), walk: Math.random() * 6, stuckT: 0, avoid: 0,
-        act: 0, actT: 0, swing: 0, rush: false, rise: 0, slamCd: 6, rockCd: 4, spitCd: 2 + Math.random() * 2, onGround: true, burnT: 0, predT: 0, flinch: 0, wp: null
+        act: 0, actT: 0, swing: 0, rush: false, rise: 0, slamCd: 6, rockCd: 4, spitCd: 2 + Math.random() * 2, screamCd: 1.2 + Math.random() * 0.8, fomoT: 0, onGround: true, burnT: 0, predT: 0, flinch: 0, wp: null
       };
       zz.mesh = takeZMesh(kind);
       zz.mesh.scale.setScalar(zz.s);
@@ -7416,6 +7688,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       let t = 0;
       if (w >= 2 && r < (t += 0.04 + w * 0.01)) return 'bloater';
       if (w >= 4 && zd.spitters < 1 + Math.floor(w / 3) && r < (t += 0.05 + w * 0.006)) { zd.spitters += 1; return 'spitter'; }
+      if (w >= 3 && zd.screamers < (w >= 7 ? 2 : 1) && r < (t += 0.045)) { zd.screamers += 1; return 'screamer'; }
       if (w >= 2 && zd.brutes < 1 + Math.floor(w / 2) && r < (t += 0.05 + w * 0.009)) return 'brute';
       if (w >= 3 && r < (t += 0.06 + w * 0.008)) return 'crawler';
       return r < t + 0.12 + w * 0.04 ? 'runner' : 'walker';
@@ -7752,6 +8025,26 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       me.shake = Math.max(me.shake, Math.max(0, 1.4 - dme / 25));
       sfx.play('explode', Math.max(0.2, 1 - dme / 70));
     };
+    // FOMO scream: a pink shock ring, a shriek you can place by ear, and a light camera shove when it's close
+    const screamFx = (x, y, z) => {
+      const point = new THREE.Vector3(x, y + 1.8, z);
+      const bm = takeBoom(0xf472b6);
+      bm.ring.position.set(x, y + 0.15, z);
+      bm.ring.userData.base = 2.4;
+      bm.glow.position.copy(point);
+      bm.t = 0;
+      bm.s = 1.1;
+      booms.push(bm);
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * Math.PI * 2;
+        spawnFx({ pos: point, size: 0.5, grow: 3, life: 0.7, color: 0xf9a8d4, add: true, opacity: 0.6, vx: Math.cos(a) * 12, vy: 1, vz: Math.sin(a) * 12, drag: 2 });
+      }
+      play3d('shriek', point, 1, 0.94 + Math.random() * 0.12, 80);
+      const dme = me.pos.distanceTo(point);
+      if (dme < 30) me.shake = Math.max(me.shake, 0.35 * (1 - dme / 30));
+      if (dme < 60) pushFeed('📣 A Screamer called the horde · shut it up!', '#f9a8d4');
+      showTip('screamer', '📣 SCREAMER: it hangs back and screams. Every scream frenzies nearby zombies and calls in runners. Pink marker = kill it first.');
+    };
     // boss rocks + spitter acid globs share one projectile list
     const rockGeo = new THREE.IcosahedronGeometry(0.95, 0);
     const rockMat = new THREE.MeshStandardMaterial({ color: 0x6b5a4a, roughness: 1, flatShading: true });
@@ -7810,6 +8103,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (e.length >= 5) launchOffice(new THREE.Vector3(n(1), 0, n(2)), n(3), n(4), null, false, false);
       }
       else if (e[0] === 1) slamFx(n(1), n(2), n(3));
+      else if (e[0] === 6) screamFx(n(1), n(2), n(3));
       else if (e[0] === 2 || e[0] === 3) throwRock(new THREE.Vector3(n(1), n(2), n(3)), new THREE.Vector3(n(4), n(5), n(6)), false, e[0] === 3 ? 'spit' : 'rock');
     };
 
@@ -7852,7 +8146,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const k = fighters.find(f => f.id === kid);
       if (!k) return;
       if (k.isMe || k.isBot) k.kills += 1; // remote players report their own totals
-      if (def.boss || def.pop || def.spit || def === ZOMBIE_KINDS.brute) pushFeed(`${k.name} ${def.boss ? '👑' : '💀'} ${def.name}`, k.isMe ? '#4ade80' : '#d9f99d');
+      if (def.boss || def.pop || def.spit || def.scream || def === ZOMBIE_KINDS.brute) pushFeed(`${k.name} ${def.boss ? '👑' : '💀'} ${def.name}`, k.isMe ? '#4ade80' : '#d9f99d');
       if (!k.isMe) return;
       me.headshots = (me.headshots || 0) + (head ? 1 : 0);
       showHit(head, true);
@@ -7873,6 +8167,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         announceNow('👑 YOU SLEW THE RUG LORD', '#facc15');
         if (clipRef.current) clipRef.current.highlight('RUG LORD SLAIN');
       } else if (def === ZOMBIE_KINDS.brute) announceNow('💀 BAG HOLDER DOWN', '#d9f99d');
+      else if (def.scream) announceNow('📣 SCREAMER SILENCED', '#f9a8d4');
     };
     const bossDown = () => {
       announceNow('👹 THE RUG LORD IS DOWN!', '#c084fc');
@@ -7900,6 +8195,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       toCorpse(zz, head, gib || zz.def.pop);
       if (zz.def.pop) bloaterPop(pos, true);
       if (zz.def.spit) zd.spitters = Math.max(0, zd.spitters - 1);
+      if (zz.def.scream) zd.screamers = Math.max(0, zd.screamers - 1);
       if (zz.def.boss) bossDown();
     };
 
@@ -7922,6 +8218,18 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             f.vel.y = Math.max(f.vel.y, 9);
           }
         });
+      } else if (zz.act === 5) {
+        // the FOMO scream: everything nearby frenzies, and a few runners answer the call
+        screamFx(zz.pos.x, zz.pos.y, zz.pos.z);
+        net.pendingZfx.push([6, r1(zz.pos.x), r1(zz.pos.y), r1(zz.pos.z)]);
+        zombies.forEach(o => { if (o !== zz && !o.dead && !o.def.boss && Math.hypot(o.pos.x - zz.pos.x, o.pos.z - zz.pos.z) < 22) o.fomoT = 5; });
+        const calls = Math.min(3, Math.max(0, ZMAX + (IS_TOUCH ? 2 : 6) - zombies.length));
+        for (let k = 0; k < calls; k++) {
+          const a = Math.random() * Math.PI * 2;
+          const rz = spawnZ('runner', zz.pos.x + Math.cos(a) * 4, zz.pos.z + Math.sin(a) * 4);
+          rz.rise = 0.6;
+          rz.fomoT = 5;
+        }
       } else if ((zz.act === 3 || zz.act === 4) && zz.rockTarget && !zz.rockTarget.dead) {
         const t = zz.rockTarget, spit = zz.act === 4;
         const from = new THREE.Vector3(zz.pos.x + Math.sin(zz.face) * (spit ? 0.8 : 2), zz.pos.y + zz.s * (spit ? 1.3 : 1.6), zz.pos.z + Math.cos(zz.face) * (spit ? 0.8 : 2));
@@ -7961,7 +8269,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (best) {
           // watchdog: a zombie that hasn't closed in for a long time is lost; bring it back into the fight
           if (bd < zz.bestD - 1.5) { zz.bestD = bd; zz.noProg = 0; }
-          const keep = def.spit ? 26 : 10;
+          const keep = def.spit || def.scream ? 30 : 10;
           if (zz.noProg > 15 && bd > keep && !def.boss) relocateZombie(zz, best);
           else if (zz.noProg > 25 && bd > 30 && def.boss) relocateZombie(zz, best);
         }
@@ -7972,7 +8280,8 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       const t = zz.target && !zz.target.dead ? zz.target : null;
       zz.wp = t ? flowWp(zz, t) : null;
       const flinchK = 1 - Math.min(0.85, zz.flinch * 2.6);
-      let dx = 0, dz = 0, spd = zz.spd * zd.spdMul * (zz.rush ? 1.2 : 1) * (zz.enraged ? 1.35 : 1) * (world.bullT > 0 ? 1.2 : 1) * flinchK;
+      if (zz.fomoT > 0) zz.fomoT -= dt;
+      let dx = 0, dz = 0, spd = zz.spd * zd.spdMul * (zz.rush ? 1.2 : 1) * (zz.enraged ? 1.35 : 1) * (zz.fomoT > 0 ? 1.3 : 1) * (world.bullT > 0 ? 1.2 : 1) * flinchK;
       if (zz.stunT > 0) {
         zz.stunT -= dt;
         spd *= 0.12;
@@ -8040,6 +8349,17 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
             zz.rockTarget = t;
           }
           if (d < 13 && d > 4 && sameReg) { dx *= -0.4; dz *= -0.4; }
+        }
+        // screamers hang back at 14-28 m and scream every ~8 s (the first one soon after they rise)
+        if (def.scream && !frozen && zz.actT <= 0) {
+          zz.screamCd -= dt;
+          if (zz.screamCd <= 0 && d < 70) {
+            zz.act = 5;
+            zz.actT = 1.1;
+            zz.screamCd = 7.5 + Math.random() * 2.5;
+          }
+          if (d < 14 && d > 3 && sameReg) { dx *= -0.5; dz *= -0.5; }
+          else if (d < 28 && sameReg && zz.stuckT < 0.3) { dx *= 0.15; dz *= 0.15; }
         }
         if (def.boss && !frozen && zz.actT <= 0) {
           zz.slamCd -= dt;
@@ -8117,7 +8437,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
     };
 
     // ---- squad chatter: speech bubbles, radio blips and (optional) voices ----
-    const CALLS = { reload: 'RELOADING!', help: 'HELP ME!', horde: 'HORDE INCOMING!', nade: 'FIRE IN THE HOLE!', med: 'CATCH — MEDKIT!', revive: 'I GOT YOU!', thanks: 'THANKS!', boss: 'RUG LORD! FOCUS FIRE!', brute: 'BIG ONE COMING!', bloater: 'BLOATER! SHOOT IT FROM RANGE!', spitter: 'SPITTER! WATCH THE ACID!', hurt: "I'M HURT BAD!", onme: 'ON ME! STICK TOGETHER!', clear: 'CLEAR!', barrel: 'SHOOT THE BARREL!', medrun: 'GETTING A MEDKIT!', cover: "I'LL COVER YOU!", gotkit: 'GOT A KIT · HOLD ON!', gotgun: 'GOT A BIG GUN!', rocket: 'ROCKET OUT!', gold: "GOLDEN AK · LET'S GO!" };
+    const CALLS = { reload: 'RELOADING!', help: 'HELP ME!', horde: 'HORDE INCOMING!', nade: 'FIRE IN THE HOLE!', med: 'CATCH — MEDKIT!', revive: 'I GOT YOU!', thanks: 'THANKS!', boss: 'RUG LORD! FOCUS FIRE!', brute: 'BIG ONE COMING!', bloater: 'BLOATER! SHOOT IT FROM RANGE!', spitter: 'SPITTER! WATCH THE ACID!', hurt: "I'M HURT BAD!", onme: 'ON ME! STICK TOGETHER!', clear: 'CLEAR!', barrel: 'SHOOT THE BARREL!', medrun: 'GETTING A MEDKIT!', cover: "I'LL COVER YOU!", gotkit: 'GOT A KIT · HOLD ON!', gotgun: 'GOT A BIG GUN!', rocket: 'ROCKET OUT!', gold: "GOLDEN AK · LET'S GO!", screamer: 'SCREAMER! SHUT IT UP!' };
     const CALL_IDS = Object.keys(CALLS);
     let lastVoiceAt = 0;
     const showBubble = (f, text) => {
@@ -8533,6 +8853,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           let sc = -d;
           if (zz.def.pop) sc += d > 7 ? 14 : -25;
           if (zz.def.spit) sc += 10;
+          if (zz.def.scream) sc += 16; // silence the screamer before it calls more
           if (zz.def.boss) sc += 5;
           const tg = zz.target;
           if (tg && tg !== b && Math.hypot(zz.pos.x - tg.pos.x, zz.pos.z - tg.pos.z) < 5) sc += 8; // protect whoever it's chasing
@@ -8553,9 +8874,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         if (best !== b.target) {
           b.target = best;
           b.react = Math.max(0.08, 0.2 + BOT.react * 0.5 + Math.random() * 0.2);
-          if (best && !best.called && (best.def.boss || best.def.pop || best.def.spit || best.kind === 'brute')) {
+          if (best && !best.called && (best.def.boss || best.def.pop || best.def.spit || best.def.scream || best.kind === 'brute')) {
             best.called = true;
-            callout(b, best.def.boss ? 'boss' : best.def.pop ? 'bloater' : best.def.spit ? 'spitter' : 'brute');
+            callout(b, best.def.boss ? 'boss' : best.def.pop ? 'bloater' : best.def.spit ? 'spitter' : best.def.scream ? 'screamer' : 'brute');
           }
         }
         // frag a packed group that isn't on top of the squad
@@ -8959,6 +9280,9 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           spawnAirdrop();
         }
       } else if (ph === 'wave') {
+        // snapshot for the wave report
+        zd.rep = { k0: new Map(fighters.map(f => [f.id, f.kills || 0])), hs0: me.headshots || 0, tk0: zd.teamKills || 0, t0: performance.now(), downs0: me.downs || 0 };
+        setWaveRep(null);
         if (isBossWave(zd.wave)) {
           announceNow(isFinalWave(zd.wave) ? '👑 FINAL WAVE · THE RUG LORD RETURNS' : '👹 THE RUG LORD AWAKENS', '#c084fc');
           sfx.play('roar');
@@ -8970,6 +9294,12 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         }
       } else if (ph === 'clear') {
         announceNow(`✅ WAVE ${zd.wave} CLEARED`, '#4ade80');
+        if (zd.rep) {
+          const rows = fighters.map(f => ({ id: f.id, name: f.name, color: f.color, isMe: !!f.isMe, k: Math.max(0, (f.kills || 0) - (zd.rep.k0.get(f.id) || 0)) })).sort((a, b) => b.k - a.k);
+          const secs = Math.round((performance.now() - zd.rep.t0) / 1000);
+          setWaveRep({ wave: zd.wave, rows, mvp: rows[0] && rows[0].k > 0 ? rows[0].id : null, team: Math.max(0, (zd.teamKills || 0) - zd.rep.tk0), hs: Math.max(0, (me.headshots || 0) - zd.rep.hs0), secs, downs: Math.max(0, (me.downs || 0) - zd.rep.downs0) });
+          later(() => setWaveRep(null), 8500);
+        }
         sfx.play('streak');
         sfx.setRush(false);
         const yeller = fighters.find(f => f.isBot && !f.dead);
@@ -8996,6 +9326,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
       fighters.forEach(f => { if (f.isBot && !f.dead) { f.nades = Math.max(f.nades || 0, 2); if (w % 2 === 0) f.medkits = Math.max(f.medkits || 0, 1); } }); // resupply each wave
       zd.brutes = 0;
       zd.spitters = 0;
+      zd.screamers = 0;
       setPhase('wave', 1.2);
       if (zd.bossWave) {
         const [bx, bz] = zSpawnPoint(30);
@@ -9319,7 +9650,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
         const newHp = nowT - zz.predT < 400 ? Math.min(zz.hp, hp) : hp;
         if (newHp < zz.hp - 1) zz.flinch = Math.min(0.4, zz.flinch + 0.1);
         zz.hp = newHp;
-        const act = Math.round(n(a, 7, 0, 4));
+        const act = Math.round(n(a, 7, 0, 5));
         if (act === 1 && zz.act !== 1) zz.swing = 1;
         zz.act = act;
         zz.rise = a[8] ? Math.min(0.9, Math.max(zz.rise || 0.45, 0.05)) : 0;
@@ -9432,7 +9763,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           g.arc(x, y, 5 + Math.sin(now * 0.01) * 1.5, 0, Math.PI * 2);
           g.stroke();
         }
-        g.fillStyle = big ? '#c084fc' : zz.def.spit ? '#bef264' : zz.def.pop ? '#facc15' : zz.kind === 'brute' ? '#ef4444' : '#f87171';
+        g.fillStyle = big ? '#c084fc' : zz.def.scream ? '#f472b6' : zz.def.spit ? '#bef264' : zz.def.pop ? '#facc15' : zz.kind === 'brute' ? '#ef4444' : '#f87171';
         g.beginPath();
         g.arc(x, y, big ? (out ? 4 : 6) : zz.kind === 'brute' ? 3.4 : 2.2, 0, Math.PI * 2);
         g.fill();
@@ -9702,9 +10033,10 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           let armX = -0.12 + Math.sin(zz.walk * 0.5) * 0.12 * gait;
           if (zz.swing > 0) armX = -0.12 - Math.sin(zz.swing * Math.PI) * 1.3;
           if (def.boss && zz.act === 2) armX = -2.4; // both arms up before the slam
+          if (def.scream && zz.act === 5) armX = -2.2; // arms flung up mid-scream
           ud.arms[0].rotation.x = ud.hang === 0 && zz.swing <= 0 ? 1.25 : armX + Math.sin(zz.walk * 0.5 + 1) * 0.1;
           ud.arms[1].rotation.x = def.boss && zz.act === 3 ? -2.7 : ud.hang === 1 && zz.swing <= 0 ? 1.25 : armX - Math.sin(zz.walk * 0.5 + 1) * 0.1;
-          ud.head.rotation.x = zz.act === 4 ? -0.5 : 0.24 + zz.flinch * -1.2;
+          ud.head.rotation.x = zz.act === 4 ? -0.5 : def.scream && zz.act === 5 ? -0.75 : 0.24 + zz.flinch * -1.2;
           ud.head.rotation.z = ud.headTilt || 0;
           const lean = (zz.kind === 'runner' || zz.rush ? 0.32 : 0.14) * gait - zz.flinch * 1.3;
           m.rotation.set(lean, zz.face, Math.sin(zz.walk * 0.5) * 0.06 * gait);
@@ -11113,6 +11445,7 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
           squad = fighters.map(f => ({ id: f.id, name: f.name, color: f.color, hp: Math.max(0, Math.round(f.hp)), downed: !!f.downed, dead: f.dead, isMe: f.isMe, bot: f.isBot, kills: f.kills || 0, meds: f.medkits || 0, near: !f.isMe && !f.dead ? Math.round(Math.hypot(f.pos.x - me.pos.x, f.pos.z - me.pos.z)) : 0 }));
           if ((zd.horde === 1 || zd.horde === 2) && !me.dead) zmarks.push({ k: '⚠️', c: '#ef4444', ...proj(zd.hordeAt[0], 3, zd.hordeAt[1]) });
           if (boss && !me.dead) zmarks.push({ k: '👹', c: '#a855f7', ...proj(boss.pos.x, boss.pos.y + boss.def.s * 2, boss.pos.z) });
+          if (!me.dead) zombies.forEach(o => { if (o.def.scream && !o.dead && !(o.rise > 0)) zmarks.push({ k: '📣', c: '#f472b6', name: 'SCREAMER', ...proj(o.pos.x, o.pos.y + o.s * 2, o.pos.z) }); });
           if (huntOn() && !me.dead) zombies.forEach(o => { if (!o.def.boss && !o.dead) zmarks.push({ k: '🧟', c: '#a3e635', ...proj(o.pos.x, o.pos.y + o.s * 1.9, o.pos.z) }); });
           if (huntOn() && !huntSaid) {
             huntSaid = true;
@@ -11518,6 +11851,30 @@ function ShootoutGame({ cls, name, room, fillBots, gfx, onExit, onAgain, variant
               )}
             </div>
           ))}
+        </div>
+      )}
+      {waveRep && !results && (
+        <div className={`absolute left-1/2 -translate-x-1/2 pointer-events-none z-20 w-[min(88vw,340px)] ${isPortrait ? 'top-[56%]' : 'bottom-[4%]'}`}>
+          <div className="border-2 border-[#f2ebdf] px-3 py-2 text-white shadow-2xl" style={{ background: 'rgba(28,27,33,0.94)', animation: 'fadeUp 0.35s ease-out both' }}>
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-game text-lg leading-none text-lime-300">WAVE {waveRep.wave} REPORT</span>
+              <span className="text-[12px] font-black text-slate-300">⏱ {Math.floor(waveRep.secs / 60)}:{String(waveRep.secs % 60).padStart(2, '0')}</span>
+            </div>
+            <div className="mt-1.5 space-y-0.5">
+              {waveRep.rows.map(r => (
+                <div key={r.id} className={`flex items-center gap-2 text-[13px] font-black px-1.5 py-0.5 ${r.isMe ? 'bg-white/10' : ''}`}>
+                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: r.color }} />
+                  <span className="flex-1 truncate">{r.isMe ? 'YOU' : r.name}{r.id === waveRep.mvp ? ' 🏅 MVP' : ''}</span>
+                  <span className="text-lime-300">🧟 {r.k}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-1.5 pt-1 border-t border-white/20 flex justify-between text-[12px] font-bold text-slate-200">
+              <span>SQUAD 🧟 {waveRep.team}</span>
+              <span>YOUR 🎯 {waveRep.hs} HS</span>
+              <span>{waveRep.downs ? `🆘 ${waveRep.downs} DOWN` : '💚 NO DOWNS'}</span>
+            </div>
+          </div>
         </div>
       )}
       {hud.zmarks && !hud.dancing && hud.zmarks.map((mk, i) => (
@@ -12199,9 +12556,10 @@ function App() {
       if (sfx.ctxState() === 'running' && !sfx.musicOn()) sfx.startMusic();
     }
   }, [screen]);
-  const [soVariant, setSoVariant] = useState('ffa');
+  const [soVariant, setSoVariant] = useState('zombie'); // zombies are the headline Shootout mode
   const [soTeam, setSoTeam] = useState('auto');
   const [soZMode, setSoZMode] = useState('raid');
+  const [soVenue, setSoVenue] = useState('town');
   const [muted, setMuted] = useState(false);
   const [announce, setAnnounce] = useState(null);
   const [buffHud, setBuffHud] = useState([]);
@@ -12269,6 +12627,8 @@ function App() {
       if (varParam === 'ffa' || varParam === 'siege' || varParam === 'zombie') setSoVariant(varParam);
       const zmParam = params.get('zm');
       if (zmParam === 'raid' || zmParam === 'incoming') setSoZMode(zmParam);
+      const vnParam = params.get('vn');
+      if (vnParam && SHOOT_VENUES[vnParam]) setSoVenue(vnParam);
     } catch (e) {}
   }, []);
 
@@ -12294,6 +12654,16 @@ function App() {
     return () => clearInterval(t);
   }, [results, screen]);
   const roomNow = useRoomPresence(roomCode, screen === 'lobby' && mode === 'beatdown');
+  const [settingsOpen, setSettingsOpen] = useState(!IS_TOUCH);
+  // numbered lobby step header: ① ② ③ so the lobby reads top to bottom
+  const stepHead = (n, title, extra = null) => (
+    <div className="flex items-center gap-2.5">
+      <span className={`w-6 h-6 shrink-0 rounded-full flex items-center justify-center font-game text-[12px] text-slate-950 ${mode === 'shootout' ? 'bg-rose-300' : 'bg-emerald-300'}`}>{n}</span>
+      <span className="font-game text-sm text-white whitespace-nowrap">{title}</span>
+      <span className="flex-1 h-px bg-gradient-to-r from-slate-500/60 to-transparent" />
+      {extra}
+    </div>
+  );
 
   const pushKillFeed = (msg, color = '#22c55e') => {
     const id = Date.now() + Math.random();
@@ -12307,9 +12677,10 @@ function App() {
     if (mode === 'shootout') {
       qp.set('v', soVariant);
       if (soVariant === 'zombie') qp.set('zm', soZMode);
+      if (soVariant !== 'siege' && soVenue !== 'town') qp.set('vn', soVenue);
     }
     const url = `${baseUrl}?${qp.toString()}`;
-    const gameLabel = mode === 'shootout' ? `NGMI PANDAS Shootout (${soVariant.toUpperCase()})` : 'NGMI PANDAS 3D Gang Beatdown';
+    const gameLabel = mode === 'shootout' ? `NGMI PANDAS Shootout (${soVariant.toUpperCase()}${soVariant !== 'siege' ? ` · ${SHOOT_VENUES[soVenue].name}` : ''})` : 'NGMI PANDAS 3D Gang Beatdown';
     const shareText = `🐼 Join our ${gameLabel}!\nRoom Code: ${rc}\nPlay Live: ${url}`;
     if (IS_TOUCH && navigator.share) {
       navigator.share({ title: 'NGMI Pandas', text: `🐼 Join my ${gameLabel} room ${rc}!`, url }).catch(() => {});
@@ -15189,7 +15560,7 @@ function App() {
                 </p>
                 <div className="tagline flex flex-wrap justify-center gap-1.5 mt-4 max-w-xl mx-auto">
                   {(mode === 'shootout'
-                    ? ['🔫 19 weapons', '🧟 Zombie co-op', '🏰 Siege mode', '☄️ Moon Strike', '📱 Plays on phone']
+                    ? ['🧟 Zombie co-op', '🗺️ 3 venues', '🔫 19 weapons', '🏰 Siege mode', '📱 Plays on phone']
                     : ['🌕 Moon arena', '👥 Up to 8 players', '💥 %-knockback', '🤖 AI fills empty slots', '📱 Plays on phone']
                   ).map(c => <span key={c} className="chip">{c}</span>)}
                   {CLIP_OK && (
@@ -15198,8 +15569,40 @@ function App() {
                 </div>
               </header>
 
-              <div className="w-full max-w-6xl mt-8 grid gap-5 lg:grid-cols-[1fr_330px] items-start">
-                <section className="space-y-4">
+              <div className="w-full max-w-6xl mt-6 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_330px] items-start">
+                <section className="space-y-4 min-w-0">
+                  {stepHead(1, 'CHOOSE YOUR GAME')}
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { id: 'beatdown', icon: '🥊', title: 'BEATDOWN', kicker: 'MOON ARENA · 3RD PERSON', sub: 'Gang brawl · pump their % · ring them out', bg: 'radial-gradient(circle at 78% 70%, #7c3aed77, transparent 60%), linear-gradient(135deg, #0a1f2e, #140b30)', ring: '#34d399', tag: 'STORY MODE' },
+                      { id: 'shootout', icon: '🔫', title: 'SHOOTOUT', kicker: 'FPS · FFA · SIEGE · ZOMBIES', sub: 'Zombie co-op, 3 venues, snipers & flamethrowers', bg: 'radial-gradient(circle at 78% 70%, #fb718577, transparent 60%), linear-gradient(135deg, #2a0d1a, #2b1607)', ring: '#fb7185', tag: 'NEW VENUES' }
+                    ].map(g => (
+                      <button
+                        key={g.id}
+                        onClick={() => {
+                          sfx.unlock();
+                          if (mode !== g.id) sfx.play('powerup', 0.35);
+                          setMode(g.id);
+                        }}
+                        className={`card poster holo relative text-left rounded-2xl border-2 overflow-hidden h-28 md:h-36 cursor-pointer ${mode === g.id ? 'selected' : 'border-slate-800 hover:border-slate-600 opacity-75'}`}
+                        style={{ background: g.bg, ...(mode === g.id ? { borderColor: g.ring, boxShadow: `0 0 0 1px ${g.ring}, 0 18px 40px -14px ${g.ring}` } : {}) }}
+                      >
+                        <span className="poster-word hidden sm:block">{g.title}</span>
+                        {gameArtImgs[g.id] && <img src={gameArtImgs[g.id]} alt="" draggable={false} className="poster-art opacity-60 sm:opacity-100 absolute -right-8 md:-right-4 bottom-0 h-full w-auto object-contain pointer-events-none" />}
+                        <div className="relative z-10 h-full flex flex-col justify-end p-3 md:p-4 max-w-[70%] md:max-w-[58%]">
+                          <div className="hidden sm:block text-[10px] font-black tracking-widest" style={{ color: g.ring }}>{g.kicker}</div>
+                          <div className="font-game text-base md:text-2xl text-white leading-none mt-1 drop-shadow">{g.icon} {g.title}</div>
+                          <div className="hidden sm:block text-[11px] md:text-[12px] text-slate-300 mt-1 leading-snug">{g.sub}</div>
+                        </div>
+                        {mode === g.id && <span className="absolute left-2 top-2 z-10 text-[9px] font-black px-1.5 py-0.5 rounded bg-white text-slate-900">▶ SELECTED</span>}
+                        {g.tag && <span className="absolute right-2 top-2 z-10 text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-300 text-slate-900">{g.tag}</span>}
+                      </button>
+                    ))}
+                  </div>
+
+                  {mode === 'beatdown' && (
+                    <>
+                      {stepHead(2, 'STORY MODE', <span className="text-[10px] font-black text-slate-400 tracking-widest">OR TAP ▶ PLAY FOR A QUICK MATCH</span>)}
                   {(() => {
                     const done = Math.min(profile.story || 0, CHAPTERS.length);
                     const ci = chSel !== null ? chSel : Math.min(done, CHAPTERS.length - 1);
@@ -15246,122 +15649,114 @@ function App() {
                       </div>
                     );
                   })()}
-
-                  {mode === 'beatdown' && (
-                    <div className={`rounded-3xl border-2 p-4 bg-slate-950/70 backdrop-blur ${invitedRoom && invitedRoom === cleanRoom(roomCode) ? 'border-amber-300 shadow-[0_0_30px_-8px_#fcd34d]' : 'border-sky-400/50'}`}>
-                      {invitedRoom && invitedRoom === cleanRoom(roomCode) && (
-                        <div className="mb-3 rounded-xl bg-amber-300/15 border border-amber-300/50 px-3 py-2 text-[13px] font-bold text-amber-100">🎉 You're invited to room <b>{invitedRoom}</b>. Pick a name, then tap <b>PLAY BEATDOWN</b>.</div>
-                      )}
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="text-[11px] font-black tracking-widest text-sky-300">👥 PLAY WITH FRIENDS</div>
-                        <div className="px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 font-game text-sm text-emerald-300 tracking-wider">{cleanRoom(roomCode)}</div>
-                      </div>
-                      <div className="mt-2 text-[13px] font-bold text-slate-200 min-h-[20px]">
-                        {roomNow === null ? '…checking who is in this room' : roomNow.length ? `🟢 ${roomNow.length} fighting here now: ${roomNow.slice(0, 4).join(', ')}${roomNow.length > 4 ? '…' : ''}` : '⚪ Nobody in this room right now. Invite your friends!'}
-                      </div>
-                      <div className="mt-3 flex gap-2">
-                        <button onClick={handleCopyInvite} className="flex-1 py-2.5 rounded-xl bg-sky-400 text-slate-950 font-black text-sm cursor-pointer">{copiedNotice ? '✓ LINK COPIED' : '📤 INVITE FRIENDS'}</button>
-                        <button onClick={() => { setRoomCode(newRoomCode()); setInvitedRoom(null); }} className="px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-600 font-black text-sm cursor-pointer">🎲 NEW ROOM</button>
-                      </div>
-                      <div className="mt-3 flex lg:hidden items-center gap-2">
-                        <label className="text-[11px] font-black tracking-widest text-slate-400 whitespace-nowrap">YOUR NAME</label>
-                        <input
-                          type="text"
-                          maxLength={16}
-                          value={playerName}
-                          onChange={e => setPlayerName(e.target.value.slice(0, 16))}
-                          className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white font-black text-sm focus:outline-none focus:border-sky-400"
-                        />
-                      </div>
-                      <div className="mt-2 text-[11px] text-slate-400 leading-snug">
-                        Same room code = same arena. Up to 8 fighters: friends take the slots first, AI pandas fill the rest. {cleanRoom(roomCode) === 'NGMI-888' ? 'NGMI-888 is the public room; tap 🎲 for a private one.' : 'Only people with this code can join.'}
-                      </div>
-                    </div>
+                    </>
                   )}
 
-                  <div className="flex items-center gap-3">
-                    <span className="font-game text-sm text-white">CHOOSE YOUR GAME</span>
-                    <span className="flex-1 h-px bg-gradient-to-r from-slate-500/60 to-transparent" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      { id: 'beatdown', icon: '🥊', title: 'BEATDOWN', kicker: 'MOON ARENA · 3RD PERSON', sub: 'Gang brawl · pump their % · ring them out', bg: 'radial-gradient(circle at 78% 70%, #7c3aed77, transparent 60%), linear-gradient(135deg, #0a1f2e, #140b30)', ring: '#34d399' },
-                      { id: 'shootout', icon: '🔫', title: 'SHOOTOUT', kicker: 'FPS · FFA · SIEGE · ZOMBIES', sub: 'Zombie co-op, snipers & flamethrowers', bg: 'radial-gradient(circle at 78% 70%, #fb718577, transparent 60%), linear-gradient(135deg, #2a0d1a, #2b1607)', ring: '#fb7185', tag: 'NEW · ZOMBIES' }
-                    ].map(g => (
-                      <button
-                        key={g.id}
-                        onClick={() => {
-                          sfx.unlock();
-                          if (mode !== g.id) sfx.play('powerup', 0.35);
-                          setMode(g.id);
-                        }}
-                        className={`card poster holo relative text-left rounded-2xl border-2 overflow-hidden h-32 md:h-40 cursor-pointer ${mode === g.id ? 'selected' : 'border-slate-800 hover:border-slate-600'}`}
-                        style={{ background: g.bg, ...(mode === g.id ? { borderColor: g.ring, boxShadow: `0 0 0 1px ${g.ring}, 0 18px 40px -14px ${g.ring}` } : {}) }}
-                      >
-                        <span className="poster-word hidden sm:block">{g.title}</span>
-                        {gameArtImgs[g.id] && <img src={gameArtImgs[g.id]} alt="" draggable={false} className="poster-art opacity-60 sm:opacity-100 absolute -right-8 md:-right-4 bottom-0 h-full w-auto object-contain pointer-events-none" />}
-                        <div className="relative z-10 h-full flex flex-col justify-end p-3 md:p-4 max-w-[70%] md:max-w-[58%]">
-                          <div className="hidden sm:block text-[10px] font-black tracking-widest" style={{ color: g.ring }}>{g.kicker}</div>
-                          <div className="font-game text-base md:text-2xl text-white leading-none mt-1 drop-shadow">{g.icon} {g.title}</div>
-                          <div className="hidden sm:block text-[11px] md:text-[12px] text-slate-300 mt-1 leading-snug">{g.sub}</div>
-                        </div>
-                        {mode === g.id && <span className="absolute left-2 top-2 z-10 text-[9px] font-black px-1.5 py-0.5 rounded bg-white text-slate-900">▶ SELECTED</span>}
-                        {g.tag && <span className="absolute right-2 top-2 z-10 text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-300 text-slate-900">{g.tag}</span>}
-                      </button>
-                    ))}
-                  </div>
-
                   {mode === 'shootout' && (
-                    <div className="glass rounded-2xl border border-slate-700 p-3 space-y-2">
-                      <div className="text-[10px] font-black tracking-widest text-slate-400">SHOOTOUT MODE</div>
-                      <div className="grid grid-cols-2 gap-2">
+                    <>
+                      {stepHead(2, 'PICK A MODE')}
+                      <div className="grid grid-cols-3 gap-2">
                         {[
-                          { id: 'ffa', icon: '🏙️', title: 'FREE-FOR-ALL', sub: 'Cartoon Town · first to 25' },
-                          { id: 'siege', icon: '🏰', title: 'SIEGE', sub: 'Fort HODL · attack or defend' },
-                          { id: 'zombie', icon: '🧟', title: 'ZOMBIES', sub: 'Co-op squad of 4 · 10 waves · rooms, ladders & a boss', tag: 'NEW' }
+                          { id: 'zombie', icon: '🧟', title: 'ZOMBIES', sub: 'Co-op squad of 4', col: '#a3e635', tag: 'CO-OP' },
+                          { id: 'ffa', icon: '🎯', title: 'FREE-FOR-ALL', sub: 'First to 25 kills', col: '#fbbf24' },
+                          { id: 'siege', icon: '🏰', title: 'SIEGE', sub: 'Attack or defend', col: '#60a5fa' }
                         ].map(v => (
-                          <button key={v.id} onClick={() => setSoVariant(v.id)} className={`relative text-left rounded-xl border-2 px-3 py-2 cursor-pointer transition ${v.id === 'zombie' ? 'col-span-2' : ''} ${soVariant === v.id ? (v.id === 'zombie' ? 'border-lime-300 bg-lime-300/10' : 'border-amber-300 bg-amber-300/10') : 'border-slate-800 hover:border-slate-600'}`}>
-                            {v.tag && <span className="absolute right-2 top-2 text-[9px] font-black px-1.5 py-0.5 rounded bg-lime-300 text-slate-900">{v.tag}</span>}
-                            <div className="font-game text-sm text-white">{v.icon} {v.title}</div>
-                            <div className="text-[11px] text-slate-400">{v.sub}</div>
+                          <button key={v.id} onClick={() => { sfx.unlock(); setSoVariant(v.id); }} className="relative text-left rounded-xl border-2 px-2.5 py-2 cursor-pointer transition bg-slate-950/90 backdrop-blur" style={soVariant === v.id ? { borderColor: v.col, background: `${v.col}1f`, boxShadow: `0 0 0 1px ${v.col}` } : { borderColor: '#1e293b' }}>
+                            {v.tag && <span className="absolute right-1.5 top-1.5 text-[8px] font-black px-1 py-0.5 rounded bg-lime-300 text-slate-900">{v.tag}</span>}
+                            <div className="text-2xl leading-none">{v.icon}</div>
+                            <div className="font-game text-[12px] md:text-sm text-white mt-1 leading-tight">{v.title}</div>
+                            <div className="text-[10px] md:text-[11px] text-slate-400 leading-snug">{v.sub}</div>
                           </button>
                         ))}
                       </div>
                       {soVariant === 'zombie' && (
-                        <div className="space-y-1.5">
+                        <div className="glass rounded-2xl border border-slate-700 p-3 space-y-2">
                           <div className="grid grid-cols-2 gap-2">
-                            {[['raid', '👹 BOSS RAID', '#a855f7'], ['incoming', '🚨 INCOMING', '#ef4444']].map(([id, label, col]) => (
-                              <button key={id} onClick={() => setSoZMode(id)} className="rounded-xl border-2 py-2 font-black text-xs cursor-pointer" style={soZMode === id ? { borderColor: col, background: `${col}22`, color: '#fff' } : { borderColor: '#1e293b', color: '#cbd5e1' }}>{label}</button>
+                            {[['raid', '👹 BOSS RAID', '#a855f7', '10 waves · Rug Lord on 5 & 10'], ['incoming', '🚨 ENDLESS', '#ef4444', 'Endless waves · how long?']].map(([id, label, col, sub]) => (
+                              <button key={id} onClick={() => setSoZMode(id)} className="rounded-xl border-2 py-2 px-2 text-left cursor-pointer" style={soZMode === id ? { borderColor: col, background: `${col}22` } : { borderColor: '#1e293b' }}>
+                                <div className="font-black text-xs text-white">{label}</div>
+                                <div className="text-[10px] text-slate-400">{sub}</div>
+                              </button>
                             ))}
                           </div>
                           <div className="text-[11px] text-slate-400 leading-snug">
-                            {soZMode === 'raid'
-                              ? <>Survive <b className="text-white">10 waves</b>, each tougher than the last, with <b className="text-rose-300">⚠️ horde rushes</b>. <b className="text-purple-300">THE RUG LORD</b> hits on wave 5 and returns in his final form on wave 10.</>
-                              : <>Endless waves, each with a <b className="text-rose-300">⚠️ HORDE INCOMING</b> rush and a boss every 5th wave. How long can your squad last?</>}
-                            {' '}Walk-in buildings, ladders to the rooftops, explosive barrels, grenades 💣 and throwable medkits ➕. Hold fire next to a downed teammate to revive.
+                            Horde rushes, walk-in buildings, rooftop ladders, grenades 💣, throwable medkits ➕ and a new <b className="text-pink-300">📣 FOMO Screamer</b> that calls more zombies — kill it first. Hold FIRE next to a downed teammate to revive.
                           </div>
                         </div>
                       )}
                       {soVariant === 'siege' && (
-                        <div className="space-y-1.5">
+                        <div className="glass rounded-2xl border border-slate-700 p-3 space-y-2">
                           <div className="grid grid-cols-3 gap-2">
                             {[['atk', '⚔️ ATTACK', '#ef4444'], ['def', '🛡️ DEFEND', '#3b82f6'], ['auto', '🎲 RANDOM', '#a3a3a3']].map(([id, label, col]) => (
                               <button key={id} onClick={() => setSoTeam(id)} className="rounded-xl border-2 py-2 font-black text-xs cursor-pointer" style={soTeam === id ? { borderColor: col, background: `${col}22`, color: '#fff' } : { borderColor: '#1e293b', color: '#cbd5e1' }}>{label}</button>
                             ))}
                           </div>
                           <div className="text-[11px] text-slate-400 leading-snug">
-                            <b className="text-rose-300">NGMI Raiders</b> must capture the <b>Server Farm</b>, then crack the <b>Moon Vault</b> inside Fort HODL. <b className="text-sky-300">Diamond Hands</b> hold until the clock runs out.
+                            🏰 Siege is played at <b className="text-white">Fort HODL</b>. <b className="text-rose-300">NGMI Raiders</b> capture the Server Farm, then crack the <b>Moon Vault</b>. <b className="text-sky-300">Diamond Hands</b> hold until the clock runs out.
                           </div>
                         </div>
                       )}
-                    </div>
+                      {soVariant !== 'siege' && (
+                        <>
+                          {stepHead(3, 'PICK A VENUE')}
+                          <div className="grid grid-cols-3 gap-2">
+                            {Object.entries(SHOOT_VENUES).map(([id, vn]) => (
+                              <button key={id} onClick={() => { sfx.unlock(); if (soVenue !== id) sfx.play('pop', 0.4); setSoVenue(id); }} className="relative text-left rounded-xl border-2 px-2.5 py-2 cursor-pointer transition bg-slate-950/90 backdrop-blur" style={soVenue === id ? { borderColor: vn.col, background: `${vn.col}1f`, boxShadow: `0 0 0 1px ${vn.col}` } : { borderColor: '#1e293b' }}>
+                                {id !== 'town' && <span className="absolute right-1.5 top-1.5 text-[8px] font-black px-1 py-0.5 rounded bg-amber-300 text-slate-900">NEW</span>}
+                                <div className="text-2xl leading-none">{vn.icon}</div>
+                                <div className="font-game text-[12px] md:text-sm text-white mt-1 leading-tight">{vn.name}</div>
+                              </button>
+                            ))}
+                          </div>
+                          <div className="text-[11px] text-slate-300 leading-snug -mt-1 rounded-lg bg-slate-950/85 px-2.5 py-1.5">{SHOOT_VENUES[soVenue].icon} <b className="text-white">{SHOOT_VENUES[soVenue].name}</b> · {SHOOT_VENUES[soVenue].sub}{soVariant === 'zombie' ? ' · at night' : ''}</div>
+                        </>
+                      )}
+                    </>
                   )}
 
-                  <div className="flex items-center gap-3">
-                    <span className="font-game text-sm text-white">CHOOSE YOUR PANDA</span>
-                    <span className="flex-1 h-px bg-gradient-to-r from-slate-500/60 to-transparent" />
-                    <span className="text-[10px] font-black text-slate-400 tracking-widest">{PANDA_CLASSES.length} FIGHTERS</span>
+                  <div className={`rounded-3xl border-2 p-4 bg-slate-950/70 backdrop-blur ${invitedRoom && invitedRoom === cleanRoom(roomCode) ? 'border-amber-300 shadow-[0_0_30px_-8px_#fcd34d]' : 'border-sky-400/50'}`}>
+                    {invitedRoom && invitedRoom === cleanRoom(roomCode) && (
+                      <div className="mb-3 rounded-xl bg-amber-300/15 border border-amber-300/50 px-3 py-2 text-[13px] font-bold text-amber-100">🎉 You're invited to room <b>{invitedRoom}</b>. Pick a name, then tap <b>▶ PLAY</b>.</div>
+                    )}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[11px] font-black tracking-widest text-sky-300">👥 PLAY WITH FRIENDS</div>
+                      <input
+                        type="text"
+                        maxLength={16}
+                        value={roomCode}
+                        aria-label="Room code"
+                        onChange={e => setRoomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 16))}
+                        className="w-36 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-700 font-game text-sm text-emerald-300 tracking-wider text-right uppercase focus:outline-none focus:border-emerald-400"
+                      />
+                    </div>
+                    {mode === 'beatdown' && (
+                      <div className="mt-2 text-[13px] font-bold text-slate-200 min-h-[20px]">
+                        {roomNow === null ? '…checking who is in this room' : roomNow.length ? `🟢 ${roomNow.length} fighting here now: ${roomNow.slice(0, 4).join(', ')}${roomNow.length > 4 ? '…' : ''}` : '⚪ Nobody in this room right now. Invite your friends!'}
+                      </div>
+                    )}
+                    <div className="mt-3 flex gap-2">
+                      <button onClick={handleCopyInvite} className="flex-1 py-2.5 rounded-xl bg-sky-400 text-slate-950 font-black text-sm cursor-pointer">{copiedNotice ? '✓ LINK COPIED' : '📤 INVITE FRIENDS'}</button>
+                      <button onClick={() => { setRoomCode(newRoomCode()); setInvitedRoom(null); }} className="px-3 py-2.5 rounded-xl bg-slate-800 border border-slate-600 font-black text-sm cursor-pointer">🎲 NEW ROOM</button>
+                    </div>
+                    <div className="mt-3 flex lg:hidden items-center gap-2">
+                      <label className="text-[11px] font-black tracking-widest text-slate-400 whitespace-nowrap">YOUR NAME</label>
+                      <input
+                        type="text"
+                        maxLength={16}
+                        value={playerName}
+                        onChange={e => setPlayerName(e.target.value.slice(0, 16))}
+                        className="flex-1 min-w-0 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-white font-black text-sm focus:outline-none focus:border-sky-400"
+                      />
+                    </div>
+                    <div className="mt-2 text-[11px] text-slate-400 leading-snug">
+                      {mode === 'beatdown'
+                        ? `Same room code = same arena. Up to 8 fighters: friends take the slots first, AI pandas fill the rest.`
+                        : `Same room code + same mode${soVariant !== 'siege' ? ' + same venue' : ''} = same match. The invite link carries all of it.`}{' '}
+                      {cleanRoom(roomCode) === 'NGMI-888' ? 'NGMI-888 is the public room; tap 🎲 for a private one.' : 'Only people with this code can join.'}
+                    </div>
                   </div>
+
+                  {stepHead(mode === 'beatdown' ? 3 : soVariant !== 'siege' ? 4 : 3, 'CHOOSE YOUR PANDA', <span className="text-[10px] font-black text-slate-400 tracking-widest">{PANDA_CLASSES.length} FIGHTERS</span>)}
 
                   <div className="stagger grid gap-4 md:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
                     <div
@@ -15439,7 +15834,7 @@ function App() {
                   </div>
                 </section>
 
-                <aside className="side-panel glass border border-slate-700/70 rounded-3xl p-5 space-y-4">
+                <aside className="side-panel min-w-0 glass border border-slate-700/70 rounded-3xl p-5 space-y-4">
                   {CLIP_OK && (
                     <button onClick={() => setShowClipsApp(true)} className="w-full flex items-center justify-between px-3 py-2.5 rounded-2xl border border-rose-400/40 bg-rose-500/10 cursor-pointer">
                       <span className="font-black text-sm text-white">🎬 MY CLIPS</span>
@@ -15486,7 +15881,7 @@ function App() {
                     </div>
                   </div>
 
-                  <div>
+                  <div className="hidden lg:block">
                     <label className="block text-[10px] font-black tracking-widest text-slate-400 mb-1.5">YOUR NAME</label>
                     <input
                       type="text"
@@ -15512,6 +15907,12 @@ function App() {
                     ▶ PLAY {mode === 'shootout' ? 'SHOOTOUT' : 'BEATDOWN'}
                   </button>
 
+                  <button onClick={() => setSettingsOpen(o => !o)} className="w-full flex items-center justify-between text-[10px] font-black tracking-widest text-slate-400 cursor-pointer">
+                    <span>⚙️ SETTINGS</span>
+                    <span className="text-slate-300">{settingsOpen ? '▲ HIDE' : '▼ SHOW'}</span>
+                  </button>
+                  {settingsOpen && (
+                  <div className="space-y-4">
                   <div className="flex items-center justify-between gap-3 text-xs">
                     <span className="font-bold text-slate-300">Bot difficulty</span>
                     <div className="flex rounded-xl overflow-hidden border border-slate-700">
@@ -15553,25 +15954,8 @@ function App() {
                       <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white transition-all ${fillWithBots ? 'left-[22px]' : 'left-0.5'}`} />
                     </button>
                   </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black tracking-widest text-slate-400 mb-1.5">ROOM CODE · SHARE TO PLAY WITH FRIENDS</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        maxLength={16}
-                        value={roomCode}
-                        onChange={e => setRoomCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 16))}
-                        className="w-full px-3 py-2 rounded-xl bg-slate-950/80 border border-slate-700 text-emerald-300 font-black tracking-wider uppercase focus:outline-none focus:border-emerald-400"
-                      />
-                      <button
-                        onClick={handleCopyInvite}
-                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-black whitespace-nowrap cursor-pointer"
-                      >
-                        {copiedNotice ? '✓ COPIED' : IS_TOUCH && typeof navigator !== 'undefined' && navigator.share ? '📤 INVITE' : 'COPY LINK'}
-                      </button>
-                    </div>
                   </div>
+                  )}
 
                   <div className={`${IS_TOUCH ? '' : 'md:hidden'} border-t border-slate-700/70 pt-3 text-[12px] text-slate-200`}>
                     <div className="text-[10px] font-black tracking-widest text-slate-400 mb-1.5">TOUCH CONTROLS</div>
@@ -15661,10 +16045,11 @@ function App() {
 
       {screen === 'shootout' && (
         <ShootoutGame
-          key={`so_${matchId}_${soVariant}_${soZMode}`}
+          key={`so_${matchId}_${soVariant}_${soZMode}_${soVenue}`}
           variant={soVariant}
           team={soTeam}
           zmode={soZMode}
+          venue={soVariant === 'siege' ? 'town' : soVenue}
           cls={selectedClass}
           name={playerName}
           room={roomCode}
