@@ -13467,7 +13467,8 @@ function App() {
     };
 
     // Smash-Bros style knockback: more damage % => flies further and higher
-    const launch = (target, attacker, dirX, dirZ, base, upward, dmgAdd) => {
+    // light = a contact tap (gang auto-hit / body shove): it nudges and adds %, but only stuns for a blink, so it never locks your inputs
+    const launch = (target, attacker, dirX, dirZ, base, upward, dmgAdd, light = false) => {
       if (target.respawnLock > 0) return 0;
       if (target.isLocal || target.isBot) target.dmg = Math.min(999, target.dmg + dmgAdd);
       const ratio = attacker.pandaClass.power / target.pandaClass.mass;
@@ -13510,13 +13511,13 @@ function App() {
         target.pred = { vx: dirX * kb, vz: dirZ * kb, vy: Math.max(0, upward + kb * 0.16), t: Math.min(0.42, 0.22 + kb / 220) };
         target.squash = Math.max(target.squash || 0, Math.min(0.55, kb / 45));
         if (attacker.isLocal) fx.shake = Math.min(1.6, fx.shake + kb / 60);
-        send({ t: 'h', id: myIdRef.current, to: target.id, from: attacker.id, dx: dirX, dz: dirZ, b: base, u: upward, dm: dmgAdd, pw: attacker.pandaClass.power * (attacker.buffs.pump > 0 ? 1.7 : 1), fl: base > 8 ? 1 : 0 });
+        send({ t: 'h', id: myIdRef.current, to: target.id, from: attacker.id, dx: dirX, dz: dirZ, b: base, u: upward, dm: dmgAdd, pw: attacker.pandaClass.power * (attacker.buffs.pump > 0 ? 1.7 : 1), fl: base > 8 ? 1 : 0, lt: light ? 1 : 0 });
         return kb;
       }
       target.vx += dirX * kb;
       target.vz += dirZ * kb;
-      target.vy = Math.max(target.vy, upward + kb * 0.16);
-      target.stun = Math.max(target.stun, Math.min(1.4, 0.2 + kb / 55));
+      target.vy = Math.max(target.vy, light ? upward : upward + kb * 0.16);
+      target.stun = Math.max(target.stun, light ? Math.min(0.12, 0.04 + kb / 120) : Math.min(1.4, 0.2 + kb / 55));
       target.squash = Math.max(target.squash, Math.min(0.55, kb / 45)); // the body visibly crumples on impact
       if (target.isLocal || attacker.isLocal) {
         fx.shake = Math.min(1.6, fx.shake + kb / 45);
@@ -13983,7 +13984,7 @@ function App() {
             buffs: { pump: 0 },
             isLocal: false
           };
-          launch(target, attacker, hdx, hdz, netNum(data.b, 0, 24), netNum(data.u, 0, 14), netNum(data.dm, 0, 28));
+          launch(target, attacker, hdx, hdz, netNum(data.b, 0, 24), netNum(data.u, 0, 14), netNum(data.dm, 0, 28), data.lt === 1);
           if (src) target.lastHitBy = src;
           target.lastHitAt = performance.now();
           if (data.fl && Math.random() < 0.5) flingMinion(target, hdx, hdz);
@@ -14099,31 +14100,46 @@ function App() {
     const PUNCH_NAMES = ['JAB', 'CROSS', 'HAYMAKER!'];
     const doPunch = (f, mx, mz) => {
       const p = f.mesh.position;
+      const human = !f.isBot;
+      // aim: the direction you're pushing the stick (else where you face). Humans get a wider, longer cone,
+      // and if nobody is in the cone, anyone hugging you (any side) is punched instead of a whiff.
       let [ax, az] = forwardOf(f);
-      let best = null, bd = 4.4;
+      if (Math.hypot(mx || 0, mz || 0) > 0.2) { const l = Math.hypot(mx, mz); ax = mx / l; az = mz / l; }
+      const AIM = human ? 6.2 : 4.4, CONE = human ? -0.05 : 0.2;
+      let best = null, bs = 1e9, bd = 0;
       fighters.forEach(o => {
-        if (o.id === f.id || o.respawnLock > 0) return;
+        if (o.id === f.id || o.respawnLock > 0 || Math.abs(o.mesh.position.y - p.y) > 2.2) return;
         const dx = o.mesh.position.x - p.x, dz = o.mesh.position.z - p.z, d = Math.hypot(dx, dz);
-        if (d < bd && d > 0.01 && (dx * ax + dz * az) / d > 0.2 && Math.abs(o.mesh.position.y - p.y) < 2.2) { bd = d; best = o; }
+        if (d < 0.01 || d > AIM) return;
+        const facing = (dx * ax + dz * az) / d;
+        if (facing < CONE && d > (human ? 3.4 : 0)) return;
+        const sc = d - facing * 1.6; // prefer the one in front, then the closest
+        if (sc < bs) { bs = sc; best = o; bd = d; }
       });
       if (best) { ax = (best.mesh.position.x - p.x) / bd; az = (best.mesh.position.z - p.z) / bd; }
-      else if (Math.hypot(mx || 0, mz || 0) > 0.2) { const l = Math.hypot(mx, mz); ax = mx / l; az = mz / l; }
       f.mesh.rotation.y = Math.atan2(ax, az);
       f.punchStep = f.punchT > 0 ? ((f.punchStep || 0) % 3) + 1 : 1;
       f.punchT = 0.9;
       const big = f.punchStep === 3;
       f.punchAnim = big ? 0.38 : 0.24;
       f.squash = big ? 0.3 : 0.15;
-      f.vx += ax * (big ? 15 : 9);
-      f.vz += az * (big ? 15 : 9);
+      // the lunge closes the gap to whoever you're aiming at, so a punch thrown from 5 m still connects
+      const lunge = best && human ? Math.min(30, Math.max(big ? 15 : 9, (bd - 1.6) / 0.12)) : big ? 15 : 9;
+      f.vx += ax * lunge;
+      f.vz += az * lunge;
       sfx.play('dash', f.isLocal ? 0.45 : volAt(p) * 0.3, big ? 0.8 : 1.2);
+      // human fists hit harder than bot fists (bots keep their old numbers so an idle player isn't farmed)
+      const base = human ? [9, 11, 19][f.punchStep - 1] : big ? 15 : 6.5;
+      const reach = human ? (big ? 5.0 : 4.4) : big ? 4.2 : 3.6;
       let hits = 0;
       fighters.forEach(o => {
         if (o.id === f.id || o.respawnLock > 0) return;
         const dx = o.mesh.position.x - p.x, dz = o.mesh.position.z - p.z, d = Math.hypot(dx, dz);
-        if (d > (big ? 4.2 : 3.6) || d < 0.01 || (dx * ax + dz * az) / d < 0.25 || Math.abs(o.mesh.position.y - p.y) > 2.4) return;
+        const aimed = o === best && human && d <= AIM;
+        if (!aimed && (d > reach || d < 0.01 || (dx * ax + dz * az) / d < 0.25)) return;
+        if (Math.abs(o.mesh.position.y - p.y) > 2.4) return;
         hits++;
-        launch(o, f, ax * 0.75 + (dx / d) * 0.25, az * 0.75 + (dz / d) * 0.25, big ? 15 : 6.5, big ? 9 : 3, big ? 10 : 5);
+        launch(o, f, ax * 0.75 + (dx / (d || 1)) * 0.25, az * 0.75 + (dz / (d || 1)) * 0.25, base, big ? 9 : 3, big ? 10 : 5);
         if (big && Math.random() < 0.6) flingMinion(o, ax, az);
       });
       if (f.isLocal) {
@@ -14133,7 +14149,7 @@ function App() {
           fx.kick = Math.max(fx.kick, big ? 0.8 : 0.3);
           fx.shake = Math.min(1.6, fx.shake + (big ? 0.45 : 0.18));
           buzz(big ? 18 : 10);
-        } else { f.punchStep = 0; f.punchT = 0; } // a whiff resets the combo
+        } else f.punchStep = Math.max(0, (f.punchStep || 1) - 1); // a whiff doesn't throw away your whole combo
       }
     };
     // 🤼 GRAB: the PUNCH button turns into this for 3.5 s after a landed haymaker. Seize the nearest rival and hurl them; the button goes back to PUNCH.
@@ -14626,7 +14642,7 @@ function App() {
       if (live('punch') && !frozen) {
         if (localFighter.weapon) {
           if (useWeapon(localFighter)) { used('punch'); netEvents.push('w'); }
-        } else if (cdState.punch <= 0 && !tumbling && localFighter.stun <= 0.1) {
+        } else if (cdState.punch <= 0 && !tumbling && (localFighter.stun <= 0.35 || !localAirborne)) { // a light tap never eats your punch
           used('punch');
           if (localFighter.grabT > 0 && doGrab(localFighter, true)) {
             cdState.punch = 0.6;
@@ -14659,6 +14675,64 @@ function App() {
       actionTriggerRef.current.ult = false;
 
       let currentBeatdownBanner = null;
+
+      // ---------- BODY CONTACT: fighters are solid, and the one driving in shoves the other ----------
+      // Weight = class mass × gang size, and a human driving the stick counts double, so walking into a
+      // bot bulldozes it backwards instead of the two of you bouncing off each other evenly.
+      if (!frozen) {
+        const sim = f => (f.isLocal || f.isBot) && !(f.respawnLock > 0);
+        const BODY_R = 1.9;
+        for (let i = 0; i < fighters.length; i++) {
+          const a = fighters[i];
+          if (a.pinT > 0) a.pinT -= dt;
+          if (a.shoveCd > 0) a.shoveCd -= dt;
+          for (let j = i + 1; j < fighters.length; j++) {
+            const b = fighters[j];
+            if (!sim(a) && !sim(b)) continue;
+            if (a.respawnLock > 0 || b.respawnLock > 0) continue;
+            const pa = a.mesh.position, pb = b.mesh.position;
+            if (Math.abs(pa.y - pb.y) > 1.6) continue;
+            const dx = pb.x - pa.x, dz = pb.z - pa.z, d = Math.hypot(dx, dz);
+            if (d >= BODY_R || d < 0.001) continue;
+            const nx = dx / d, nz = dz / d;
+            const drive = f => (f.isLocal ? 2.2 : 1) * (f.isWhale ? 3 : 1) * (f.pandaClass.mass || 1) * (1 + 0.12 * Math.min(8, f.minions.length));
+            const ua = a.vx * nx + a.vz * nz, ub = -(b.vx * nx + b.vz * nz); // how hard each walks INTO the other
+            let wa = drive(a) * (ua > 1 ? 1.6 : 1), wb = drive(b) * (ub > 1 ? 1.6 : 1);
+            if (a.isLocal && b.isBot) wa = Math.max(wa, wb * 1.5); // a player is never the one shoved aside by a bot
+            if (b.isLocal && a.isBot) wb = Math.max(wb, wa * 1.5);
+            if (!sim(b)) wb = 1e6; // a remote human: only I move (their own screen moves them)
+            if (!sim(a)) wa = 1e6;
+            const ov = BODY_R - d, tot = wa + wb;
+            // push apart, the lighter/softer body gives way more
+            pa.x -= nx * ov * (wb / tot); pa.z -= nz * ov * (wb / tot);
+            pb.x += nx * ov * (wa / tot); pb.z += nz * ov * (wa / tot);
+            // momentum: the closing speed is shared out by weight (the pusher keeps going, the pushed gets carried)
+            const vrel = ua + ub;
+            // dashes and ground pounds already deliver their own hit: don't stack body momentum on top
+            if (vrel > 0 && !(a.dashT > 0) && !(b.dashT > 0) && !a.pounding && !b.pounding) {
+              const ka = wb / tot, kb2 = wa / tot;
+              // a bot walking into a player can't carry them toward the edge (planted feet); players CAN carry bots
+              const ca = a.isLocal && b.isBot ? 0.2 : 0.85, cb = b.isLocal && a.isBot ? 0.2 : 0.85;
+              if (sim(a)) { a.vx -= nx * vrel * ka * ca; a.vz -= nz * vrel * ka * ca; }
+              if (sim(b)) { b.vx += nx * vrel * kb2 * cb; b.vz += nz * vrel * kb2 * cb; }
+              // the pushed one can't walk straight back into you for a moment
+              if (sim(b) && b.isBot && kb2 > 0.55) b.pinT = Math.max(b.pinT || 0, 0.22);
+              if (sim(a) && a.isBot && ka > 0.55) a.pinT = Math.max(a.pinT || 0, 0.22);
+              // running into someone is a SHOVE you can feel: a little bump, %, spark and sound
+              const pusher = ua >= ub ? a : b, pushed = pusher === a ? b : a, sgn = pusher === a ? 1 : -1;
+              if (vrel > 7 && !(pusher.shoveCd > 0) && pusher.isLocal && pusher.stun <= 0) { // shoves are a player power, bots don't get them
+                pusher.shoveCd = 0.45;
+                launch(pushed, pusher, nx * sgn, nz * sgn, Math.min(9, 2.5 + vrel * 0.32), 2, 2, true);
+                if (pusher.isLocal) {
+                  sfx.play('bounce', 0.55, 1.25);
+                  fx.kick = Math.max(fx.kick, 0.22);
+                  if (now - (pusher.shoveSaid || 0) > 1800) { pusher.shoveSaid = now; spawnMemeSprite(pushed.mesh.position.x, 2.4, pushed.mesh.position.z, 'SHOVED! 💪', '#fde68a'); }
+                }
+              }
+            }
+          }
+        }
+      }
 
       fighters.forEach((f, idx) => {
         if (f.swarmTimer > 0) f.swarmTimer -= dt;
@@ -14879,7 +14953,7 @@ function App() {
               f.botPunchAt = now + (f.punchStep === 3 ? 2400 + Math.random() * 1400 : 400 + Math.random() * 180) * pace;
             }
           }
-          if (f.stun <= 0 && f.mesh.position.y <= 0.05) {
+          if (f.stun <= 0 && !(f.pinT > 0) && f.mesh.position.y <= 0.05) {
             const botSpeed = 9.8 * BOT_SPEED * f.pandaClass.speed * (f.buffs.speed > 0 ? 1.45 : 1);
             f.vx += ((f.aiDirX || 0) * botSpeed - f.vx) * 4 * dt;
             f.vz += ((f.aiDirZ || 0) * botSpeed - f.vz) * 4 * dt;
@@ -15078,7 +15152,7 @@ function App() {
               if (f.punchCd <= 0 && f.stun <= 0) {
                 f.punchCd = f.swarmTimer > 0 || f.tornadoT > 0 ? 0.3 : 0.6;
                 f.punchAnim = 0.2;
-                launch(enemy, f, dx / dist, dz / dist, 2.5 + 1.4 * surroundFactor, 3, 2 + 1.6 * surroundFactor);
+                launch(enemy, f, dx / dist, dz / dist, 2.5 + 1.4 * surroundFactor, 3, 2 + 1.6 * surroundFactor, !enemy.isBot); // taps on a human are light (never lock their buttons); bots keep the old stun
               }
 
               if (gangCount >= enemyCount + 2 && Math.random() < 2.1 * dt) {
